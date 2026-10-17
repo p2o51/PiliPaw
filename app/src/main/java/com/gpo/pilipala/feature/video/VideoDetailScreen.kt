@@ -37,7 +37,9 @@ import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.feature.player.BiliPlayerState
 import com.gpo.pilipala.feature.player.BiliVideoPlayer
+import com.gpo.pilipala.feature.player.BindPlayerPage
 import com.gpo.pilipala.feature.player.PlayQueue
+import com.gpo.pilipala.feature.player.PlayerPageHooks
 import com.gpo.pilipala.feature.player.attachQueue
 import com.gpo.pilipala.feature.player.rememberBiliPlayerState
 import com.gpo.pilipala.feature.reply.ReplyList
@@ -90,6 +92,21 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         onDispose { playerState.attachQueue(null) }
     }
     LaunchedEffect(playerState, vm.detail?.ownerName) { playerState.artist = vm.detail?.ownerName.orEmpty() }
+    // 上一个 / 下一个 (分P / 合集) and 点赞 for the player's overlay and the system media controls.
+    BindPlayerPage(
+        playerState,
+        remember(vm) {
+            PlayerPageHooks(
+                target = { vm.target },
+                hasNext = vm::hasNext,
+                next = { vm.playNext() },
+                hasPrevious = vm::hasPrevious,
+                previous = { vm.playPrevious() },
+                liked = { vm.actions.liked.takeIf { vm.actions.aid > 0 } },
+                toggleLike = { vm.actions.toggleLike() },
+            )
+        },
+    )
 
     val seek: (Long) -> Unit = remember(playerState) { { s -> playerState.seekTo(s * 1000) } }
     val player = remember(vm, playerState) {

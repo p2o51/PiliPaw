@@ -166,6 +166,21 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     var audioOnly by mutableStateOf(false)
         private set
 
+    /** What the page offers beyond a single video: 分P / 合集 neighbours, its target, the like toggle. */
+    private var hooks: PlayerPageHooks? = null
+    private var hooksJob: Job? = null
+    private var pageHasNext = false
+    private var pageHasPrevious = false
+
+    /** null: the like button is not offered (signed out, nothing loaded). */
+    private var pageLiked: Boolean? = null
+
+    /** A next / previous item exists (queue, or the page's 分P / 合集): overlay and media controls follow. */
+    var hasNext by mutableStateOf(false)
+        private set
+    var hasPrevious by mutableStateOf(false)
+        private set
+
     private val dataSourceFactory by lazy {
         OkHttpDataSource.Factory(BiliClient.http).setDefaultRequestProperties(BiliClient.mediaHeaders())
     }
@@ -451,7 +466,73 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
             changeAudioOnly(false)
             applyRepeat()
         }
+        updateNeighbours()
+    }
+
+    /**
+     * Binds the page's [PlayerPageHooks] (null unbinds). Read through snapshots on the
+     * controller's own scope, so they keep working while the page is in the background:
+     * a target the page switches to (auto-play-next, 下一个 from the notification) loads
+     * even though the page itself does not recompose then.
+     */
+    fun bindPage(h: PlayerPageHooks?) {
+        if (h === hooks) return
+        hooks = h
+        hooksJob?.cancel()
+        hooksJob = null
+        if (h == null) {
+            pageHasNext = false
+            pageHasPrevious = false
+            pageLiked = null
+            updateNeighbours()
+            return
+        }
+        hooksJob = scope.launch {
+            launch {
+                snapshotFlow { Triple(h.hasNext(), h.hasPrevious(), h.liked()) }.collect { (n, p, l) ->
+                    pageHasNext = n
+                    pageHasPrevious = p
+                    pageLiked = l
+                    updateNeighbours()
+                }
+            }
+            launch { snapshotFlow { h.target() }.collect { t -> if (t != null) load(t) } }
+        }
+    }
+
+    private fun updateNeighbours() {
+        val q = queue
+        hasNext = q != null || pageHasNext
+        hasPrevious = q != null || pageHasPrevious
         refreshSessionControls()
+    }
+
+    /** 下一个: the queue's next item, else the page's next 分P / 合集 episode. */
+    fun skipNext() {
+        if (queue != null) {
+            skipQueue(forward = true)
+        } else if (pageHasNext) {
+            hooks?.next?.invoke()
+        }
+    }
+
+    /** 上一个. Restarts the current item first when it has played over 3s. */
+    fun skipPrevious() {
+        if (queue != null) {
+            skipQueue(forward = false)
+            return
+        }
+        if (exactPositionMs() > 3_000 && phase is PlayerPhase.Ready) {
+            seekTo(0)
+            return
+        }
+        if (pageHasPrevious) hooks?.previous?.invoke()
+    }
+
+    /** 仅听声音 on / off (through the queue when there is one, so its panel follows). */
+    fun toggleAudioOnly() {
+        val q = queue
+        if (q != null) q.setAudioOnly(!q.audioOnly.value) else changeAudioOnly(!audioOnly)
     }
 
     /** Next / previous in the queue. Previous restarts the item first when it has played over 3s. */
@@ -518,6 +599,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         // The picture comes back (or goes) with the next rendered frame; the cover covers the gap.
         firstFrameRendered = false
         if (exo != null && info?.isDash == true && phase !is PlayerPhase.Error) reprepare()
+        refreshSessionControls()
     }
 
     private fun applyVideoTrack() {
@@ -527,13 +609,35 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
             .build()
     }
 
-    private fun sessionButtons(): List<CommandButton> =
-        queue?.let { PlaybackService.queueButtons(it.mode.value) } ?: PlaybackService.mediaButtons
+    private fun sessionButtons(): List<CommandButton> = PlaybackService.buttons(
+        hasPrevious = hasPrevious,
+        hasNext = hasNext,
+        mode = queue?.mode?.value,
+        liked = pageLiked.takeIf { BiliClient.isLoggedIn },
+        audioOnly = audioOnly,
+    )
 
-    /** Previous / next appear or go, and the mode button follows the queue's mode. */
+    private var lastButtons: List<CommandButton>? = null
+
+    /** Previous / next appear or go; the like, 仅听声音 and play-mode buttons follow their state. */
     private fun refreshSessionControls() {
         sessionPlayer?.notifyCommandsChanged()
-        session?.setMediaButtonPreferences(sessionButtons())
+        val s = session ?: return
+        val buttons = sessionButtons()
+        if (buttons == lastButtons) return
+        lastButtons = buttons
+        s.setMediaButtonPreferences(buttons)
+    }
+
+    /** A tap on one of the session's custom buttons (notification, lock screen, headset app). */
+    private fun onSessionCommand(action: String): Boolean {
+        when (action) {
+            PlaybackService.ACTION_PLAY_MODE -> queue?.cycleMode()
+            PlaybackService.ACTION_LIKE -> if (BiliClient.isLoggedIn && pageLiked != null) hooks?.toggleLike?.invoke()
+            PlaybackService.ACTION_AUDIO_ONLY -> toggleAudioOnly()
+            else -> return false
+        }
+        return true
     }
 
     fun setSleepTimer(minutes: Int) {
@@ -623,6 +727,15 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         queueJob?.cancel()
         advanceJob?.cancel()
         skipJob?.cancel()
+        hooksJob?.cancel()
+        hooksJob = null
+        hooks = null
+        pageHasNext = false
+        pageHasPrevious = false
+        pageLiked = null
+        hasNext = false
+        hasPrevious = false
+        lastButtons = null
         queue = null
         audioOnly = false
         hostWanted = false
@@ -681,11 +794,13 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         applyRepeat()
         applyVideoTrack()
         val sp = SessionPlayer(p)
+        val buttons = sessionButtons()
+        lastButtons = buttons
         session = runCatching {
             MediaSession.Builder(context, sp)
                 .setId("pili-player-${sessionIds.incrementAndGet()}")
-                .setCallback(PiliSessionCallback(buttons = ::sessionButtons, onPlayMode = { queue?.cycleMode() }))
-                .setMediaButtonPreferences(sessionButtons())
+                .setCallback(PiliSessionCallback(buttons = ::sessionButtons, onCommand = ::onSessionCommand))
+                .setMediaButtonPreferences(buttons)
                 .setBitmapLoader(CoilBitmapLoader(context))
                 .apply { target?.let { setSessionActivity(PlaybackService.sessionActivity(context, it)) } }
                 .build()
@@ -716,8 +831,8 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     /**
      * What the session (notification, lock screen, headsets) sees: our title / UP / cover
      * instead of the stream's metadata, and play() through the controller (retry, replay).
-     * Previous / next exist only while a queue is attached and step through it; a single
-     * video hides them so the system shows ±10s.
+     * Previous / next exist only while there is somewhere to go (the queue, or the page's
+     * 分P / 合集) and step there; otherwise they are hidden so the system shows ±10s.
      */
     private inner class SessionPlayer(p: Player) : ForwardingPlayer(p) {
         private val wrapped = HashMap<Player.Listener, Player.Listener>()
@@ -740,19 +855,23 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
 
         override fun isCommandAvailable(command: Int): Boolean = availableCommands.contains(command)
 
-        override fun hasNextMediaItem(): Boolean = queue != null || super.hasNextMediaItem()
+        override fun hasNextMediaItem(): Boolean = hasNext || super.hasNextMediaItem()
 
-        override fun hasPreviousMediaItem(): Boolean = queue != null || super.hasPreviousMediaItem()
+        override fun hasPreviousMediaItem(): Boolean = hasPrevious || super.hasPreviousMediaItem()
 
-        override fun seekToNext() = if (queue != null) skipQueue(forward = true) else super.seekToNext()
+        override fun seekToNext() = if (hasNext) skipNext() else super.seekToNext()
 
-        override fun seekToNextMediaItem() = if (queue != null) skipQueue(forward = true) else super.seekToNextMediaItem()
+        override fun seekToNextMediaItem() = if (hasNext) skipNext() else super.seekToNextMediaItem()
 
-        override fun seekToPrevious() = if (queue != null) skipQueue(forward = false) else super.seekToPrevious()
+        override fun seekToPrevious() = if (hasPrevious) skipPrevious() else super.seekToPrevious()
 
         override fun seekToPreviousMediaItem() {
             val q = queue
-            if (q != null) playQueueIndex(q.previousIndex()) else super.seekToPreviousMediaItem()
+            when {
+                q != null -> playQueueIndex(q.previousIndex())
+                pageHasPrevious -> hooks?.previous?.invoke()
+                else -> super.seekToPreviousMediaItem()
+            }
         }
 
         fun notifyMetadataChanged() {
@@ -774,15 +893,13 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         }
     }
 
+    /** Previous / next only when there is an item to go to; otherwise the system shows ±10s in their slots. */
     private fun sessionCommands(base: Player.Commands): Player.Commands {
-        val skip = intArrayOf(
-            Player.COMMAND_SEEK_TO_PREVIOUS,
-            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
-            Player.COMMAND_SEEK_TO_NEXT,
-            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-        )
+        val previous = intArrayOf(Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+        val next = intArrayOf(Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
         val b = base.buildUpon()
-        if (queue != null) b.addAll(*skip) else b.removeAll(*skip)
+        if (hasPrevious) b.addAll(*previous) else b.removeAll(*previous)
+        if (hasNext) b.addAll(*next) else b.removeAll(*next)
         return b.build()
     }
 

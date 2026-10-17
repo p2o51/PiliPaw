@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -47,11 +50,14 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.ui.compose.ContentFrame
+import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
+import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.theme.ExpressiveColorSchemeFactory
@@ -222,16 +228,37 @@ fun BiliVideoPlayer(
 
     // ── Fullscreen: system bars + orientation; back exits; rotate-to-fullscreen on phones.
     val portraitVideo = ctrl.videoAspect < 1f
-    FullscreenWindowEffect(
-        activity = activity,
-        fullscreen = fullscreen,
-        lockLandscape = fullscreen && !portraitVideo && !inPip && !ctrl.pipForcedFullscreen && !ctrl.fullscreenByRotation,
-    )
-    BackHandler(enabled = fullscreen && !inPip) { onFullscreenChange(false) }
-    LaunchedEffect(fullscreen) { if (!fullscreen) ctrl.fullscreenByRotation = false }
     val configuration = LocalConfiguration.current
     val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val phone = configuration.smallestScreenWidthDp < 600
+    // Phones turn the display; large screens ignore (or letterbox) orientation requests,
+    // so there the picture itself turns when the window is portrait (see FullscreenWindowEffect).
+    FullscreenWindowEffect(
+        activity = activity,
+        fullscreen = fullscreen,
+        lockLandscape = phone && fullscreen && !portraitVideo && !inPip && !ctrl.pipForcedFullscreen && !ctrl.fullscreenByRotation,
+    )
+    val windowPortrait = configuration.screenHeightDp > configuration.screenWidthDp
+    val multiWindow = remember(configuration) { activity?.isInMultiWindowMode == true }
+    val turned = !phone && fullscreen && windowPortrait && !portraitVideo && !inPip && !ctrl.pipForcedFullscreen && !multiWindow
+    val turn = rememberLandscapeTurn(turned)
+    val turnAngle = remember { Animatable(0f) }
+    val turnTarget = if (turned) turn else 0f
+    val turnSpec = YoinMotion.defaultSpatialSpec<Float>()
+    val lastWindowPortrait = remember { booleanArrayOf(windowPortrait) }
+    LaunchedEffect(turnTarget, windowPortrait) {
+        // The display itself turned (auto-rotate): the picture is already where the user sees
+        // it, so jump; a fullscreen tap or the device turning the other way springs.
+        val displayTurned = lastWindowPortrait[0] != windowPortrait
+        lastWindowPortrait[0] = windowPortrait
+        if (displayTurned) turnAngle.snapTo(turnTarget) else turnAngle.animateTo(turnTarget, turnSpec)
+    }
+    // A SurfaceView cannot be rotated; the turned picture (and its spring back) draws through a TextureView.
+    val turning by remember { derivedStateOf { turnAngle.value != 0f } }
+    val surfaceType = if (turned || turning) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
+
+    BackHandler(enabled = fullscreen && !inPip) { onFullscreenChange(false) }
+    LaunchedEffect(fullscreen) { if (!fullscreen) ctrl.fullscreenByRotation = false }
     val autoFs by AppSettings.autoFullscreenLandscape.state.collectAsState()
     var lastLandscape by remember { mutableStateOf(landscape) }
     LaunchedEffect(landscape) {
@@ -256,7 +283,6 @@ fun BiliVideoPlayer(
     } else {
         with(density) { (statusTopPx - yInWindow).coerceIn(0f, statusTopPx.toFloat()).toDp() }
     }
-    var controlsVisible by remember { mutableStateOf(true) }
     val pageScheme = MaterialTheme.colorScheme
 
     Box(
@@ -265,69 +291,107 @@ fun BiliVideoPlayer(
             .clipToBounds()
             .onGloballyPositioned { yInWindow = it.positionInWindow().y },
     ) {
-        ContentFrame(
-            player = ctrl.player,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Fit,
-            shutter = {},
-        )
-
-        PlayerChromeTheme {
-            val phase = ctrl.phase
-            val showCover = target == null || (!ctrl.firstFrameRendered && phase !is PlayerPhase.Error)
-            AnimatedVisibility(
-                visible = showCover,
-                enter = fadeIn(YoinMotion.defaultEffectsSpec()),
-                exit = fadeOut(YoinMotion.slowEffectsSpec()),
+        Box(Modifier.fillMaxSize().turnedContent(turned) { turnAngle.value }) {
+            ContentFrame(
+                player = ctrl.player,
                 modifier = Modifier.fillMaxSize(),
-            ) {
-                CoverLoading(ctrl = ctrl, cover = target?.cover.orEmpty(), big = fullscreen)
-            }
+                surfaceType = surfaceType,
+                contentScale = ContentScale.Fit,
+                shutter = {},
+            )
 
-            if (!inPip) {
-                DanmakuLayer(ctrl = ctrl, big = fullscreen)
-            }
-            SubtitleOverlay(ctrl = ctrl, controlsVisible = controlsVisible && !inPip, big = fullscreen)
-
-            if (!inPip) {
-                val overlayScheme = MaterialTheme.colorScheme
-                PlayerOverlay(
+            PlayerChromeTheme {
+                PlayerLayers(
                     ctrl = ctrl,
-                    title = target?.title.orEmpty(),
+                    target = target,
                     fullscreen = fullscreen,
+                    turned = turned,
+                    inPip = inPip,
                     topInset = topInset,
                     canPip = canPip && activity != null,
                     activity = activity,
-                    sheetScheme = if (fullscreen) overlayScheme else pageScheme,
+                    pageScheme = pageScheme,
                     onBack = onBack,
-                    onFullscreenChange = { fs ->
-                        if (!fs) ctrl.fullscreenByRotation = false
-                        onFullscreenChange(fs)
-                    },
-                    onPip = { enterPip(activity, ctrl.videoAspect) },
-                    onControlsVisibleChange = { controlsVisible = it },
+                    onFullscreenChange = onFullscreenChange,
                 )
             }
+        }
+    }
+}
 
-            val error = phase as? PlayerPhase.Error
-            AnimatedVisibility(
-                visible = error != null && !inPip,
-                enter = fadeIn(YoinMotion.defaultEffectsSpec()),
-                exit = fadeOut(YoinMotion.defaultEffectsSpec()),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                Box(Modifier.fillMaxSize()) {
-                    PlayerErrorPanel(
-                        message = error?.message ?: "",
-                        onRetry = { ctrl.retry() },
-                    )
-                    IconButton(
-                        onClick = { if (fullscreen) onFullscreenChange(false) else onBack() },
-                        shapes = IconButtonDefaults.shapes(),
-                        modifier = Modifier.padding(top = topInset).padding(4.dp),
-                    ) {
-                        Icon(YoinSymbols.Back, contentDescription = "返回")
-                    }
+/** Cover, danmaku, subtitles, controls and the error panel, in the (possibly turned) player frame. */
+@Composable
+private fun PlayerLayers(
+    ctrl: PiliPlayerController,
+    target: PlayTarget?,
+    fullscreen: Boolean,
+    turned: Boolean,
+    inPip: Boolean,
+    topInset: Dp,
+    canPip: Boolean,
+    activity: ComponentActivity?,
+    pageScheme: ColorScheme,
+    onBack: () -> Unit,
+    onFullscreenChange: (Boolean) -> Unit,
+) {
+    var controlsVisible by remember { mutableStateOf(true) }
+    val phase = ctrl.phase
+    val showCover = target == null || (!ctrl.firstFrameRendered && phase !is PlayerPhase.Error)
+    Box(Modifier.fillMaxSize()) {
+        AnimatedVisibility(
+            visible = showCover,
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()),
+            exit = fadeOut(YoinMotion.slowEffectsSpec()),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            CoverLoading(ctrl = ctrl, cover = target?.cover.orEmpty(), big = fullscreen)
+        }
+
+        if (!inPip) {
+            DanmakuLayer(ctrl = ctrl, big = fullscreen)
+        }
+        SubtitleOverlay(ctrl = ctrl, controlsVisible = controlsVisible && !inPip, big = fullscreen)
+
+        if (!inPip) {
+            val overlayScheme = MaterialTheme.colorScheme
+            PlayerOverlay(
+                ctrl = ctrl,
+                title = target?.title.orEmpty(),
+                fullscreen = fullscreen,
+                turned = turned,
+                topInset = topInset,
+                canPip = canPip,
+                activity = activity,
+                sheetScheme = if (fullscreen) overlayScheme else pageScheme,
+                onBack = onBack,
+                onFullscreenChange = { fs ->
+                    if (!fs) ctrl.fullscreenByRotation = false
+                    onFullscreenChange(fs)
+                },
+                onPip = { enterPip(activity, ctrl.videoAspect) },
+                onControlsVisibleChange = { controlsVisible = it },
+            )
+        }
+
+        val error = phase as? PlayerPhase.Error
+        AnimatedVisibility(
+            visible = error != null && !inPip,
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()),
+            exit = fadeOut(YoinMotion.defaultEffectsSpec()),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                PlayerErrorPanel(
+                    message = error?.message ?: "",
+                    onRetry = { ctrl.retry() },
+                )
+                IconButton(
+                    onClick = { if (fullscreen) onFullscreenChange(false) else onBack() },
+                    shapes = IconButtonDefaults.shapes(),
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = OnVideo),
+                    modifier = Modifier.padding(top = topInset).padding(4.dp),
+                ) {
+                    Icon(YoinSymbols.Back, contentDescription = "返回")
                 }
             }
         }
@@ -365,7 +429,9 @@ private fun CoverLoading(ctrl: PiliPlayerController, cover: String, big: Boolean
 
 /**
  * Controls sit on a dark scrim over video, so they always use a dark scheme
- * derived from the page's (cover-tinted) primary.
+ * derived from the page's (cover-tinted) primary: its light primary carries the
+ * accents (centre button, seek progress) and its surfaces the fullscreen panel,
+ * while icons and text over the picture are plain white ([OnVideo]).
  */
 @Composable
 private fun PlayerChromeTheme(content: @Composable () -> Unit) {

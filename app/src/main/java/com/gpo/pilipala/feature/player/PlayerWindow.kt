@@ -9,20 +9,30 @@ import android.media.AudioManager
 import android.os.Build
 import android.provider.Settings
 import android.util.Rational
+import android.view.OrientationEventListener
+import android.view.Surface
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Constraints
 import androidx.core.app.PictureInPictureModeChangedInfo
 import androidx.core.util.Consumer
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /** True while the hosting activity is in Picture-in-Picture. */
 @Composable
@@ -58,8 +68,16 @@ internal fun enterPip(activity: Activity?, aspect: Float): Boolean {
 
 /**
  * Immersive fullscreen: hides system bars (swipe shows them transiently) and,
- * for landscape videos, asks for sensor-landscape. Everything is restored when
+ * with [lockLandscape], asks for sensor-landscape. Everything is restored when
  * fullscreen ends or the player leaves composition.
+ *
+ * [lockLandscape] is for phones only. On large screens (sw ≥ 600dp) Android 16+
+ * ignores orientation requests from apps targeting SDK 36, and the opt-out
+ * (PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY) does not rotate the display
+ * either: devices like the Pixel Tablet set ignoreOrientationRequest, so a
+ * landscape request only letterboxes the app into a landscape box inside the
+ * portrait screen. Large screens turn the picture in software instead
+ * ([turnedContent]).
  */
 @Composable
 internal fun FullscreenWindowEffect(activity: Activity?, fullscreen: Boolean, lockLandscape: Boolean) {
@@ -76,6 +94,67 @@ internal fun FullscreenWindowEffect(activity: Activity?, fullscreen: Boolean, lo
         onDispose {
             controller.show(WindowInsetsCompat.Type.systemBars())
             if (lockLandscape) activity.requestedOrientation = previousOrientation
+        }
+    }
+}
+
+/**
+ * Which way a software-turned landscape picture faces: +90 (turned clockwise, the
+ * device's right edge on top, the usual landscape) or -90. While [enabled] it follows
+ * the accelerometer relative to the current display rotation, so turning the device
+ * either way brings the picture upright; held upright it keeps the last side.
+ */
+@Composable
+internal fun rememberLandscapeTurn(enabled: Boolean): Float {
+    val context = LocalContext.current
+    val view = LocalView.current
+    var turn by remember { mutableFloatStateOf(90f) }
+    DisposableEffect(enabled, context, view) {
+        if (!enabled) return@DisposableEffect onDispose { }
+        val listener = object : OrientationEventListener(context) {
+            override fun onOrientationChanged(orientation: Int) {
+                if (orientation == ORIENTATION_UNKNOWN) return
+                val displayDegrees = (view.display?.rotation ?: Surface.ROTATION_0) * 90
+                // The device's clockwise turn relative to how the screen is drawn now.
+                when ((orientation + displayDegrees) % 360) {
+                    in 60..120 -> turn = -90f
+                    in 240..300 -> turn = 90f
+                }
+            }
+        }
+        if (listener.canDetectOrientation()) listener.enable()
+        onDispose { listener.disable() }
+    }
+    return turn
+}
+
+/**
+ * Lays the content out in a turned frame: with [turned] it is measured with width and
+ * height swapped (a landscape frame inside a portrait window), and it is drawn rotated
+ * by [angle] degrees, scaled down just enough that the turned box always fits. So an
+ * angle springing 0 → 90 grows the picture from the inline size into the full window,
+ * and pointer input follows the rotation (Compose hit-tests through the layer).
+ */
+internal fun Modifier.turnedContent(turned: Boolean, angle: () -> Float): Modifier = layout { measurable, constraints ->
+    val w = constraints.maxWidth
+    val h = constraints.maxHeight
+    if (w == Constraints.Infinity || h == Constraints.Infinity) {
+        val p = measurable.measure(constraints)
+        return@layout layout(p.width, p.height) { p.place(0, 0) }
+    }
+    val placeable = measurable.measure(if (turned) Constraints.fixed(h, w) else Constraints.fixed(w, h))
+    layout(w, h) {
+        placeable.placeWithLayer((w - placeable.width) / 2, (h - placeable.height) / 2) {
+            val a = angle()
+            rotationZ = a
+            val rad = Math.toRadians(a.toDouble())
+            val c = abs(cos(rad)).toFloat()
+            val s = abs(sin(rad)).toFloat()
+            val bw = placeable.width * c + placeable.height * s
+            val bh = placeable.width * s + placeable.height * c
+            val fit = if (bw > 0f && bh > 0f) minOf(1f, w / bw, h / bh) else 1f
+            scaleX = fit
+            scaleY = fit
         }
     }
 }

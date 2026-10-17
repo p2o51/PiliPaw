@@ -3,6 +3,7 @@ package com.gpo.pilipala.feature.player
 import android.app.Activity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -38,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -45,6 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
@@ -60,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -68,6 +72,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
@@ -95,14 +100,38 @@ internal class GestureFeedback {
 private fun clock(ms: Long): String = Fmt.durationMs(ms.coerceAtLeast(0L))
 
 /**
+ * Icons and text drawn straight over the picture. They sit on black scrims, never on a
+ * themed surface, so they are plain white whatever the cover tint or the app theme
+ * (a scrim colour, like the scrims themselves). Accents (seek progress, the centre
+ * button, toggles) keep the dark chrome scheme's primary, which is a light tone.
+ */
+internal val OnVideo = Color.White
+internal val OnVideoVariant = Color.White.copy(alpha = 0.8f)
+
+/** A soft shadow under on-video text, for the frames where the scrim alone is thin. */
+private fun TextStyle.onVideo(): TextStyle = copy(shadow = Shadow(Color.Black.copy(alpha = 0.45f), blurRadius = 8f))
+
+/** Scrim alpha ramp (top edge → clear): dense where the bar sits, eased out below it. */
+private val ScrimRamp = arrayOf(0f to 0.64f, 0.35f to 0.54f, 0.62f to 0.32f, 0.82f to 0.12f, 1f to 0f)
+
+private fun scrimBrush(fromTop: Boolean): Brush {
+    val stops = ScrimRamp.map { (at, alpha) -> (if (fromTop) at else 1f - at) to Color.Black.copy(alpha = alpha) }
+        .sortedBy { it.first }
+    return Brush.verticalGradient(*stops.toTypedArray())
+}
+
+/**
  * Everything drawn over the picture: gestures, auto-hiding chrome (top bar,
  * centre play/pause, bottom bar), gesture feedback and the settings sheet.
+ * [turned]: the frame is drawn rotated (large-screen portrait fullscreen), so no
+ * window-level UI (dialogs, IME) and no window insets inside it.
  */
 @Composable
 internal fun PlayerOverlay(
     ctrl: PiliPlayerController,
     title: String,
     fullscreen: Boolean,
+    turned: Boolean,
     topInset: Dp,
     canPip: Boolean,
     activity: Activity?,
@@ -134,7 +163,11 @@ internal fun PlayerOverlay(
             visible = false
         }
     }
-    LaunchedEffect(fullscreen) { if (!fullscreen) locked = false }
+    LaunchedEffect(fullscreen) {
+        if (!fullscreen) locked = false
+        // The sheet is a side panel in fullscreen and a bottom sheet inline: never carry one across.
+        sheet = null
+    }
 
     Box(
         modifier
@@ -256,64 +289,74 @@ internal fun PlayerOverlay(
             exit = fadeOut(YoinMotion.defaultEffectsSpec()),
             modifier = Modifier.fillMaxSize(),
         ) {
+            val cutout = if (fullscreen && !turned) Modifier.windowInsetsPadding(WindowInsets.displayCutout) else Modifier
             Box(Modifier.fillMaxSize()) {
                 Box(
                     Modifier
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
-                        .height(topInset + if (fullscreen) 112.dp else 80.dp)
-                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent))),
+                        .height(topInset + if (fullscreen) 132.dp else 96.dp)
+                        .background(scrimBrush(fromTop = true)),
                 )
                 Box(
                     Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .height(if (fullscreen) 140.dp else 84.dp)
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f)))),
+                        .height(if (fullscreen) 176.dp else 100.dp)
+                        .background(scrimBrush(fromTop = false)),
                 )
-                TopBar(
-                    title = title,
-                    fullscreen = fullscreen,
-                    danmakuOn = danmakuOn,
-                    canPip = canPip,
-                    onBack = { if (fullscreen) onFullscreenChange(false) else onBack() },
-                    onDanmaku = {
-                        haptics.performHapticFeedback(if (danmakuOn) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
-                        AppSettings.set(AppSettings.danmakuEnabled, !danmakuOn)
-                        poke++
-                    },
-                    onPip = onPip,
-                    onSend = if (canSend && !fullscreen) {
-                        { composing = true }
-                    } else {
-                        null
-                    },
-                    onMore = { sheet = SheetPage.Main },
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = topInset)
-                        .then(if (fullscreen) Modifier.windowInsetsPadding(WindowInsets.displayCutout) else Modifier),
-                )
-                BottomBar(
-                    ctrl = ctrl,
-                    fullscreen = fullscreen,
-                    feedback = feedback,
-                    onPoke = { poke++ },
-                    onQuality = { sheet = SheetPage.Quality },
-                    onSpeed = { sheet = SheetPage.Speed },
-                    onSend = if (canSend) {
-                        { composing = true }
-                    } else {
-                        null
-                    },
-                    onFullscreen = {
-                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onFullscreenChange(!fullscreen)
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .then(if (fullscreen) Modifier.windowInsetsPadding(WindowInsets.displayCutout) else Modifier),
-                )
+                CompositionLocalProvider(LocalContentColor provides OnVideo) {
+                    TopBar(
+                        title = title,
+                        fullscreen = fullscreen,
+                        danmakuOn = danmakuOn,
+                        canPip = canPip,
+                        onBack = { if (fullscreen) onFullscreenChange(false) else onBack() },
+                        onDanmaku = {
+                            haptics.performHapticFeedback(if (danmakuOn) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
+                            AppSettings.set(AppSettings.danmakuEnabled, !danmakuOn)
+                            poke++
+                        },
+                        onPip = onPip,
+                        onSend = if (canSend && !fullscreen) {
+                            { composing = true }
+                        } else {
+                            null
+                        },
+                        onMore = { sheet = SheetPage.Main },
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = topInset)
+                            .then(cutout),
+                    )
+                    BottomBar(
+                        ctrl = ctrl,
+                        fullscreen = fullscreen,
+                        feedback = feedback,
+                        onPoke = { poke++ },
+                        onQuality = { sheet = SheetPage.Quality },
+                        onSpeed = { sheet = SheetPage.Speed },
+                        onSubtitles = { sheet = SheetPage.Subtitle },
+                        onNext = {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            ctrl.skipNext()
+                            poke++
+                        },
+                        // Typing needs the IME, which does not turn with the picture.
+                        onSend = if (canSend && !turned) {
+                            { composing = true }
+                        } else {
+                            null
+                        },
+                        onFullscreen = {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            onFullscreenChange(!fullscreen)
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .then(cutout),
+                    )
+                }
             }
         }
 
@@ -324,9 +367,19 @@ internal fun PlayerOverlay(
             exit = fadeOut(YoinMotion.defaultEffectsSpec()) + scaleOut(YoinMotion.fastSpatialSpec(), targetScale = 0.7f),
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .windowInsetsPadding(WindowInsets.displayCutout)
+                .then(if (turned) Modifier else Modifier.windowInsetsPadding(WindowInsets.displayCutout))
                 .padding(start = 16.dp),
         ) {
+            val lockContainer by animateColorAsState(
+                if (locked) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.5f),
+                YoinMotion.defaultEffectsSpec(),
+                label = "lockContainer",
+            )
+            val lockContent by animateColorAsState(
+                if (locked) MaterialTheme.colorScheme.onPrimary else OnVideo,
+                YoinMotion.defaultEffectsSpec(),
+                label = "lockContent",
+            )
             FilledIconButton(
                 onClick = {
                     locked = !locked
@@ -334,10 +387,7 @@ internal fun PlayerOverlay(
                     poke++
                 },
                 shapes = IconButtonDefaults.shapes(),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
-                    contentColor = if (locked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                ),
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = lockContainer, contentColor = lockContent),
             ) {
                 Icon(PiliSymbols.Lock, contentDescription = if (locked) "解锁" else "锁定")
             }
@@ -364,6 +414,8 @@ internal fun PlayerOverlay(
                 1 -> ContainedLoadingIndicator(Modifier.size(if (fullscreen) 72.dp else 56.dp))
                 2 -> {
                     val playing = ctrl.isPlaying || (ctrl.playWhenReady && !ctrl.ended)
+                    // Solid light container (the dark chrome scheme's primary) with a dark glyph:
+                    // the glyph reads on the container, the container reads on dark frames.
                     FilledIconButton(
                         onClick = {
                             haptics.performHapticFeedback(if (playing) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
@@ -371,6 +423,10 @@ internal fun PlayerOverlay(
                             poke++
                         },
                         shapes = IconButtonDefaults.shapes(),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
                         modifier = Modifier.size(
                             if (fullscreen) IconButtonDefaults.largeContainerSize() else IconButtonDefaults.mediumContainerSize(),
                         ),
@@ -390,9 +446,17 @@ internal fun PlayerOverlay(
         GestureFeedbackLayer(ctrl, feedback)
     }
 
-    sheet?.let { start ->
-        MaterialTheme(colorScheme = sheetScheme) {
-            PlayerSheet(ctrl = ctrl, start = start, onDismiss = { sheet = null })
+    // Settings: a bottom sheet inline; in fullscreen a side panel inside the picture, so it
+    // turns with a turned frame and no dialog window brings the system bars back.
+    if (fullscreen) {
+        PlayerSidePanel(page = sheet, onDismiss = { sheet = null }) { start, close ->
+            PlayerSheetPages(ctrl = ctrl, start = start, close = close)
+        }
+    } else {
+        sheet?.let { start ->
+            MaterialTheme(colorScheme = sheetScheme) {
+                PlayerSheet(ctrl = ctrl, start = start, onDismiss = { sheet = null })
+            }
         }
     }
     if (composing) {
@@ -428,8 +492,8 @@ private fun TopBar(
         Spacer(Modifier.width(12.dp))
         Text(
             title,
-            style = if (fullscreen) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = (if (fullscreen) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleSmall).onVideo(),
+            color = OnVideo,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
@@ -456,7 +520,7 @@ private fun TopBar(
                 Icon(
                     if (on) PiliSymbols.Danmaku else PiliSymbols.DanmakuOff,
                     contentDescription = if (on) "关闭弹幕" else "开启弹幕",
-                    tint = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    tint = if (on) OnVideo else OnVideoVariant,
                 )
             }
         }
@@ -479,14 +543,29 @@ private fun BottomBar(
     onPoke: () -> Unit,
     onQuality: () -> Unit,
     onSpeed: () -> Unit,
+    onSubtitles: () -> Unit,
+    onNext: () -> Unit,
     onSend: (() -> Unit)?,
     onFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
     val playing = ctrl.isPlaying || (ctrl.playWhenReady && !ctrl.ended)
-    val timeStyle = MaterialTheme.typography.labelMedium.withTabularFigures()
+    val timeStyle = (if (fullscreen) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelMedium)
+        .withTabularFigures()
+        .onVideo()
     val shown = feedback.seekTargetMs ?: ctrl.positionMs
+    val nextButton: @Composable () -> Unit = {
+        AnimatedVisibility(
+            visible = ctrl.hasNext,
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + scaleIn(YoinMotion.fastSpatialSpec(), initialScale = 0.6f),
+            exit = fadeOut(YoinMotion.fastEffectsSpec()) + scaleOut(YoinMotion.fastSpatialSpec(), targetScale = 0.6f),
+        ) {
+            IconButton(onClick = onNext, shapes = IconButtonDefaults.shapes()) {
+                Icon(YoinSymbols.SkipNextFilled, contentDescription = "下一个")
+            }
+        }
+    }
     val playButton: @Composable () -> Unit = {
         IconButton(
             onClick = {
@@ -517,27 +596,45 @@ private fun BottomBar(
             modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(clock(shown), style = timeStyle, color = MaterialTheme.colorScheme.onSurface)
+            Text(clock(shown), style = timeStyle, color = OnVideo)
             SeekBar(ctrl, feedback, onPoke, Modifier.weight(1f).padding(horizontal = 10.dp))
-            Text(clock(ctrl.durationMs), style = timeStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(clock(ctrl.durationMs), style = timeStyle, color = OnVideoVariant)
             Spacer(Modifier.width(6.dp))
+            nextButton()
             qualityButton()
             fullscreenButton()
         }
     } else {
         Column(modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
-                Text(clock(shown), style = timeStyle, color = MaterialTheme.colorScheme.onSurface)
+                Text(clock(shown), style = timeStyle, color = OnVideo)
                 SeekBar(ctrl, feedback, onPoke, Modifier.weight(1f).padding(horizontal = 12.dp))
-                Text(clock(ctrl.durationMs), style = timeStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(clock(ctrl.durationMs), style = timeStyle, color = OnVideoVariant)
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 playButton()
+                nextButton()
                 if (onSend != null) {
                     Spacer(Modifier.width(4.dp))
                     DanmakuSendPill(onClick = onSend)
                 }
                 Spacer(Modifier.weight(1f))
+                if (ctrl.subtitles.isNotEmpty()) {
+                    // A subtitle showing: a quiet white block behind the glyph.
+                    val on = ctrl.subtitleIndex >= 0
+                    val block by animateColorAsState(
+                        if (on) OnVideo.copy(alpha = 0.2f) else Color.Transparent,
+                        YoinMotion.defaultEffectsSpec(),
+                        label = "subtitleBlock",
+                    )
+                    IconButton(
+                        onClick = onSubtitles,
+                        shapes = IconButtonDefaults.shapes(),
+                        colors = IconButtonDefaults.iconButtonColors(containerColor = block, contentColor = OnVideo),
+                    ) {
+                        Icon(PiliSymbols.Subtitles, contentDescription = "字幕")
+                    }
+                }
                 PillButton(text = if (ctrl.speed == 1f) "倍速" else speedLabel(ctrl.speed), onClick = onSpeed)
                 qualityButton()
                 fullscreenButton()
@@ -556,8 +653,8 @@ private fun PillButton(text: String, onClick: () -> Unit) {
             onClick()
         },
         shape = YoinShapeTokens.Full,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        color = OnVideo.copy(alpha = 0.2f),
+        contentColor = OnVideo,
     ) {
         val motion = MaterialTheme.motionScheme
         AnimatedContent(
@@ -592,9 +689,11 @@ private fun SeekBar(
     val fraction = scrub ?: if (duration > 0) (ctrl.positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val buffered = if (duration > 0) (ctrl.bufferedMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val interaction = remember { MutableInteractionSource() }
+    // Played: the chrome scheme's primary (a light tone that reads on the scrim);
+    // buffered / remaining: white at low alphas, so the track shows on any frame.
     val accent = MaterialTheme.colorScheme.primary
-    val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
-    val bufferedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)
+    val track = OnVideo.copy(alpha = 0.28f)
+    val bufferedColor = OnVideo.copy(alpha = 0.5f)
     val flowing = ctrl.isPlaying && scrub == null
     val amplitude by animateFloatAsState(if (flowing) 1f else 0f, YoinMotion.defaultEffectsSpec(), label = "waveAmp")
     val strokePx = with(LocalDensity.current) { 4.dp.toPx() }

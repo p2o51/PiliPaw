@@ -184,20 +184,31 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
     }
 
     /** Auto-play next: next part, else next video in the season. Returns false at the end. */
-    fun playNext(): Boolean {
+    fun playNext(): Boolean = step(+1, apply = true)
+
+    /** Previous part, else previous video in the season (上一个 in the media controls). */
+    fun playPrevious(): Boolean = step(-1, apply = true)
+
+    /** Whether [playNext] / [playPrevious] has somewhere to go (reads snapshot state). */
+    fun hasNext(): Boolean = step(+1, apply = false)
+    fun hasPrevious(): Boolean = step(-1, apply = false)
+
+    private fun step(delta: Int, apply: Boolean): Boolean {
         if (queue != null) return false // the queue decides (the player steps it)
         val d = detail ?: return false
         if (d.pages.size > 1) {
             val i = d.pages.indexOfFirst { it.cid == cid }
-            if (i in 0 until d.pages.lastIndex) {
-                selectPage(d.pages[i + 1])
+            val p = d.pages.getOrNull(i + delta)
+            if (i >= 0 && p != null) {
+                if (apply) selectPage(p)
                 return true
             }
         }
         val eps = d.season?.episodes.orEmpty()
         val j = eps.indexOfFirst { it.cid == cid || it.bvid == d.bvid }
-        if (j in 0 until eps.lastIndex) {
-            selectEpisode(eps[j + 1])
+        val e = eps.getOrNull(j + delta)
+        if (j >= 0 && e != null) {
+            if (apply) selectEpisode(e)
             return true
         }
         return false

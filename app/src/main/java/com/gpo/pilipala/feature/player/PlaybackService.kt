@@ -118,67 +118,101 @@ class PlaybackService : MediaSessionService() {
             )
         }
 
-        /** ±10s in the notification's back/forward slots (a single video: previous/next are not offered). */
-        internal val mediaButtons: List<CommandButton> by lazy {
-            listOf(
-                CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10)
-                    .setPlayerCommand(Player.COMMAND_SEEK_BACK)
-                    .setDisplayName("后退")
-                    .setSlots(CommandButton.SLOT_BACK)
-                    .build(),
-                CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_10)
-                    .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
-                    .setDisplayName("快进")
-                    .setSlots(CommandButton.SLOT_FORWARD)
+        /** Custom session commands behind the media controls' extra buttons. */
+        internal const val ACTION_PLAY_MODE = "com.gpo.pilipala.session.PLAY_MODE"
+        internal const val ACTION_LIKE = "com.gpo.pilipala.session.LIKE"
+        internal const val ACTION_AUDIO_ONLY = "com.gpo.pilipala.session.AUDIO_ONLY"
+        private val playModeCommand = SessionCommand(ACTION_PLAY_MODE, Bundle.EMPTY)
+        private val likeCommand = SessionCommand(ACTION_LIKE, Bundle.EMPTY)
+        private val audioOnlyCommand = SessionCommand(ACTION_AUDIO_ONLY, Bundle.EMPTY)
+        internal val customCommands = listOf(playModeCommand, likeCommand, audioOnlyCommand)
+
+        /**
+         * The media controls (notification, lock screen, the quick-settings media card,
+         * Bluetooth / car controllers). The back / forward slots are always filled:
+         * 上一个 / 下一个 when there is an item to go to (queue, 分P, 合集), else ±10s.
+         * The overflow carries the play mode (queue only), 点赞 (signed in, [liked] not
+         * null) and 仅听声音; the system card shows the first two of them.
+         */
+        internal fun buttons(
+            hasPrevious: Boolean,
+            hasNext: Boolean,
+            mode: PlayMode?,
+            liked: Boolean?,
+            audioOnly: Boolean,
+        ): List<CommandButton> = buildList {
+            add(
+                if (hasPrevious) {
+                    CommandButton.Builder(CommandButton.ICON_PREVIOUS)
+                        .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS)
+                        .setDisplayName("上一个")
+                } else {
+                    CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10)
+                        .setPlayerCommand(Player.COMMAND_SEEK_BACK)
+                        .setDisplayName("后退10秒")
+                }.setSlots(CommandButton.SLOT_BACK).build(),
+            )
+            add(
+                if (hasNext) {
+                    CommandButton.Builder(CommandButton.ICON_NEXT)
+                        .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT)
+                        .setDisplayName("下一个")
+                } else {
+                    CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_10)
+                        .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
+                        .setDisplayName("快进10秒")
+                }.setSlots(CommandButton.SLOT_FORWARD).build(),
+            )
+            if (mode != null) {
+                add(
+                    CommandButton.Builder(
+                        when (mode) {
+                            PlayMode.ListLoop -> CommandButton.ICON_REPEAT_ALL
+                            PlayMode.Shuffle -> CommandButton.ICON_SHUFFLE_ON
+                            PlayMode.RepeatOne -> CommandButton.ICON_REPEAT_ONE
+                        },
+                    )
+                        .setSessionCommand(playModeCommand)
+                        .setDisplayName(mode.label)
+                        .setSlots(CommandButton.SLOT_OVERFLOW)
+                        .build(),
+                )
+            }
+            if (liked != null) {
+                add(
+                    CommandButton.Builder(if (liked) CommandButton.ICON_THUMB_UP_FILLED else CommandButton.ICON_THUMB_UP_UNFILLED)
+                        .setSessionCommand(likeCommand)
+                        .setDisplayName(if (liked) "取消点赞" else "点赞")
+                        .setSlots(CommandButton.SLOT_OVERFLOW)
+                        .build(),
+                )
+            }
+            add(
+                CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+                    .setCustomIconResId(if (audioOnly) R.drawable.ic_media_audio_only_on else R.drawable.ic_media_audio_only)
+                    .setSessionCommand(audioOnlyCommand)
+                    .setDisplayName(if (audioOnly) "显示画面" else "仅听声音")
+                    .setSlots(CommandButton.SLOT_OVERFLOW)
                     .build(),
             )
         }
-
-        /** Custom session command behind the notification's play-mode button. */
-        internal const val ACTION_PLAY_MODE = "com.gpo.pilipala.session.PLAY_MODE"
-        internal val playModeCommand = SessionCommand(ACTION_PLAY_MODE, Bundle.EMPTY)
-
-        /** A queue is attached: previous / next in the back/forward slots, the play mode in the overflow. */
-        internal fun queueButtons(mode: PlayMode): List<CommandButton> = listOf(
-            CommandButton.Builder(CommandButton.ICON_PREVIOUS)
-                .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS)
-                .setDisplayName("上一个")
-                .setSlots(CommandButton.SLOT_BACK)
-                .build(),
-            CommandButton.Builder(CommandButton.ICON_NEXT)
-                .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT)
-                .setDisplayName("下一个")
-                .setSlots(CommandButton.SLOT_FORWARD)
-                .build(),
-            CommandButton.Builder(
-                when (mode) {
-                    PlayMode.ListLoop -> CommandButton.ICON_REPEAT_ALL
-                    PlayMode.Shuffle -> CommandButton.ICON_SHUFFLE_ON
-                    PlayMode.RepeatOne -> CommandButton.ICON_REPEAT_ONE
-                },
-            )
-                .setSessionCommand(playModeCommand)
-                .setDisplayName(mode.label)
-                .setSlots(CommandButton.SLOT_OVERFLOW)
-                .build(),
-        )
     }
 }
 
 /**
  * Session callback. Which transport commands exist is decided by the controller's
- * session player (previous / next only while a queue is attached, so a single video
- * keeps ±10s); the buttons come from [buttons], the play-mode tap goes to [onPlayMode].
+ * session player (previous / next only when there is an item to go to, so otherwise
+ * the slots keep ±10s); the buttons come from [buttons], custom taps go to [onCommand].
  */
 internal class PiliSessionCallback(
     private val buttons: () -> List<CommandButton>,
-    private val onPlayMode: () -> Unit,
+    private val onCommand: (String) -> Boolean,
 ) : MediaSession.Callback {
     override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
         MediaSession.ConnectionResult.AcceptedResultBuilder(session)
             .setAvailableSessionCommands(
                 MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
-                    .add(PlaybackService.playModeCommand)
+                    .apply { PlaybackService.customCommands.forEach { add(it) } }
                     .build(),
             )
             .setMediaButtonPreferences(buttons())
@@ -190,8 +224,7 @@ internal class PiliSessionCallback(
         customCommand: SessionCommand,
         args: Bundle,
     ): ListenableFuture<SessionResult> {
-        if (customCommand.customAction == PlaybackService.ACTION_PLAY_MODE) {
-            onPlayMode()
+        if (onCommand(customCommand.customAction)) {
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
         return super.onCustomCommand(session, controller, customCommand, args)

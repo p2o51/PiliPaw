@@ -356,8 +356,8 @@ internal fun DanmakuSendPill(onClick: () -> Unit, modifier: Modifier = Modifier)
             onClick()
         },
         shape = YoinShapeTokens.Full,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        color = OnVideo.copy(alpha = 0.2f),
+        contentColor = OnVideo,
         modifier = modifier,
     ) {
         Row(

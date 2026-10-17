@@ -1,6 +1,7 @@
 package com.gpo.pilipala.feature.player
 
 import android.os.SystemClock
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -9,13 +10,19 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -42,22 +49,27 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinShapeTokens
 import com.gpo.pilipala.ui.theme.withTabularFigures
@@ -80,6 +92,7 @@ internal fun speedLabel(v: Float): String =
  * The player's "more" sheet (Flutter header_control: 画质 / 音质 / 解码格式 /
  * 播放速度 / 弹幕设置 / 定时关闭 / 播放顺序 / 字幕 / 稍后再看). One sheet with
  * spring-animated pages; quality / speed buttons open it straight on their page.
+ * Inline it is a bottom sheet; fullscreen uses [PlayerSidePanel] with the same pages.
  */
 @Composable
 internal fun PlayerSheet(
@@ -87,66 +100,134 @@ internal fun PlayerSheet(
     start: SheetPage,
     onDismiss: () -> Unit,
 ) {
-    var page by remember { mutableStateOf(start) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val close: () -> Unit = {
         scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
     }
-    val motion = MaterialTheme.motionScheme
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        AnimatedContent(
-            targetState = page,
-            transitionSpec = {
-                val forward = targetState.ordinal > initialState.ordinal
-                (
-                    fadeIn(motion.defaultEffectsSpec()) +
-                        slideInHorizontally(motion.defaultSpatialSpec()) { w -> if (forward) w / 6 else -w / 6 }
-                    ) togetherWith fadeOut(motion.fastEffectsSpec()) using
-                    SizeTransform(clip = false) { _, _ -> motion.defaultSpatialSpec() }
-            },
-            label = "playerSheetPage",
-        ) { p ->
-            Column(
+        PlayerSheetPages(ctrl = ctrl, start = start, close = close, topGap = 0.dp, bottomGap = 24.dp)
+    }
+}
+
+/**
+ * Fullscreen settings: a panel sliding in from the end edge inside the picture, over a
+ * scrim that closes it. It lives in the player frame, so it turns with a turned picture
+ * and never opens a window (which would bring the system bars back).
+ */
+@Composable
+internal fun PlayerSidePanel(
+    page: SheetPage?,
+    onDismiss: () -> Unit,
+    content: @Composable (start: SheetPage, close: () -> Unit) -> Unit,
+) {
+    // The last page stays drawn while the panel slides out.
+    val shown = remember { arrayOfNulls<SheetPage>(1) }
+    if (page != null) shown[0] = page
+    val visible = page != null
+    BackHandler(enabled = visible) { onDismiss() }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val panelWidth = (maxWidth * 0.42f).coerceIn(300.dp, 420.dp).coerceAtMost(maxWidth)
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()),
+            exit = fadeOut(YoinMotion.defaultEffectsSpec()),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Box(
                 Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 24.dp),
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.4f))
+                    .pointerInput(Unit) { detectTapGestures { onDismiss() } },
+            )
+        }
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInHorizontally(YoinMotion.defaultSpatialSpec()) { it } + fadeIn(YoinMotion.defaultEffectsSpec()),
+            exit = slideOutHorizontally(YoinMotion.fastSpatialSpec()) { it } + fadeOut(YoinMotion.fastEffectsSpec()),
+            modifier = Modifier.align(Alignment.CenterEnd),
+        ) {
+            Surface(
+                shape = YoinContainerShapes.Panel,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .width(panelWidth)
+                    .fillMaxHeight()
+                    .padding(8.dp)
+                    // Taps inside stay inside (they would otherwise close the panel through the scrim).
+                    .pointerInput(Unit) { detectTapGestures { } },
             ) {
-                SheetHeader(
-                    title = when (p) {
-                        SheetPage.Main -> "播放设置"
-                        SheetPage.Quality -> "画质"
-                        SheetPage.Audio -> "音质"
-                        SheetPage.Codec -> "解码格式"
-                        SheetPage.Speed -> "播放速度"
-                        SheetPage.Danmaku -> "弹幕设置"
-                        SheetPage.Sleep -> "定时关闭"
-                        SheetPage.Subtitle -> "字幕"
-                        SheetPage.DanmakuBlock -> "屏蔽词"
-                    },
-                    onBack = when {
-                        p == SheetPage.DanmakuBlock -> {
-                            { page = SheetPage.Danmaku }
-                        }
-                        p != SheetPage.Main && start == SheetPage.Main -> {
-                            { page = SheetPage.Main }
-                        }
-                        else -> null
-                    },
-                )
-                when (p) {
-                    SheetPage.Main -> MainPage(ctrl, onOpen = { page = it }, onClose = close)
-                    SheetPage.Quality -> QualityPage(ctrl, close)
-                    SheetPage.Audio -> AudioPage(ctrl, close)
-                    SheetPage.Codec -> CodecPage(ctrl, close)
-                    SheetPage.Speed -> SpeedPage(ctrl)
-                    SheetPage.Danmaku -> DanmakuPage(onOpenBlock = { page = SheetPage.DanmakuBlock })
-                    SheetPage.Sleep -> SleepPage(ctrl, close)
-                    SheetPage.Subtitle -> SubtitlePage(ctrl, close)
-                    SheetPage.DanmakuBlock -> DanmakuBlockRulesEditor()
+                shown[0]?.let { start ->
+                    key(start) { content(start, onDismiss) }
                 }
+            }
+        }
+    }
+}
+
+/** The sheet's pages: a header with back, then the page, springing between pages. */
+@Composable
+internal fun PlayerSheetPages(
+    ctrl: PiliPlayerController,
+    start: SheetPage,
+    close: () -> Unit,
+    topGap: Dp = 12.dp,
+    bottomGap: Dp = 16.dp,
+) {
+    var page by remember { mutableStateOf(start) }
+    val motion = MaterialTheme.motionScheme
+    AnimatedContent(
+        targetState = page,
+        transitionSpec = {
+            val forward = targetState.ordinal > initialState.ordinal
+            (
+                fadeIn(motion.defaultEffectsSpec()) +
+                    slideInHorizontally(motion.defaultSpatialSpec()) { w -> if (forward) w / 6 else -w / 6 }
+                ) togetherWith fadeOut(motion.fastEffectsSpec()) using
+                SizeTransform(clip = false) { _, _ -> motion.defaultSpatialSpec() }
+        },
+        label = "playerSheetPage",
+    ) { p ->
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(top = topGap, bottom = bottomGap),
+        ) {
+            SheetHeader(
+                title = when (p) {
+                    SheetPage.Main -> "播放设置"
+                    SheetPage.Quality -> "画质"
+                    SheetPage.Audio -> "音质"
+                    SheetPage.Codec -> "解码格式"
+                    SheetPage.Speed -> "播放速度"
+                    SheetPage.Danmaku -> "弹幕设置"
+                    SheetPage.Sleep -> "定时关闭"
+                    SheetPage.Subtitle -> "字幕"
+                    SheetPage.DanmakuBlock -> "屏蔽词"
+                },
+                onBack = when {
+                    p == SheetPage.DanmakuBlock -> {
+                        { page = SheetPage.Danmaku }
+                    }
+                    p != SheetPage.Main && start == SheetPage.Main -> {
+                        { page = SheetPage.Main }
+                    }
+                    else -> null
+                },
+            )
+            when (p) {
+                SheetPage.Main -> MainPage(ctrl, onOpen = { page = it }, onClose = close)
+                SheetPage.Quality -> QualityPage(ctrl, close)
+                SheetPage.Audio -> AudioPage(ctrl, close)
+                SheetPage.Codec -> CodecPage(ctrl, close)
+                SheetPage.Speed -> SpeedPage(ctrl)
+                SheetPage.Danmaku -> DanmakuPage(onOpenBlock = { page = SheetPage.DanmakuBlock })
+                SheetPage.Sleep -> SleepPage(ctrl, close)
+                SheetPage.Subtitle -> SubtitlePage(ctrl, close)
+                SheetPage.DanmakuBlock -> DanmakuBlockRulesEditor()
             }
         }
     }
@@ -350,6 +431,7 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
             RowSpec(YoinSymbols.Sleep, "定时关闭", value = sleepValue) { onOpen(SheetPage.Sleep) },
             RowSpec(YoinSymbols.RepeatOne, "单集循环", switch = ctrl.loop) { ctrl.changeLoop(!ctrl.loop) },
             RowSpec(YoinSymbols.SkipNext, "自动连播", switch = autoNext) { AppSettings.set(AppSettings.autoPlayNext, !autoNext) },
+            RowSpec(YoinSymbols.MusicNote, "仅听声音", switch = ctrl.audioOnly) { ctrl.toggleAudioOnly() },
             RowSpec(YoinSymbols.Headphones, "后台播放", switch = background) { AppSettings.set(AppSettings.backgroundPlay, !background) },
         ),
     )
