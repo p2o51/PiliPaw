@@ -1,58 +1,44 @@
 package com.gpo.pilipala.feature.rank
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.MaterialShapes
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -61,43 +47,31 @@ import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asObj
 import com.gpo.pilipala.core.net.objects
-import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.feature.home.Blacklist
 import com.gpo.pilipala.feature.home.CollapsingHeader
 import com.gpo.pilipala.feature.home.FeedCardSheet
-import com.gpo.pilipala.feature.home.ReselectEffect
-import com.gpo.pilipala.feature.home.feedItemMotion
-import com.gpo.pilipala.feature.home.withoutBlocked
 import com.gpo.pilipala.feature.home.SegmentTabs
 import com.gpo.pilipala.feature.home.mainTabBottomInset
 import com.gpo.pilipala.feature.home.rememberHeaderScrollBehavior
 import com.gpo.pilipala.feature.home.toArchiveItem
+import com.gpo.pilipala.feature.home.withoutBlocked
 import com.gpo.pilipala.navigation.LocalNavigator
-import com.gpo.pilipala.navigation.Route
-import com.gpo.pilipala.ui.components.DurationChip
-import com.gpo.pilipala.ui.components.ErrorState
 import com.gpo.pilipala.ui.components.EmptyState
+import com.gpo.pilipala.ui.components.ErrorState
 import com.gpo.pilipala.ui.components.LoadingState
-import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.RefreshBox
-import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.VideoItem
-import com.gpo.pilipala.ui.components.WidthClass
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
-import com.gpo.pilipala.ui.components.widthClass
-import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
-import com.gpo.pilipala.ui.theme.YoinContainerShapes
-import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.shell.LocalTabReselect
-import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.pilipala.ui.theme.YoinMotion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 
 /** Zones as in Flutter's rank_type.dart (rid per tab). */
@@ -121,8 +95,6 @@ private val RankZones = listOf(
     RankZone("影视", 1001),
 )
 
-private val CoverShape = ContinuousRoundedCornerShape(12.dp)
-
 @Composable
 fun RankScreen() {
     val pagerState = rememberPagerState { RankZones.size }
@@ -132,39 +104,50 @@ fun RankScreen() {
     val shellReselect = LocalTabReselect.current
     val pageReselects = remember { MutableSharedFlow<Int>(extraBufferCapacity = 1) }
     LaunchedEffect(shellReselect) { shellReselect.collect { pageReselects.tryEmit(pagerState.currentPage) } }
-    Column(
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
-            .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
-            .nestedScroll(behavior.nestedScrollConnection),
+            .background(MaterialTheme.colorScheme.surface),
     ) {
-        CollapsingHeader(behavior) {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("排行榜", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
-            }
-        }
-        SegmentTabs(
-            labels = RankZones.map { it.label },
-            selected = pagerState.targetPage,
-            onSelect = { i ->
-                if (i == pagerState.currentPage && i == pagerState.targetPage) {
-                    pageReselects.tryEmit(i)
-                } else {
-                    scope.launch { pagerState.animateScrollToPage(i, animationSpec = pageSpec) }
+        // The page spans the window, so its own width picks the arrangement.
+        val layout = rankLayoutFor(maxWidth)
+        val margin = layout.margin
+        Column(
+            Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
+                .nestedScroll(behavior.nestedScrollConnection),
+        ) {
+            CollapsingHeader(behavior) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = margin + 4.dp, end = margin + 4.dp, top = 16.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("排行榜", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
                 }
-            },
-        )
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            key = { RankZones[it].rid },
-        ) { page ->
-            val reselect = remember(page) { pageReselects.filter { it == page }.map { } }
-            RankZonePage(RankZones[page].rid, reselect, behavior)
+            }
+            SegmentTabs(
+                labels = RankZones.map { it.label },
+                selected = pagerState.targetPage,
+                onSelect = { i ->
+                    if (i == pagerState.currentPage && i == pagerState.targetPage) {
+                        pageReselects.tryEmit(i)
+                    } else {
+                        scope.launch { pagerState.animateScrollToPage(i, animationSpec = pageSpec) }
+                    }
+                },
+                horizontalPadding = margin,
+            )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                key = { RankZones[it].rid },
+            ) { page ->
+                val reselect = remember(page) { pageReselects.filter { it == page }.map { } }
+                RankZonePage(RankZones[page].rid, layout, reselect, behavior)
+            }
         }
     }
 }
@@ -220,23 +203,30 @@ private class RankZoneViewModel(private val rid: Int) : ViewModel() {
     }
 }
 
+// ── Page ────────────────────────────────────────────────────────────────────
+
 private enum class RankPhase { Loading, Error, Empty, Content }
 
 @Composable
-private fun RankZonePage(rid: Int, reselect: Flow<Unit>, headerBehavior: TopAppBarScrollBehavior) {
+private fun RankZonePage(
+    rid: Int,
+    layout: RankLayout,
+    reselect: Flow<Unit>,
+    headerBehavior: TopAppBarScrollBehavior,
+) {
     val vm: RankZoneViewModel = viewModel(key = "rank_zone_$rid") { RankZoneViewModel(rid) }
+    val nav = LocalNavigator.current
     val toast = rememberToast()
     LaunchedEffect(vm) { vm.messages.collect { toast(it) } }
-    val state = rememberLazyGridState()
-    ReselectEffect(reselect, state, headerBehavior, vm::load)
+    val listState = rememberLazyGridState()
+    val podiumScroll = rememberScrollState()
+    RankReselectEffect(reselect, listState, podiumScroll, headerBehavior, vm::load)
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf<VideoItem?>(null) }
     menu?.let { item ->
         FeedCardSheet(item = item, onDismiss = { menu = null }, onRemove = { vm.remove(item) })
     }
     val bottom = mainTabBottomInset()
-    val expanded = widthClass() == WidthClass.Expanded
-    val compact = widthClass() == WidthClass.Compact
     val enterSpec = YoinMotion.defaultEffectsSpec<Float>()
     val exitSpec = YoinMotion.fastEffectsSpec<Float>()
     val phase = when {
@@ -256,124 +246,52 @@ private fun RankZonePage(rid: Int, reselect: Flow<Unit>, headerBehavior: TopAppB
             RankPhase.Error -> ErrorState(vm.error.orEmpty(), Modifier.padding(bottom = bottom), onRetry = vm::load)
             RankPhase.Empty -> EmptyState(modifier = Modifier.padding(bottom = bottom))
             RankPhase.Content -> RefreshBox(isRefreshing = vm.refreshing, onRefresh = vm::load, modifier = Modifier.fillMaxSize()) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(if (expanded) 2 else 1),
-                    state = state,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = bottom + 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    itemsIndexed(vm.items, key = { _, it -> it.bvid }) { index, item ->
-                        RankRow(
-                            rank = index + 1,
-                            item = item,
-                            coverWidth = if (compact) 136.dp else 168.dp,
-                            modifier = feedItemMotion(),
-                            onLongClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                menu = item
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ── Row ─────────────────────────────────────────────────────────────────────
-
-/**
- * One ranked video. Hierarchy comes from type: the rank is the largest glyph
- * on the row; the top three sit on a filled surfaceContainer card with their
- * number inside a coloured MaterialShapes block (primary, primaryContainer,
- * tertiaryContainer). The rest keep a quiet outline-coloured numeral.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun RankRow(rank: Int, item: VideoItem, coverWidth: Dp, modifier: Modifier = Modifier, onLongClick: () -> Unit) {
-    val nav = LocalNavigator.current
-    val top = rank <= 3
-    Row(
-        modifier
-            .fillMaxWidth()
-            .clip(YoinContainerShapes.Card)
-            .background(if (top) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent)
-            .combinedClickable(onLongClick = onLongClick) {
-                nav.push(
-                    item.target ?: Route.Video(bvid = item.bvid, aid = item.aid, cid = item.cid, cover = item.cover, title = item.title),
+                RankBoard(
+                    items = vm.items,
+                    layout = layout,
+                    listState = listState,
+                    podiumScroll = podiumScroll,
+                    bottomPadding = bottom + 16.dp,
+                    onOpen = { nav.push(it.rankRoute()) },
+                    onLongPress = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        menu = it
+                    },
                 )
             }
-            .padding(horizontal = if (top) 12.dp else 4.dp, vertical = if (top) 12.dp else 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RankNumber(rank)
-        Box(Modifier.width(coverWidth).aspectRatio(16f / 10f)) {
-            NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = coverWidth)
-            if (item.duration > 0) {
-                DurationChip(Fmt.duration(item.duration), Modifier.align(Alignment.BottomEnd).padding(4.dp))
-            }
-        }
-        Column(
-            Modifier.weight(1f).height(coverWidth * 10f / 16f),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                item.title,
-                style = if (top) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                if (item.ownerName.isNotEmpty()) {
-                    Text(
-                        item.ownerName,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views))
-                    if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku))
-                    if (item.likes >= 0) Stat(PiliSymbols.ThumbUp, Fmt.count(item.likes))
-                }
-            }
         }
     }
 }
 
+/**
+ * Reselecting the zone (its chip, or the shell's tab): the header and both
+ * panes come back to the top on the spatial spring, or the zone refreshes
+ * when everything is already there.
+ */
 @Composable
-private fun RankNumber(rank: Int) {
-    if (rank <= 3) {
-        val (shape, container, content) = when (rank) {
-            1 -> Triple(MaterialShapes.Cookie9Sided.toShape(), MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary)
-            2 -> Triple(MaterialShapes.Cookie7Sided.toShape(), MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
-            else -> Triple(MaterialShapes.Cookie6Sided.toShape(), MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+private fun RankReselectEffect(
+    events: Flow<Unit>,
+    list: LazyGridState,
+    podium: ScrollState,
+    header: TopAppBarScrollBehavior,
+    onRefresh: () -> Unit,
+) {
+    val refresh by rememberUpdatedState(onRefresh)
+    val spring = YoinMotion.defaultSpatialSpec<Float>()
+    LaunchedEffect(events, list, podium, header) {
+        events.collect {
+            val atTop = list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset == 0 && podium.value == 0
+            if (atTop) {
+                refresh()
+            } else {
+                launch {
+                    val bar = header.state
+                    animate(bar.heightOffset, 0f, animationSpec = spring) { v, _ -> bar.heightOffset = v }
+                }
+                if (podium.value != 0) launch { podium.animateScrollTo(0, spring) }
+                if (list.firstVisibleItemIndex > 12) list.scrollToItem(12)
+                list.animateScrollToItem(0)
+            }
         }
-        Box(
-            Modifier.size(44.dp).background(container, shape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                rank.toString(),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = content,
-            )
-        }
-    } else {
-        Text(
-            rank.toString(),
-            modifier = Modifier.width(44.dp),
-            style = if (rank < 10) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.outline,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-        )
     }
 }
