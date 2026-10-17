@@ -3,22 +3,14 @@ package com.gpo.pilipala.feature.live
 import android.util.Log
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.BiliJson
-import com.gpo.pilipala.core.net.asArr
-import com.gpo.pilipala.core.net.asInt
-import com.gpo.pilipala.core.net.asLong
 import com.gpo.pilipala.core.net.asObj
-import com.gpo.pilipala.core.net.asString
-import com.gpo.pilipala.core.net.int
-import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.obj
-import com.gpo.pilipala.core.net.path
 import com.gpo.pilipala.core.net.str
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.Request
@@ -158,53 +150,23 @@ internal class LiveDanmakuSocket(
 
     private fun parseCommand(text: String, out: MutableList<LiveChat>) {
         val obj = runCatching { BiliJson.parseToJsonElement(text) }.getOrNull().asObj ?: return
-        val cmd = obj.str("cmd")
-        when {
-            cmd.startsWith("DANMU_MSG") -> parseDanmu(obj, seq.incrementAndGet())?.let(out::add)
-            cmd == "SUPER_CHAT_MESSAGE" -> {
-                val d = obj.obj("data") ?: return
-                val user = d.obj("user_info")
-                out += LiveChat(
-                    key = "sc${d.long("id")}",
-                    uid = d.long("uid"),
-                    name = user.str("uname"),
-                    text = d.str("message"),
-                    face = user.str("face"),
-                    kind = LiveChatKind.SuperChat,
-                    price = d.str("price"),
-                )
+        val cmd = obj.str("cmd").substringBefore(':')
+        val n = seq.incrementAndGet()
+        when (cmd) {
+            "DANMU_MSG" -> LiveMessages.danmu(obj, n)?.let(out::add)
+            "SUPER_CHAT_MESSAGE" -> obj.obj("data")?.let { out += LiveMessages.superChat(it) }
+            "SEND_GIFT" -> obj.obj("data")?.let { out += LiveMessages.gift(it, n) }
+            "SEND_GIFT_V2" -> obj.obj("data")?.str("pb")?.takeIf { it.isNotEmpty() }
+                ?.let { LiveMessages.giftPb(it, n) }?.let(out::add)
+            "GUARD_BUY", "USER_TOAST_MSG" -> obj.obj("data")?.let(LiveMessages::guard)?.let(out::add)
+            "INTERACT_WORD", "INTERACT_WORD_V2" -> obj.obj("data")?.let(LiveMessages::interact)?.let { (name, type) ->
+                if (type == 1 || type == 2) onTip(if (type == 2) "$name 关注了主播" else "$name 进入直播间")
             }
-            cmd == "INTERACT_WORD" -> {
-                val d = obj.obj("data") ?: return
-                val name = d.str("uname")
-                if (name.isNotEmpty()) onTip(if (d.int("msg_type") == 2) "$name 关注了主播" else "$name 进入直播间")
-            }
-            cmd == "WATCHED_CHANGE" -> obj.obj("data").str("text_large").takeIf { it.isNotEmpty() }?.let(onWatched)
+            "WATCHED_CHANGE" -> obj.obj("data").str("text_large").takeIf { it.isNotEmpty() }?.let(onWatched)
         }
     }
 
     companion object {
         private const val TAG = "LiveDanmakuSocket"
-
-        /** `info` array of a DANMU_MSG. */
-        fun parseDanmu(obj: JsonObject, n: Long): LiveChat? {
-            val info = obj["info"].asArr ?: return null
-            val meta = info.getOrNull(0).asArr
-            val text = info.getOrNull(1).asString()
-            val user = info.getOrNull(2).asArr
-            val uid = user?.getOrNull(0).asLong()
-            val face = meta?.getOrNull(15).path("user.base.face").asString()
-            val name = user?.getOrNull(1).asString().ifEmpty { meta?.getOrNull(15).path("user.base.name").asString() }
-            val emoticon = if (meta?.getOrNull(12).asInt() == 1) meta?.getOrNull(13).asObj.str("url") else ""
-            return LiveChat(
-                key = "dm$n-${meta?.getOrNull(4).asLong()}",
-                uid = uid,
-                name = name,
-                text = text,
-                face = face,
-                color = meta?.getOrNull(3).asInt(0xFFFFFF).takeIf { it != 0 } ?: 0xFFFFFF,
-                emoticon = emoticon,
-            )
-        }
     }
 }

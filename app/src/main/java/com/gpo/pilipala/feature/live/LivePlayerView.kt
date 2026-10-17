@@ -101,7 +101,7 @@ internal fun LivePlayerView(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
             )
-            LiveDanmakuLayer(vm.incoming, enabled = vm.danmakuOn, modifier = Modifier.fillMaxSize())
+            LiveDanmakuLayer(vm.incoming, enabled = vm.danmakuOn && !pip, big = fullscreen, modifier = Modifier.fillMaxSize())
         } else {
             val cover = info?.cover?.ifEmpty { info.background }.orEmpty()
             NetImage(

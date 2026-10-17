@@ -4,6 +4,8 @@ import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -11,9 +13,11 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,11 +35,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -83,7 +88,6 @@ import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.ErrorState
-import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.PiliTopBar
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.Tag
@@ -132,7 +136,10 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
     FullscreenEffect(fullscreen, portrait = vm.isPortraitStream)
     DarkStatusBarEffect(enabled = !fullscreen && wc != WidthClass.Expanded)
     BackHandler(enabled = fullscreen) { fullscreen = false }
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.pauseForBackground() }
+    // App to background: background play keeps the audio (the PiP window closing does not).
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        if (pip || activity?.isInPictureInPictureMode == true) vm.pauseForBackground() else vm.onAppStopped()
+    }
     // Covered by another page (the entry leaves composition) → pause; back on top → resume.
     DisposableEffect(Unit) {
         vm.resumeFromBackground()
@@ -169,7 +176,10 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
                             .clip(YoinContainerShapes.Card),
                         onPip = enterPip,
                     )
-                    AnchorBlock(vm, route, Modifier.padding(top = 8.dp))
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                        AnchorBlock(vm, route, Modifier.padding(top = 8.dp))
+                        RoomInfoPanel(vm.info)
+                    }
                 }
                 Column(
                     Modifier
@@ -268,6 +278,82 @@ private fun AnchorBlock(vm: LiveRoomViewModel, route: Route.LiveRoom, modifier: 
     }
 }
 
+/** 简介, 分区, 标签 and 公告 — fills the Expanded left column under the anchor. */
+@Composable
+private fun RoomInfoPanel(info: LiveRoomInfo?) {
+    if (info == null) return
+    val areas = listOf(info.parentAreaName, info.areaName).filter { it.isNotEmpty() }.distinct()
+    val hasAny = info.description.isNotEmpty() || info.news.isNotEmpty() || areas.isNotEmpty() || info.tags.isNotEmpty()
+    AnimatedVisibility(
+        visible = hasAny,
+        enter = fadeIn(YoinMotion.defaultEffectsSpec()) + expandVertically(YoinMotion.defaultSpatialSpec()),
+        exit = fadeOut(YoinMotion.defaultEffectsSpec()) + shrinkVertically(YoinMotion.defaultSpatialSpec()),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp)
+                .clip(YoinContainerShapes.Card)
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            if (info.description.isNotEmpty()) {
+                InfoSection("简介") {
+                    Text(info.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+            if (info.news.isNotEmpty()) {
+                InfoSection("公告") {
+                    Text(info.news, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+            if (areas.isNotEmpty()) {
+                InfoSection("分区") {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        areas.forEach { InfoChip(it, primary = true) }
+                    }
+                }
+            }
+            if (info.tags.isNotEmpty()) {
+                InfoSection("标签") {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        info.tags.forEach { InfoChip(it, primary = false) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoSection(label: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        content()
+    }
+}
+
+@Composable
+private fun InfoChip(text: String, primary: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    Text(
+        text,
+        modifier = Modifier
+            .clip(ContinuousRoundedCornerShape(10.dp))
+            .background(if (primary) cs.secondaryContainer else cs.surfaceContainerHighest)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        style = MaterialTheme.typography.labelLarge,
+        color = if (primary) cs.onSecondaryContainer else cs.onSurfaceVariant,
+    )
+}
+
 // ── Chat ───────────────────────────────────────────────────────────────────
 
 @Composable
@@ -277,13 +363,19 @@ private fun ChatList(vm: LiveRoomViewModel, modifier: Modifier = Modifier) {
     var seenCount by remember { mutableIntStateOf(0) }
     val count = vm.messages.size
 
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (!listState.isScrollInProgress) {
+    // Only the user's own drag (and its fling) decides whether we follow new messages;
+    // our own auto-scroll ending short of the bottom must not unstick the list.
+    val dragged by listState.interactionSource.collectIsDraggedAsState()
+    var userScrolled by remember { mutableStateOf(false) }
+    LaunchedEffect(dragged) { if (dragged) userScrolled = true }
+    LaunchedEffect(listState.isScrollInProgress, dragged) {
+        if (!listState.isScrollInProgress && !dragged && userScrolled) {
+            userScrolled = false
             stick = !listState.canScrollForward
             if (stick) seenCount = vm.messages.size
         }
     }
-    LaunchedEffect(count) {
+    LaunchedEffect(count, stick) {
         if (stick && count > 0) {
             listState.animateScrollToItem(count - 1)
             seenCount = count
@@ -308,24 +400,24 @@ private fun ChatList(vm: LiveRoomViewModel, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             items(vm.messages, key = { it.key }) { chat ->
-                ChatBubble(chat, Modifier.animateItem())
+                LiveChatItem(chat, vm.roomEmotes, Modifier.animateItem())
             }
         }
-        // Join / follow tip
+        // Join / follow tip: over the oldest rows, never over the newest.
         AnimatedVisibility(
             visible = vm.tipVisible,
-            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + slideInVertically(YoinMotion.defaultSpatialSpec()) { it },
-            exit = fadeOut(YoinMotion.defaultEffectsSpec()) + slideOutVertically(YoinMotion.defaultSpatialSpec()) { it },
-            modifier = Modifier.align(Alignment.BottomStart).padding(10.dp),
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + slideInVertically(YoinMotion.defaultSpatialSpec()) { -it },
+            exit = fadeOut(YoinMotion.defaultEffectsSpec()) + slideOutVertically(YoinMotion.defaultSpatialSpec()) { -it },
+            modifier = Modifier.align(Alignment.TopCenter).padding(10.dp),
         ) {
             Text(
                 vm.tip,
                 modifier = Modifier
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .background(MaterialTheme.colorScheme.inverseSurface)
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                color = MaterialTheme.colorScheme.inverseOnSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -348,53 +440,6 @@ private fun ChatList(vm: LiveRoomViewModel, modifier: Modifier = Modifier) {
                 Icon(YoinSymbols.ChevronDown, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("新消息 ${unseen.coerceAtMost(99)}")
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChatBubble(chat: LiveChat, modifier: Modifier = Modifier) {
-    val sc = chat.kind == LiveChatKind.SuperChat
-    val container = if (sc) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
-    val onContainer = if (sc) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurface
-    Row(modifier.fillMaxWidth().padding(horizontal = 10.dp), verticalAlignment = Alignment.Top) {
-        Column(
-            Modifier
-                .widthIn(max = 520.dp)
-                .clip(ContinuousRoundedCornerShape(16.dp))
-                .background(container)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    chat.name.ifEmpty { "匿名" },
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (sc) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (sc && chat.price.isNotEmpty()) {
-                    Text(
-                        "¥${chat.price}",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.tertiary,
-                    )
-                }
-            }
-            if (chat.emoticon.isNotEmpty()) {
-                NetImage(
-                    chat.emoticon,
-                    Modifier.height(56.dp).widthIn(min = 56.dp, max = 160.dp),
-                    shape = ContinuousRoundedCornerShape(8.dp),
-                    thumbWidth = 160.dp,
-                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                )
-            } else {
-                Text(chat.text, style = MaterialTheme.typography.bodyMedium, color = onContainer)
             }
         }
     }
