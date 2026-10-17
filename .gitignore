@@ -10,3 +10,4 @@ local.properties.bak
 /.claude/worktrees/
 captures/
 .kotlin/
+*.apk
