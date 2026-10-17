@@ -75,8 +75,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -106,6 +110,7 @@ import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.BackButton
 import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.ErrorState
+import com.gpo.pilipala.ui.components.ExpressivePageBackground
 import com.gpo.pilipala.ui.components.LoadMoreEffect
 import com.gpo.pilipala.ui.components.LoadingFooter
 import com.gpo.pilipala.ui.components.LoadingState
@@ -118,6 +123,7 @@ import com.gpo.pilipala.ui.components.WidthClass
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.widthClass
+import com.gpo.pilipala.ui.theme.CoverTheme
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
@@ -284,6 +290,13 @@ private val Tabs = listOf("主页", "投稿", "动态", "合集")
 @Composable
 fun MemberScreen(route: Route.Member) {
     val vm = viewModel { MemberViewModel(route.mid, route.face, route.name) }
+    CoverTheme(vm.profile?.face ?: vm.initFace) {
+        MemberContent(vm)
+    }
+}
+
+@Composable
+private fun MemberContent(vm: MemberViewModel) {
     val nav = LocalNavigator.current
     val toast = rememberToast()
     val haptics = LocalHapticFeedback.current
@@ -325,20 +338,22 @@ fun MemberScreen(route: Route.Member) {
     }
 
     val header: @Composable () -> Unit = {
-        MemberHeader(
-            vm = vm,
-            topInset = pinnedTop,
-            onFollow = onFollow,
-            onMessage = onMessage,
-            onCopyUid = {
-                scope.launch { clipboard.copyText("UID", vm.mid.toString()) }
-                toast("已复制")
-            },
-            onCopySign = { sign ->
-                scope.launch { clipboard.copyText("sign", sign) }
-                toast("已复制")
-            },
-        )
+        ExpressivePageBackground(Modifier.fillMaxWidth()) {
+            MemberHeader(
+                vm = vm,
+                topInset = pinnedTop,
+                onFollow = onFollow,
+                onMessage = onMessage,
+                onCopyUid = {
+                    scope.launch { clipboard.copyText("UID", vm.mid.toString()) }
+                    toast("已复制")
+                },
+                onCopySign = { sign ->
+                    scope.launch { clipboard.copyText("sign", sign) }
+                    toast("已复制")
+                },
+            )
+        }
     }
     val tabRow: @Composable () -> Unit = {
         PrimaryScrollableTabRow(
@@ -523,6 +538,9 @@ fun MemberScreen(route: Route.Member) {
 
 // ── Header ──────────────────────────────────────────────────────────────────
 
+/** The banner's alpha: whole at the top, gone at the bottom, so it dissolves into the wash. */
+private val BannerFade = Brush.verticalGradient(0.35f to Color.Black, 1f to Color.Transparent)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MemberHeader(
@@ -541,7 +559,7 @@ private fun MemberHeader(
     val cookie = MaterialShapes.Cookie9Sided.toShape()
 
     Box(Modifier.fillMaxWidth()) {
-        // Soft backdrop: the space banner fading into the surface.
+        // Soft backdrop: the space banner dissolving into the page wash.
         Box(Modifier.fillMaxWidth().height(bannerHeight + avatarSize / 2)) {
             AnimatedVisibility(
                 visible = !profile?.banner.isNullOrEmpty(),
@@ -551,7 +569,13 @@ private fun MemberHeader(
             ) {
                 NetImage(
                     profile?.banner,
-                    Modifier.fillMaxSize(),
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(BannerFade, blendMode = BlendMode.DstIn)
+                        },
                     shape = RectangleShape,
                     thumbWidth = 960.dp,
                 )
@@ -563,7 +587,7 @@ private fun MemberHeader(
                         Brush.verticalGradient(
                             0f to scheme.surface.copy(alpha = 0.6f),
                             0.4f to scheme.surface.copy(alpha = 0.15f),
-                            1f to scheme.surface,
+                            1f to scheme.surface.copy(alpha = 0f),
                         ),
                     ),
             )

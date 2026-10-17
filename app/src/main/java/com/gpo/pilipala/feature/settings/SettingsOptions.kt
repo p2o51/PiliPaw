@@ -2,6 +2,7 @@ package com.gpo.pilipala.feature.settings
 
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.gpo.pilipala.feature.live.LiveQnChoices
+import com.gpo.pilipala.ui.theme.ThemeSettings
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import java.util.Locale
@@ -81,9 +82,27 @@ internal object SettingsChoices {
         Choice(1, "最热"),
     )
 
-    /** Seed palette (pilipala's colour list, Bilibili pink first). */
+    /** 配色风格 (dynamic colour on). */
+    val colorStyle = listOf(
+        Choice(ThemeSettings.StyleExpressive, "表现力"),
+        Choice(ThemeSettings.StyleSystem, "系统"),
+    )
+
+    /** Curated 主色 + 强调色 pairs (dynamic colour off); both colours come from [seeds]. */
+    val seedPairs: List<SeedPairChoice> = listOf(
+        SeedPairChoice(0xFFFB7299.toInt(), 0xFF23ADE5.toInt(), "哔哩"),
+        SeedPairChoice(0xFF5CB67B.toInt(), 0xFFFFC107.toInt(), "薄荷"),
+        SeedPairChoice(0xFFFF9800.toInt(), 0xFF673AB7.toInt(), "落日"),
+        SeedPairChoice(0xFF2196F3.toInt(), 0xFFE91E63.toInt(), "汽水"),
+        SeedPairChoice(0xFF9C27B0.toInt(), 0xFF00BCD4.toInt(), "极光"),
+        SeedPairChoice(0xFFF44336.toInt(), 0xFFFFEB3B.toInt(), "晚霞"),
+        SeedPairChoice(0xFF3F51B5.toInt(), 0xFFFFC107.toInt(), "星夜"),
+    )
+
+    /** Seed palette (pilipala's colour list, Bilibili pink first, then its sky blue). */
     val seeds: List<Pair<Int, String>> = listOf(
         0xFFFB7299.toInt() to "哔哩粉",
+        0xFF23ADE5.toInt() to "天蓝",
         0xFF5CB67B.toInt() to "默认绿",
         0xFFE91E63.toInt() to "粉红色",
         0xFFF44336.toInt() to "红色",
@@ -105,6 +124,10 @@ internal object SettingsChoices {
         0xFF9E9E9E.toInt() to "灰色",
     )
 }
+
+internal data class SeedPairChoice(val primary: Int, val accent: Int, val label: String)
+
+internal fun seedName(argb: Int): String = SettingsChoices.seeds.firstOrNull { it.first == argb }?.second ?: "自定义"
 
 internal fun speedLabel(v: Float): String {
     val s = if (v % 1f == 0f) String.format(Locale.US, "%.1f", v) else v.toString().trimEnd('0')

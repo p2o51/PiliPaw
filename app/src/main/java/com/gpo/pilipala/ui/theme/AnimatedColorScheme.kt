@@ -117,9 +117,8 @@ class ColorSchemeTransition(private val scope: CoroutineScope) {
 }
 
 /**
- * True when the 36 wash-animated tokens of [a] and [b] are identical — used to skip
- * no-op washes for value-equal target instances. The 12 Fixed-tone tokens are
- * deliberately ignored (unused app-wide, never animated).
+ * True when the 48 wash-animated tokens of [a] and [b] are identical — used to skip
+ * no-op washes for value-equal target instances.
  */
 private fun sameAnimatedTokens(a: ColorScheme, b: ColorScheme): Boolean =
     a.primary == b.primary &&
@@ -157,13 +156,24 @@ private fun sameAnimatedTokens(a: ColorScheme, b: ColorScheme): Boolean =
         a.surfaceContainerHigh == b.surfaceContainerHigh &&
         a.surfaceContainerHighest == b.surfaceContainerHighest &&
         a.surfaceContainerLow == b.surfaceContainerLow &&
-        a.surfaceContainerLowest == b.surfaceContainerLowest
+        a.surfaceContainerLowest == b.surfaceContainerLowest &&
+        a.primaryFixed == b.primaryFixed &&
+        a.primaryFixedDim == b.primaryFixedDim &&
+        a.onPrimaryFixed == b.onPrimaryFixed &&
+        a.onPrimaryFixedVariant == b.onPrimaryFixedVariant &&
+        a.secondaryFixed == b.secondaryFixed &&
+        a.secondaryFixedDim == b.secondaryFixedDim &&
+        a.onSecondaryFixed == b.onSecondaryFixed &&
+        a.onSecondaryFixedVariant == b.onSecondaryFixedVariant &&
+        a.tertiaryFixed == b.tertiaryFixed &&
+        a.tertiaryFixedDim == b.tertiaryFixedDim &&
+        a.onTertiaryFixed == b.onTertiaryFixed &&
+        a.onTertiaryFixedVariant == b.onTertiaryFixedVariant
 
 /**
- * Lerps the 36 tokens the wash animates and rebuilds the scheme via
- * [darkColorScheme] / [lightColorScheme]. The 12 Fixed-tone tokens are intentionally
- * left at the builders' baseline defaults — exactly what the previous per-token
- * animation did (they are unused app-wide).
+ * Lerps all 48 tokens (the 12 Fixed-tone ones included, so a component reading
+ * them never flashes the builders' baseline purple mid-wash) and rebuilds the
+ * scheme via [darkColorScheme] / [lightColorScheme].
  */
 private fun lerpColorScheme(
     from: ColorScheme,
@@ -212,6 +222,18 @@ private fun lerpColorScheme(
             surfaceContainerHighest = token { it.surfaceContainerHighest },
             surfaceContainerLow = token { it.surfaceContainerLow },
             surfaceContainerLowest = token { it.surfaceContainerLowest },
+            primaryFixed = token { it.primaryFixed },
+            primaryFixedDim = token { it.primaryFixedDim },
+            onPrimaryFixed = token { it.onPrimaryFixed },
+            onPrimaryFixedVariant = token { it.onPrimaryFixedVariant },
+            secondaryFixed = token { it.secondaryFixed },
+            secondaryFixedDim = token { it.secondaryFixedDim },
+            onSecondaryFixed = token { it.onSecondaryFixed },
+            onSecondaryFixedVariant = token { it.onSecondaryFixedVariant },
+            tertiaryFixed = token { it.tertiaryFixed },
+            tertiaryFixedDim = token { it.tertiaryFixedDim },
+            onTertiaryFixed = token { it.onTertiaryFixed },
+            onTertiaryFixedVariant = token { it.onTertiaryFixedVariant },
         )
     } else {
         lightColorScheme(
@@ -251,6 +273,18 @@ private fun lerpColorScheme(
             surfaceContainerHighest = token { it.surfaceContainerHighest },
             surfaceContainerLow = token { it.surfaceContainerLow },
             surfaceContainerLowest = token { it.surfaceContainerLowest },
+            primaryFixed = token { it.primaryFixed },
+            primaryFixedDim = token { it.primaryFixedDim },
+            onPrimaryFixed = token { it.onPrimaryFixed },
+            onPrimaryFixedVariant = token { it.onPrimaryFixedVariant },
+            secondaryFixed = token { it.secondaryFixed },
+            secondaryFixedDim = token { it.secondaryFixedDim },
+            onSecondaryFixed = token { it.onSecondaryFixed },
+            onSecondaryFixedVariant = token { it.onSecondaryFixedVariant },
+            tertiaryFixed = token { it.tertiaryFixed },
+            tertiaryFixedDim = token { it.tertiaryFixedDim },
+            onTertiaryFixed = token { it.onTertiaryFixed },
+            onTertiaryFixedVariant = token { it.onTertiaryFixedVariant },
         )
     }
 }

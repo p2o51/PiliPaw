@@ -54,8 +54,9 @@ fun floatingBarInset(): Dp = if (widthClass() == WidthClass.Compact) 92.dp else 
 /**
  * Yoin's floating Button Group, rebuilt for four tabs: a pill surface
  * (surfaceContainerHigh, no shadow) holding connected buttons. The selected
- * one widens with a label on primaryContainer; pressing a button pushes its
- * neighbours (shape-morph feel) — all with the fast spatial spring.
+ * one widens with a label on primaryContainer; a pressed one blooms
+ * tertiaryContainer; pressing a button pushes its neighbours (shape-morph
+ * feel) — all with the fast spatial spring.
  * Medium+ windows center the bar and cap it at 600dp.
  */
 @Composable
@@ -123,9 +124,12 @@ private fun NavButton(tab: NavTab, selected: Boolean, height: Dp, onClick: () ->
         YoinMotion.fastSpatialSpec(),
         label = "corner",
     )
+    // A press blooms the accent (tertiaryContainer) through the button before it settles
+    // on primaryContainer, so the bar answers in the theme's second colour too.
+    val press by animateFloatAsState(if (pressed) 1f else 0f, YoinMotion.fastEffectsSpec(), label = "pressTint")
     val colors = MaterialTheme.colorScheme
-    val container = lerp(colors.surfaceContainerHighest, colors.primaryContainer, sel)
-    val content = lerp(colors.onSurfaceVariant, colors.onPrimaryContainer, sel)
+    val container = lerp(lerp(colors.surfaceContainerHighest, colors.primaryContainer, sel), colors.tertiaryContainer, press)
+    val content = lerp(lerp(colors.onSurfaceVariant, colors.onPrimaryContainer, sel), colors.onTertiaryContainer, press)
     Row(
         modifier = Modifier
             .height(height)
