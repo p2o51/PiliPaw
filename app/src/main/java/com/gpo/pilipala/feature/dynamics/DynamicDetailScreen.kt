@@ -116,7 +116,7 @@ private fun DetailBody(item: JsonObject, navBottom: androidx.compose.ui.unit.Dp)
     val bottomPad = PaddingValues(bottom = navBottom + 24.dp)
     if (oid <= 0) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = navBottom + 24.dp)) {
-            item(key = "card") { DynamicCard(item, Modifier.readingWidth().padding(horizontal = 16.dp), detail = true) }
+            item(key = "card") { DynamicCard(item, Modifier.readingWidth(720.dp).padding(horizontal = 16.dp), detail = true) }
         }
         return
     }
@@ -147,7 +147,7 @@ private fun DetailBody(item: JsonObject, navBottom: androidx.compose.ui.unit.Dp)
                 item(key = "dyn_card") {
                     DynamicCard(
                         item,
-                        Modifier.readingWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
+                        Modifier.readingWidth(720.dp).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
                         detail = true,
                     )
                 }

@@ -72,7 +72,7 @@ fun MemberDynamicsList(
             }
         }
         items(pager.items, key = { it.dynId.ifEmpty { it.hashCode().toString() } }) { item ->
-            DynamicCard(item, Modifier.readingWidth().padding(horizontal = 16.dp))
+            DynamicCard(item, Modifier.readingWidth(720.dp).padding(horizontal = 16.dp))
         }
         if (pager.isLoadingMore) {
             item(key = "more") { LoadingFooter() }

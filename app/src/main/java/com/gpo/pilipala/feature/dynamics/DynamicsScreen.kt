@@ -136,6 +136,7 @@ internal class DynamicsViewModel : ViewModel() {
     fun selectType(t: String) {
         if (t == type) return
         type = t
+        pager.update { emptyList() }
         pager.refresh()
     }
 
@@ -146,6 +147,7 @@ internal class DynamicsViewModel : ViewModel() {
         if (up != null) {
             portal = portal?.let { p -> p.copy(ups = p.ups.map { if (it.mid == up.mid) it.copy(hasUpdate = false) else it }) }
         }
+        pager.update { emptyList() }
         pager.refresh()
     }
 }
@@ -188,7 +190,7 @@ private fun DynamicsFeed(vm: DynamicsViewModel) {
     val pager = vm.pager
     val wc = widthClass()
     val cols = if (wc == WidthClass.Expanded) 2 else 1
-    val maxWidth = if (cols == 2) 1200.dp else 840.dp
+    val maxWidth = if (cols == 2) 1200.dp else 720.dp
     val screenW = LocalConfiguration.current.screenWidthDp.dp
     val side = max(16.dp, (screenW - maxWidth) / 2)
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -222,6 +224,20 @@ private fun DynamicsFeed(vm: DynamicsViewModel) {
             }
             val portal = vm.portal
             if (portal != null && (portal.ups.isNotEmpty() || portal.lives.isNotEmpty())) {
+                item(key = "upsHeader", span = StaggeredGridItemSpan.FullLine) {
+                    val nav = LocalNavigator.current
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "最新关注",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { nav.push(Route.Follow(portal.myMid.takeIf { it > 0 } ?: BiliClient.mid)) }) {
+                            Text("查看全部")
+                        }
+                    }
+                }
                 item(key = "ups", span = StaggeredGridItemSpan.FullLine) {
                     UpStrip(
                         portal = portal,

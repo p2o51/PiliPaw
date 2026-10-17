@@ -115,7 +115,8 @@ fun DynamicCard(
                 .fillMaxWidth()
                 .clip(YoinContainerShapes.Card)
                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                .then(if (!detail && route != null) Modifier.clickable { nav.push(route) } else Modifier)
+                // In detail mode the card still opens what it links to (article, video, live…).
+                .then(if (route != null && !(detail && route is Route.DynamicDetail)) Modifier.clickable { nav.push(route) } else Modifier)
                 .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
