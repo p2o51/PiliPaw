@@ -1,0 +1,647 @@
+package com.gpo.pilipala.feature.player
+
+import android.content.Context
+import android.net.Uri
+import android.os.SystemClock
+import androidx.compose.runtime.RememberObserver
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ConcatenatingMediaSource2
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.session.MediaSession
+import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.core.settings.AppSettings
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
+
+internal sealed interface PlayerPhase {
+    data object Idle : PlayerPhase
+    data object Loading : PlayerPhase
+    data object Ready : PlayerPhase
+    data class Error(val message: String) : PlayerPhase
+}
+
+/** Process-wide scope for fire-and-forget calls that must outlive a player (final heartbeat). */
+private val playerIoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+/** Last positions per cid so coming back to a page resumes where it left off. */
+private object ResumeMemory {
+    private val map = object : LinkedHashMap<Long, Long>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Long>?) = size > 64
+    }
+
+    fun put(cid: Long, pos: Long) = synchronized(map) { map[cid] = pos }
+    fun get(cid: Long): Long = synchronized(map) { map[cid] ?: 0L }
+}
+
+private val sessionIds = AtomicInteger(0)
+
+/**
+ * The real [BiliPlayerState]: owns an ExoPlayer + MediaSession, resolves the
+ * playurl, picks streams, reports heartbeats and loads danmaku/subtitles.
+ * Remembered by [rememberBiliPlayerState]; released when forgotten.
+ */
+@Stable
+internal class PiliPlayerController(private val context: Context) : BiliPlayerState(), RememberObserver {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var exo: ExoPlayer? = null
+    private var session: MediaSession? = null
+
+    /** Mirrors progress into a caller-supplied plain [BiliPlayerState] (fallback path). */
+    var mirror: BiliPlayerState? = null
+    var onCompleted: () -> Unit = {}
+
+    var player by mutableStateOf<Player?>(null)
+        private set
+    var target by mutableStateOf<PlayTarget?>(null)
+        private set
+    var phase by mutableStateOf<PlayerPhase>(PlayerPhase.Idle)
+        private set
+    var info by mutableStateOf<PlayInfo?>(null)
+        private set
+    var currentQn by mutableIntStateOf(0)
+        private set
+    var currentAudio by mutableIntStateOf(0)
+        private set
+    var currentCodec by mutableIntStateOf(7)
+        private set
+    var bufferedMs by mutableLongStateOf(0L)
+        private set
+    var isBuffering by mutableStateOf(false)
+        private set
+    var firstFrameRendered by mutableStateOf(false)
+        private set
+    var ended by mutableStateOf(false)
+        private set
+    var playWhenReady by mutableStateOf(false)
+        private set
+
+    /** width / height of the picture. */
+    var videoAspect by mutableFloatStateOf(16f / 9f)
+        private set
+    var speed by mutableFloatStateOf(AppSettings.defaultSpeed.value)
+        private set
+    var boosting by mutableStateOf(false)
+        private set
+    var loop by mutableStateOf(false)
+        private set
+    var sleepMinutes by mutableIntStateOf(0)
+        private set
+    var sleepDeadline by mutableLongStateOf(0L)
+        private set
+
+    var danmaku by mutableStateOf<List<DanmakuItem>>(emptyList())
+        private set
+
+    /** Bumped on every seek / source change so danmaku lanes are cleared. */
+    var seekGeneration by mutableIntStateOf(0)
+        private set
+
+    var subtitles by mutableStateOf<List<SubtitleTrack>>(emptyList())
+        private set
+    var subtitleIndex by mutableIntStateOf(-1)
+        private set
+    var subtitleLines by mutableStateOf<List<SubtitleLine>>(emptyList())
+        private set
+
+    /** Fullscreen that came from rotating the phone (so rotating back exits it). */
+    var fullscreenByRotation = false
+
+    /** Fullscreen requested only so the PiP window shows the picture alone. */
+    var pipForcedFullscreen by mutableStateOf(false)
+
+    private var loadJob: Job? = null
+    private var sideJobs = mutableListOf<Job>()
+    private var heartbeatJob: Job? = null
+    private var sleepJob: Job? = null
+    private var subtitleJob: Job? = null
+    private var urlAttempt = 0
+    private var lastHeartbeatAt = 0L
+    private var backgrounded = false
+
+    private val dataSourceFactory by lazy {
+        OkHttpDataSource.Factory(BiliClient.http).setDefaultRequestProperties(BiliClient.mediaHeaders())
+    }
+    private val progressiveFactory by lazy { ProgressiveMediaSource.Factory(dataSourceFactory) }
+
+    private val listener = object : Player.Listener {
+        override fun onIsPlayingChanged(playing: Boolean) {
+            isPlaying = playing
+            mirror?.isPlaying = playing
+            onPlayingChanged(playing)
+        }
+
+        override fun onPlaybackStateChanged(state: Int) {
+            isBuffering = state == Player.STATE_BUFFERING
+            when (state) {
+                Player.STATE_READY -> {
+                    if (phase !is PlayerPhase.Ready) phase = PlayerPhase.Ready
+                    ended = false
+                    tick()
+                }
+                Player.STATE_ENDED -> {
+                    ended = true
+                    tick()
+                    heartbeat(-1)
+                    onCompleted()
+                }
+                else -> Unit
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            val p = exo ?: return
+            val pi = info
+            val candidates = maxCandidates(pi)
+            val pos = p.currentPosition.coerceAtLeast(positionMs)
+            val decoderError = error.errorCode in setOf(
+                PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+                PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+                PlaybackException.ERROR_CODE_DECODING_FAILED,
+                PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+                PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+            )
+            if (decoderError && pi != null && pi.isDash && currentCodec != 7 &&
+                pi.videos.any { it.id == currentQn && it.codecId == 7 }
+            ) {
+                currentCodec = 7
+                urlAttempt = 0
+                prepare(pos, playWhenReady = true)
+            } else if (urlAttempt + 1 < candidates) {
+                urlAttempt++
+                prepare(pos, playWhenReady = true)
+            } else {
+                phase = PlayerPhase.Error(errorLabel(error))
+            }
+        }
+
+        override fun onPlayWhenReadyChanged(ready: Boolean, reason: Int) {
+            playWhenReady = ready
+        }
+
+        override fun onRenderedFirstFrame() {
+            firstFrameRendered = true
+        }
+
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+            if (videoSize.width > 0 && videoSize.height > 0) {
+                videoAspect = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+            }
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) {
+                seekGeneration++
+            }
+        }
+    }
+
+    init {
+        scope.launch {
+            while (isActive) {
+                tick()
+                delay(if (isPlaying) 250L else 600L)
+            }
+        }
+    }
+
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    fun load(t: PlayTarget, force: Boolean = false) {
+        val cur = target
+        if (!force && cur != null && cur.cid == t.cid && cur.epId == t.epId && cur.bvid == t.bvid &&
+            phase !is PlayerPhase.Error && phase !is PlayerPhase.Idle
+        ) {
+            return
+        }
+        if (cur != null && cur.cid != t.cid) {
+            ResumeMemory.put(cur.cid, positionMs)
+            heartbeat(if (ended) -1 else exactPositionMs() / 1000, force = true)
+        }
+        val keepPosition = if (force && cur?.cid == t.cid) positionMs else -1L
+        heartbeatJob?.cancel()
+        phase = PlayerPhase.Loading
+        target = t
+        info = null
+        positionMs = keepPosition.coerceAtLeast(0L)
+        bufferedMs = 0L
+        firstFrameRendered = false
+        ended = false
+        urlAttempt = 0
+        danmaku = emptyList()
+        subtitles = emptyList()
+        subtitleIndex = -1
+        subtitleLines = emptyList()
+        seekGeneration++
+        exo?.stop()
+        exo?.clearMediaItems()
+        loadJob?.cancel()
+        sideJobs.forEach { it.cancel() }
+        sideJobs.clear()
+
+        loadJob = scope.launch {
+            try {
+                val wish = AppSettings.defaultVideoQuality.value
+                val pi = PlayUrlApi.fetch(t, wish)
+                withContext(Dispatchers.Default) { CodecSupport.warm(pi) }
+                info = pi
+                currentQn = StreamPicker.videoQn(pi, wish)
+                if (!pi.isDash) currentQn = pi.quality
+                currentCodec = Qualities.codecIdForSetting(AppSettings.preferredCodec.value)
+                currentAudio = StreamPicker.audio(pi, AppSettings.defaultAudioQuality.value)?.id ?: 0
+                val duration = pi.timelengthMs
+                val remembered = ResumeMemory.get(t.cid)
+                val start = when {
+                    keepPosition >= 0 -> keepPosition
+                    t.startPositionMs > 0 -> t.startPositionMs
+                    remembered > 0 -> remembered
+                    pi.lastPlayTimeMs > 0 && (duration <= 0 || pi.lastPlayTimeMs < duration - 5_000) -> pi.lastPlayTimeMs
+                    else -> 0L
+                }
+                if (duration > 0) durationMs = duration
+                prepare(start, playWhenReady = force || AppSettings.autoPlay.value)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                phase = PlayerPhase.Error(e.message?.takeIf { it.isNotBlank() } ?: "加载失败")
+            }
+        }
+        sideJobs += scope.launch {
+            runCatching { DanmakuApi.fetch(t.cid) }.onSuccess { danmaku = it }
+        }
+        if (!t.isPgc || t.bvid.isNotBlank() || t.aid > 0) {
+            sideJobs += scope.launch {
+                runCatching { SubtitleApi.tracks(t) }.onSuccess { subtitles = it }
+            }
+        }
+    }
+
+    fun retry() {
+        val t = target ?: return
+        load(t, force = true)
+    }
+
+    override fun play() {
+        val p = exo ?: return
+        if (phase is PlayerPhase.Error) {
+            retry()
+            return
+        }
+        if (p.playbackState == Player.STATE_ENDED) p.seekTo(0)
+        if (p.playbackState == Player.STATE_IDLE) p.prepare()
+        p.play()
+    }
+
+    override fun pause() {
+        exo?.pause()
+    }
+
+    fun togglePlay() {
+        if (exo?.playWhenReady == true && !ended) pause() else play()
+    }
+
+    override fun seekTo(ms: Long) {
+        val p = exo ?: return
+        val d = durationMs
+        val target = if (d > 0) ms.coerceIn(0L, d) else ms.coerceAtLeast(0L)
+        p.seekTo(target)
+        positionMs = target
+        mirror?.positionMs = target
+        ended = false
+        seekGeneration++
+    }
+
+    /** Exact clock for the danmaku canvas (ExoPlayer interpolates between ticks). */
+    fun exactPositionMs(): Long = exo?.currentPosition ?: positionMs
+
+    fun changeSpeed(value: Float) {
+        speed = value
+        if (!boosting) exo?.setPlaybackSpeed(value)
+    }
+
+    fun beginBoost() {
+        if (boosting) return
+        boosting = true
+        exo?.setPlaybackSpeed(3f)
+    }
+
+    fun endBoost() {
+        if (!boosting) return
+        boosting = false
+        exo?.setPlaybackSpeed(speed)
+    }
+
+    fun changeLoop(on: Boolean) {
+        loop = on
+        exo?.repeatMode = if (on) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+    }
+
+    fun setSleepTimer(minutes: Int) {
+        sleepJob?.cancel()
+        sleepMinutes = minutes
+        if (minutes <= 0) {
+            sleepDeadline = 0L
+            return
+        }
+        sleepDeadline = SystemClock.elapsedRealtime() + minutes * 60_000L
+        sleepJob = scope.launch {
+            delay(minutes * 60_000L)
+            pause()
+            sleepMinutes = 0
+            sleepDeadline = 0L
+        }
+    }
+
+    fun selectQuality(qn: Int) {
+        val pi = info ?: return
+        val t = target ?: return
+        if (qn == currentQn) return
+        if (pi.isDash) {
+            if (pi.videos.none { it.id == qn }) return
+            currentQn = qn
+            urlAttempt = 0
+            reprepare()
+        } else {
+            val pos = exactPositionMs()
+            val wasPlaying = exo?.playWhenReady ?: true
+            loadJob?.cancel()
+            loadJob = scope.launch {
+                runCatching { PlayUrlApi.fetch(t, qn) }.onSuccess { fresh ->
+                    info = fresh
+                    currentQn = fresh.quality
+                    urlAttempt = 0
+                    prepare(pos, wasPlaying)
+                }.onFailure { if (it !is CancellationException) phase = PlayerPhase.Error(it.message ?: "加载失败") }
+            }
+        }
+    }
+
+    fun selectAudio(id: Int) {
+        if (id == currentAudio) return
+        currentAudio = id
+        urlAttempt = 0
+        reprepare()
+    }
+
+    fun selectCodec(codecId: Int) {
+        if (codecId == currentCodec) return
+        currentCodec = codecId
+        urlAttempt = 0
+        reprepare()
+    }
+
+    fun selectSubtitle(index: Int) {
+        subtitleJob?.cancel()
+        subtitleIndex = index
+        subtitleLines = emptyList()
+        val track = subtitles.getOrNull(index) ?: return
+        subtitleJob = scope.launch {
+            runCatching { SubtitleApi.lines(track) }.onSuccess { subtitleLines = it }
+        }
+    }
+
+    /** Background playback: drop the video track while the window is not visible. */
+    fun setBackground(bg: Boolean) {
+        if (bg == backgrounded) return
+        backgrounded = bg
+        val p = exo ?: return
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, bg)
+            .build()
+    }
+
+    override fun release() {
+        target?.let { t ->
+            ResumeMemory.put(t.cid, positionMs)
+            heartbeat(if (ended) -1 else positionMs / 1000, force = true)
+        }
+        loadJob?.cancel()
+        sideJobs.forEach { it.cancel() }
+        sideJobs.clear()
+        heartbeatJob?.cancel()
+        sleepJob?.cancel()
+        subtitleJob?.cancel()
+        session?.release()
+        session = null
+        exo?.removeListener(listener)
+        exo?.release()
+        exo = null
+        player = null
+        target = null
+        phase = PlayerPhase.Idle
+        isPlaying = false
+        playWhenReady = false
+        mirror?.isPlaying = false
+        boosting = false
+        backgrounded = false
+    }
+
+    // ── RememberObserver ────────────────────────────────────────────────────
+
+    override fun onRemembered() = Unit
+
+    override fun onForgotten() {
+        release()
+        scope.cancel()
+    }
+
+    override fun onAbandoned() {
+        release()
+        scope.cancel()
+    }
+
+    // ── Internals ───────────────────────────────────────────────────────────
+
+    private fun ensurePlayer(): ExoPlayer {
+        exo?.let { return it }
+        val p = ExoPlayer.Builder(context)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                true,
+            )
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setSeekBackIncrementMs(10_000)
+            .setSeekForwardIncrementMs(10_000)
+            .build()
+        p.addListener(listener)
+        p.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        exo = p
+        player = p
+        session = runCatching {
+            MediaSession.Builder(context, p).setId("pili-player-${sessionIds.incrementAndGet()}").build()
+        }.getOrNull()
+        return p
+    }
+
+    private fun reprepare() {
+        val p = exo
+        val pos = p?.currentPosition ?: positionMs
+        val playing = p?.playWhenReady ?: AppSettings.autoPlay.value
+        prepare(pos, playing)
+    }
+
+    private fun prepare(startMs: Long, playWhenReady: Boolean) {
+        val pi = info ?: return
+        val p = ensurePlayer()
+        val source = buildSource(pi)
+        if (source == null) {
+            phase = PlayerPhase.Error("没有可播放的视频流")
+            return
+        }
+        if (phase is PlayerPhase.Error) phase = PlayerPhase.Loading
+        p.setMediaSource(source, startMs.coerceAtLeast(0L))
+        p.setPlaybackSpeed(if (boosting) 3f else speed)
+        p.playWhenReady = playWhenReady
+        p.prepare()
+        positionMs = startMs
+        seekGeneration++
+    }
+
+    private fun maxCandidates(pi: PlayInfo?): Int {
+        pi ?: return 1
+        return if (pi.isDash) {
+            val v = StreamPicker.video(pi, currentQn, currentCodec)?.urls?.size ?: 1
+            val a = StreamPicker.playableAudios(pi).firstOrNull { it.id == currentAudio }?.urls?.size ?: 1
+            maxOf(v, a, 1)
+        } else {
+            pi.durl.maxOfOrNull { it.urls.size } ?: 1
+        }
+    }
+
+    private fun metadataItem(url: String): MediaItem {
+        val t = target
+        val meta = MediaMetadata.Builder()
+            .setTitle(t?.title)
+            .apply { t?.cover?.takeIf { it.isNotBlank() }?.let { setArtworkUri(Uri.parse(BiliClient.resolve(it))) } }
+            .build()
+        return MediaItem.Builder().setUri(url).setMediaMetadata(meta).build()
+    }
+
+    private fun buildSource(pi: PlayInfo): MediaSource? {
+        if (pi.isDash) {
+            val v = StreamPicker.video(pi, currentQn, currentCodec) ?: return null
+            currentQn = v.id
+            currentCodec = v.codecId
+            if (v.width > 0 && v.height > 0 && !firstFrameRendered) videoAspect = v.width.toFloat() / v.height
+            val vUrl = v.urls[urlAttempt % v.urls.size]
+            val videoSource = progressiveFactory.createMediaSource(metadataItem(vUrl))
+            val a = StreamPicker.playableAudios(pi).firstOrNull { it.id == currentAudio }
+                ?: StreamPicker.audio(pi, AppSettings.defaultAudioQuality.value)
+                ?: return videoSource
+            currentAudio = a.id
+            val aUrl = a.urls[urlAttempt % a.urls.size]
+            val audioSource = progressiveFactory.createMediaSource(MediaItem.fromUri(aUrl))
+            return MergingMediaSource(false, true, videoSource, audioSource)
+        }
+        if (pi.durl.isEmpty()) return null
+        if (pi.durl.size == 1) {
+            val seg = pi.durl.first()
+            return progressiveFactory.createMediaSource(metadataItem(seg.urls[urlAttempt % seg.urls.size]))
+        }
+        val builder = ConcatenatingMediaSource2.Builder()
+        pi.durl.forEachIndexed { i, seg ->
+            val url = seg.urls[urlAttempt % seg.urls.size]
+            val item = if (i == 0) metadataItem(url) else MediaItem.fromUri(url)
+            builder.add(progressiveFactory.createMediaSource(item), seg.lengthMs.coerceAtLeast(1L))
+        }
+        return builder.build()
+    }
+
+    private fun tick() {
+        val p = exo ?: return
+        val pos = p.currentPosition.coerceAtLeast(0L)
+        if (pos != positionMs) {
+            positionMs = pos
+            mirror?.positionMs = pos
+        }
+        bufferedMs = p.bufferedPosition.coerceAtLeast(0L)
+        val d = p.duration
+        val dur = if (d != C.TIME_UNSET && d > 0) d else info?.timelengthMs ?: 0L
+        if (dur > 0 && dur != durationMs) {
+            durationMs = dur
+            mirror?.durationMs = dur
+        }
+    }
+
+    private fun onPlayingChanged(playing: Boolean) {
+        heartbeatJob?.cancel()
+        if (playing) {
+            heartbeatJob = scope.launch {
+                while (isActive) {
+                    delay(15_000)
+                    heartbeat(exactPositionMs() / 1000)
+                }
+            }
+        } else if (!ended) {
+            heartbeat(exactPositionMs() / 1000)
+        }
+    }
+
+    private fun heartbeat(playedSeconds: Long, force: Boolean = false) {
+        val t = target ?: return
+        if (!force && phase !is PlayerPhase.Ready) return
+        if (!BiliClient.isLoggedIn || AppSettings.pauseHistory.value) return
+        val now = SystemClock.elapsedRealtime()
+        if (!force && playedSeconds >= 0 && now - lastHeartbeatAt < 3_000) return
+        lastHeartbeatAt = now
+        val form = buildMap<String, Any?> {
+            if (t.bvid.isNotBlank()) put("bvid", t.bvid)
+            if (t.aid > 0) put("aid", t.aid)
+            put("cid", t.cid)
+            put("played_time", playedSeconds)
+            if (t.isPgc) {
+                if (t.epId > 0) put("epid", t.epId)
+                if (t.seasonId > 0) put("sid", t.seasonId)
+                put("type", 4)
+            } else {
+                put("type", 3)
+            }
+        }
+        playerIoScope.launch {
+            runCatching { BiliClient.postForm("/x/click-interface/web/heartbeat", form) }
+        }
+    }
+
+    private fun errorLabel(e: PlaybackException): String = when (e.errorCode) {
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "网络连接失败"
+        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "视频地址失效"
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+        PlaybackException.ERROR_CODE_DECODING_FAILED -> "解码失败"
+        else -> "播放失败"
+    }
+}
