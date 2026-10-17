@@ -14,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -27,6 +29,17 @@ import com.gpo.pilipala.ui.components.LocalBottomBarInset
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
+
+/**
+ * Fires when the user taps the bottom-bar tab of the section that is already
+ * showing (scroll to top / refresh). Each section sees only its own taps.
+ */
+val LocalTabReselect = staticCompositionLocalOf<Flow<Unit>> { emptyFlow() }
 
 /**
  * The shell: four sections under Yoin's floating button group. Sections keep
@@ -43,6 +56,7 @@ fun MainShell() {
     )
     var selected by rememberSaveable { mutableIntStateOf(0) }
     val holder = rememberSaveableStateHolder()
+    val reselects = remember { MutableSharedFlow<Int>(extraBufferCapacity = 1) }
     BackHandler(enabled = selected != 0) { selected = 0 }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
@@ -58,11 +72,14 @@ fun MainShell() {
                 label = "shellSection",
             ) { index ->
                 holder.SaveableStateProvider(index) {
-                    when (index) {
-                        0 -> HomeScreen()
-                        1 -> RankScreen()
-                        2 -> DynamicsScreen()
-                        else -> MineScreen()
+                    val mine = remember(index) { reselects.filter { it == index }.map { } }
+                    CompositionLocalProvider(LocalTabReselect provides mine) {
+                        when (index) {
+                            0 -> HomeScreen()
+                            1 -> RankScreen()
+                            2 -> DynamicsScreen()
+                            else -> MineScreen()
+                        }
                     }
                 }
             }
@@ -70,7 +87,7 @@ fun MainShell() {
         FloatingNavBar(
             tabs = tabs,
             selected = selected,
-            onSelect = { selected = it },
+            onSelect = { if (it == selected) reselects.tryEmit(it) else selected = it },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
     }

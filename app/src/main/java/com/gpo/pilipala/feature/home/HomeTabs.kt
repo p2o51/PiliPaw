@@ -22,7 +22,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.gpo.pilipala.ui.components.VideoItem
+import kotlinx.coroutines.flow.Flow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,24 +65,46 @@ private val PageMargin = 16.dp
 // ── 推荐 ────────────────────────────────────────────────────────────────────
 
 @Composable
-internal fun RcmdTab(state: LazyGridState) {
+internal fun RcmdTab(state: LazyGridState, reselect: Flow<Unit>, headerBehavior: TopAppBarScrollBehavior) {
     val vm: RcmdViewModel = viewModel(key = "home_rcmd") { RcmdViewModel() }
+    val haptics = LocalHapticFeedback.current
+    var menu by remember { mutableStateOf<VideoItem?>(null) }
     PagedGrid(
         pager = vm.feed,
         state = state,
         columns = videoGridColumns(),
         key = { it.bvid.ifEmpty { it.target?.toString() ?: (it.title + it.cover) } },
+        reselect = reselect,
+        headerBehavior = headerBehavior,
     ) { _, item ->
-        VideoCardV(item)
+        VideoCardV(
+            item,
+            feedItemMotion(),
+            onLongClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                menu = item
+            },
+        )
+    }
+    menu?.let { item ->
+        val ref = vm.appRef(item)
+        FeedCardSheet(
+            item = item,
+            onDismiss = { menu = null },
+            onRemove = { vm.remove(item) },
+            dislike = ref?.let { r -> suspend { FeedActions.dislikeApp(r) } },
+        )
     }
 }
 
 // ── 热门 ────────────────────────────────────────────────────────────────────
 
 @Composable
-internal fun HotTab(state: LazyGridState) {
+internal fun HotTab(state: LazyGridState, reselect: Flow<Unit>, headerBehavior: TopAppBarScrollBehavior) {
     val vm: HotViewModel = viewModel(key = "home_hot") { HotViewModel() }
     val compact = widthClass() == WidthClass.Compact
+    val haptics = LocalHapticFeedback.current
+    var menu by remember { mutableStateOf<VideoItem?>(null) }
     PagedGrid(
         pager = vm.feed,
         state = state,
@@ -83,15 +114,24 @@ internal fun HotTab(state: LazyGridState) {
         horizontalPadding = if (compact) 0.dp else PageMargin,
         topPadding = if (compact) 0.dp else 8.dp,
         verticalSpacing = if (compact) 0.dp else 4.dp,
+        reselect = reselect,
+        headerBehavior = headerBehavior,
     ) { _, item ->
-        if (compact) VideoCardH(item) else VideoCardV(item)
+        val onLong = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            menu = item
+        }
+        if (compact) VideoCardH(item, feedItemMotion(), onLongClick = onLong) else VideoCardV(item, feedItemMotion(), onLongClick = onLong)
+    }
+    menu?.let { item ->
+        FeedCardSheet(item = item, onDismiss = { menu = null }, onRemove = { vm.remove(item) })
     }
 }
 
 // ── 直播 ────────────────────────────────────────────────────────────────────
 
 @Composable
-internal fun LiveTab(state: LazyGridState) {
+internal fun LiveTab(state: LazyGridState, reselect: Flow<Unit>, headerBehavior: TopAppBarScrollBehavior) {
     val vm: LiveViewModel = viewModel(key = "home_live") { LiveViewModel() }
     val following = vm.following
     PagedGrid(
@@ -99,6 +139,8 @@ internal fun LiveTab(state: LazyGridState) {
         state = state,
         columns = videoGridColumns(),
         key = { it.roomId },
+        reselect = reselect,
+        headerBehavior = headerBehavior,
         header = if (following.isEmpty()) {
             null
         } else {
@@ -224,7 +266,7 @@ private fun LiveCard(room: LiveRoomItem) {
 private fun bangumiColumns(): Int = (LocalConfiguration.current.screenWidthDp / 150).coerceIn(3, 8)
 
 @Composable
-internal fun BangumiTab(state: LazyGridState) {
+internal fun BangumiTab(state: LazyGridState, reselect: Flow<Unit>, headerBehavior: TopAppBarScrollBehavior) {
     val vm: BangumiTabViewModel = viewModel(key = "home_bangumi") { BangumiTabViewModel() }
     val follows = vm.follows
     val compact = widthClass() == WidthClass.Compact
@@ -235,6 +277,8 @@ internal fun BangumiTab(state: LazyGridState) {
         columns = bangumiColumns(),
         key = { it.seasonId },
         horizontalSpacing = 10.dp,
+        reselect = reselect,
+        headerBehavior = headerBehavior,
         header = {
             if (follows != null || vm.followsLoading) {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "followTitle", contentType = "title") {

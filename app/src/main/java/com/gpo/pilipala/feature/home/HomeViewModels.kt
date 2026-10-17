@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.home
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -7,16 +8,20 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.core.net.BiliException
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.VideoItem
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-private fun VideoItem.feedKey(): Any = when {
+private const val TAG = "HomeFeed"
+
+internal fun VideoItem.feedKey(): Any = when {
     bvid.isNotEmpty() -> bvid
     target != null -> target
     else -> "$title|$cover"
@@ -40,14 +45,36 @@ internal class RcmdViewModel : ViewModel() {
     private var freshIdx = 0
     private var appIdx = 0L
 
+    /** App-feed cards keep what "不感兴趣" needs; web cards are only hidden locally. */
+    private val appRefs = mutableMapOf<Any, AppFeedRef>()
+
     val feed = FeedPager(viewModelScope, key = { it.feedKey() }) { cursor -> load(cursor == null) }
 
     init {
         feed.refresh()
         viewModelScope.launch { AppSettings.rcmdSource.state.drop(1).collect { feed.refresh() } }
         viewModelScope.launch {
-            Account.user.map { it?.mid }.distinctUntilChanged().drop(1).collect { feed.refresh() }
+            combine(RcmdMinDuration.state, RcmdMinLikeRatio.state, RcmdExemptFollowed.state) { a, b, c -> Triple(a, b, c) }
+                .drop(1)
+                .collect { feed.refresh() }
         }
+        viewModelScope.launch {
+            Account.user.map { it?.mid }.distinctUntilChanged().drop(1).collect {
+                Blacklist.ensureLoaded()
+                feed.refresh()
+            }
+        }
+        viewModelScope.launch {
+            Blacklist.ensureLoaded()
+            Blacklist.mids.collect { blocked -> feed.removeWhere { it.ownerMid > 0 && it.ownerMid in blocked } }
+        }
+    }
+
+    fun appRef(item: VideoItem): AppFeedRef? = appRefs[item.feedKey()]
+
+    fun remove(item: VideoItem) {
+        val key = item.feedKey()
+        feed.removeWhere { it.feedKey() == key }
     }
 
     private suspend fun load(first: Boolean): Page<VideoItem> {
@@ -55,19 +82,26 @@ internal class RcmdViewModel : ViewModel() {
         if (first) {
             freshIdx = 0
             appIdx = 0
+            appRefs.clear()
         }
-        val accessKey = AppAccessKey.value
-        // A signed-in user without an app token would get the guest app feed;
-        // the web feed is personalised through cookies, so prefer it then.
-        val useApp = AppSettings.rcmdSource.value == "app" && (accessKey.isNotEmpty() || !BiliClient.isLoggedIn)
+        val wantApp = AppSettings.rcmdSource.value == "app"
+        // Signed in: the app feed is only personal with an access_key, so get
+        // one first; without it the cookie-personalised web feed is better.
+        val accessKey = if (wantApp) AppAuth.ensure() else ""
+        val useApp = wantApp && (accessKey.isNotEmpty() || !BiliClient.isLoggedIn)
         val list = if (useApp) {
             try {
-                val (items, next) = HomeApi.rcmdApp(appIdx, pull = first, accessKey = accessKey)
-                appIdx = next
-                items
+                val page = HomeApi.rcmdApp(appIdx, pull = first, accessKey = accessKey)
+                appIdx = page.nextIdx
+                page.items.zip(page.refs).forEach { (item, ref) -> appRefs[item.feedKey()] = ref }
+                Log.i(TAG, "rcmd app page: ${page.items.size} items, key=${accessKey.isNotEmpty()}")
+                page.items
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
+                // -101 / -663: the token no longer works; drop it so the next refresh asks again.
+                if (e is BiliException && (e.code == -101 || e.code == -663 || e.code == -2)) AppAuth.clear()
+                Log.w(TAG, "rcmd app failed, web fallback", e)
                 HomeApi.rcmdWeb(freshIdx)
             }
         } else {
@@ -89,6 +123,15 @@ internal class HotViewModel : ViewModel() {
 
     init {
         feed.refresh()
+        viewModelScope.launch {
+            Blacklist.ensureLoaded()
+            Blacklist.mids.collect { blocked -> feed.removeWhere { it.ownerMid > 0 && it.ownerMid in blocked } }
+        }
+    }
+
+    fun remove(item: VideoItem) {
+        val key = item.feedKey()
+        feed.removeWhere { it.feedKey() == key }
     }
 }
 

@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +52,7 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
@@ -143,7 +145,21 @@ internal class FeedPager<T>(
         moreError = null
         loadMore()
     }
+
+    /** Drops matching items locally (long-press actions, blacklist updates). */
+    fun removeWhere(predicate: (T) -> Boolean) {
+        val kept = items.filterNot(predicate)
+        if (kept.size != items.size) items = kept
+    }
 }
+
+/** Feed items fade in, slide when neighbours leave, and fade out when removed. */
+@Composable
+internal fun LazyGridItemScope.feedItemMotion(): Modifier = Modifier.animateItem(
+    fadeInSpec = YoinMotion.defaultEffectsSpec(),
+    placementSpec = YoinMotion.defaultSpatialSpec(),
+    fadeOutSpec = YoinMotion.fastEffectsSpec(),
+)
 
 /** Floating bar + gesture/navigation bar: what a main-tab list must clear at the bottom. */
 @Composable
@@ -184,11 +200,14 @@ internal fun <T> PagedGrid(
     verticalSpacing: Dp = 4.dp,
     emptyLabel: String = "空空如也",
     onRefresh: () -> Unit = { pager.refresh() },
+    reselect: Flow<Unit>? = null,
+    headerBehavior: TopAppBarScrollBehavior? = null,
     header: (LazyGridScope.() -> Unit)? = null,
     itemContent: @Composable LazyGridItemScope.(index: Int, item: T) -> Unit,
 ) {
     val toast = rememberToast()
     LaunchedEffect(pager) { pager.messages.collect { toast(it) } }
+    if (reselect != null) ReselectEffect(reselect, state, headerBehavior, onRefresh)
     val phase = when {
         pager.items.isEmpty() && pager.initialLoading -> FeedPhase.Loading
         pager.items.isEmpty() && pager.error != null -> FeedPhase.Error

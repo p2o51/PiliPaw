@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -53,6 +54,10 @@ import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.pilipala.ui.shell.LocalTabReselect
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 private val HomeTabs = listOf("直播", "推荐", "热门", "番剧")
@@ -73,6 +78,12 @@ fun HomeScreen() {
     val rcmdState = rememberLazyGridState()
     val hotState = rememberLazyGridState()
     val bangumiState = rememberLazyGridState()
+
+    // Reselects: the bottom-bar tab (acts on the visible page) or the visible segment.
+    val shellReselect = LocalTabReselect.current
+    val pageReselects = remember { MutableSharedFlow<Int>(extraBufferCapacity = 1) }
+    LaunchedEffect(shellReselect) { shellReselect.collect { pageReselects.tryEmit(pagerState.currentPage) } }
+    val reselectOf = remember { List(HomeTabs.size) { page -> pageReselects.filter { it == page }.map { } } }
 
     Column(
         Modifier
@@ -96,7 +107,13 @@ fun HomeScreen() {
         SegmentTabs(
             labels = HomeTabs,
             selected = pagerState.targetPage,
-            onSelect = { i -> scope.launch { pagerState.animateScrollToPage(i, animationSpec = pageSpec) } },
+            onSelect = { i ->
+                if (i == pagerState.currentPage && i == pagerState.targetPage) {
+                    pageReselects.tryEmit(i)
+                } else {
+                    scope.launch { pagerState.animateScrollToPage(i, animationSpec = pageSpec) }
+                }
+            },
         )
         HorizontalPager(
             state = pagerState,
@@ -104,10 +121,10 @@ fun HomeScreen() {
             key = { it },
         ) { page ->
             when (page) {
-                0 -> LiveTab(liveState)
-                1 -> RcmdTab(rcmdState)
-                2 -> HotTab(hotState)
-                else -> BangumiTab(bangumiState)
+                0 -> LiveTab(liveState, reselectOf[0], behavior)
+                1 -> RcmdTab(rcmdState, reselectOf[1], behavior)
+                2 -> HotTab(hotState, reselectOf[2], behavior)
+                else -> BangumiTab(bangumiState, reselectOf[3], behavior)
             }
         }
     }
