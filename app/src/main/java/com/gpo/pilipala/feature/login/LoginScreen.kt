@@ -59,7 +59,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gpo.pilipala.feature.settings.SettingsBackButton
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.ui.components.WidthClass
-import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.components.LocalSnackbarHost
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.LocalPiliDark
@@ -67,17 +67,28 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
+/** Outlives the login page (it pops itself on success). */
+private val DetachedScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
 @Composable
 fun LoginScreen() {
     val vm = viewModel { LoginViewModel() }
     val nav = LocalNavigator.current
-    val toast = rememberToast()
+    val snackbar = LocalSnackbarHost.current
     val haptics = LocalHapticFeedback.current
     var web by rememberSaveable { mutableStateOf(false) }
     val done: () -> Unit = {
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-        toast("登录成功")
+        // This page leaves composition right after, so the snackbar must not ride its scope.
+        DetachedScope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            snackbar.showSnackbar("登录成功")
+        }
         nav.pop()
     }
     LaunchedEffect(vm.state) {

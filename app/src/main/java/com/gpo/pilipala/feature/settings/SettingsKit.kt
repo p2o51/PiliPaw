@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,6 +68,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
@@ -166,11 +169,16 @@ internal fun SettingsScaffold(
             )
         },
     ) { inner ->
+        val dir = LocalLayoutDirection.current
         Box(Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = inner.calculateTopPadding())
+                    .padding(
+                        top = inner.calculateTopPadding(),
+                        start = inner.calculateStartPadding(dir),
+                        end = inner.calculateEndPadding(dir),
+                    )
                     .verticalScroll(rememberScrollState())
                     .readingWidth(760.dp)
                     .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp + inner.calculateBottomPadding()),
@@ -712,6 +720,3 @@ internal fun GlyphTile(icon: ImageVector, shape: Shape, size: Dp = 56.dp, contai
         Icon(icon, null, tint = content, modifier = Modifier.size(size * 0.46f))
     }
 }
-
-/** Clickable without ripple bounds trouble for plain boxes. */
-internal fun Modifier.plainClick(onClick: () -> Unit): Modifier = this.clickable(onClick = onClick)

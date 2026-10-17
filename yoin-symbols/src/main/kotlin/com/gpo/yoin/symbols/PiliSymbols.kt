@@ -611,7 +611,7 @@ private class PathB(private val tx: (Float, Float) -> Pair<Float, Float> = { x, 
     /**
      * Yoin's continuous corner at (px, py): arriving along (ax, ay), leaving along
      * (bx, by); the curve starts [e] before the corner and ends [e] after it.
-     * Call after a line that ends at (px - ax·e, py - ay·e).
+     * Call after a line that ends at (px - ax * e, py - ay * e).
      */
     fun corner(px: Float, py: Float, ax: Float, ay: Float, bx: Float, by: Float, e: Float) {
         fun p(k1: Float, k2: Float) = floatArrayOf(px - ax * k1 * e + bx * k2 * e, py - ay * k1 * e + by * k2 * e)
