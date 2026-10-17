@@ -32,6 +32,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Outline
@@ -200,6 +201,9 @@ internal fun PageEntryFrame(
                     .drawBehind {
                         // One pass: the scrim is a tint on the backdrop, not a second full-window blend.
                         val dim = if (enter.container) ContainerScrimAlpha * growth.value.coerceIn(0f, 1f) else 0f
+                        // A video page's SurfaceView is a hole in the snapshot: read it as player black,
+                        // as the back path does, instead of letting the window surface show through.
+                        drawRect(Color.Black)
                         drawImage(
                             enter.backdrop.image,
                             colorFilter = if (dim > 0f) {
