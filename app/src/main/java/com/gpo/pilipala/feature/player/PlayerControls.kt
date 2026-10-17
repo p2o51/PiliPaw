@@ -126,7 +126,7 @@ internal fun PlayerOverlay(
 
     val chromeVisible = visible && !locked
     LaunchedEffect(chromeVisible) { onControlsVisibleChange(chromeVisible) }
-    LaunchedEffect(visible, ctrl.isPlaying, poke, sheet, feedback.seekTargetMs) {
+    LaunchedEffect(visible, locked, ctrl.isPlaying, poke, sheet, feedback.seekTargetMs) {
         if (visible && ctrl.isPlaying && sheet == null && feedback.seekTargetMs == null) {
             delay(if (locked) 1800 else 3800)
             visible = false
