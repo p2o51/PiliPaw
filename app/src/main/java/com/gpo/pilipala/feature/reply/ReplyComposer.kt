@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
@@ -60,6 +61,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -97,6 +100,7 @@ internal fun ReplyComposerSheet(
     var panel by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     val motion = replyMotion()
+    val peek = remember { EmotePeekState() }
 
     LaunchedEffect(Unit) {
         withFrameNanos { }
@@ -125,126 +129,135 @@ internal fun ReplyComposerSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         contentWindowInsets = { WindowInsets(0) },
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .imePadding(),
-        ) {
-            if (target.replyTo.isNotEmpty()) {
-                Text(
-                    "回复 @${target.replyTo}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
-                )
-            }
-            TextField(
-                value = value,
-                onValueChange = { value = it },
-                modifier = Modifier
+        // The hold bubble floats over the whole sheet, so the top row's can rise above the panel.
+        Box(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .heightIn(min = 112.dp, max = 220.dp)
-                    .focusRequester(focus)
-                    .onFocusChanged { if (it.isFocused) panel = false },
-                placeholder = { Text("评论") },
-                textStyle = MaterialTheme.typography.bodyLarge,
-                shape = FieldShape,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                ),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .navigationBarsPadding()
+                    .imePadding(),
             ) {
-                IconButton(
-                    onClick = {
-                        if (panel) {
-                            panel = false
-                            runCatching { focus.requestFocus() }
-                            keyboard?.show()
-                        } else {
-                            keyboard?.hide()
-                            panel = true
-                        }
-                    },
-                    shapes = IconButtonDefaults.shapes(),
-                ) {
-                    AnimatedContent(
-                        targetState = panel,
-                        transitionSpec = {
-                            androidx.compose.animation.scaleIn(motion.scale) +
-                                androidx.compose.animation.fadeIn(motion.fade) togetherWith
-                                androidx.compose.animation.scaleOut(motion.scale) +
-                                androidx.compose.animation.fadeOut(motion.fade)
-                        },
-                        label = "composerToggle",
-                    ) { showingPanel ->
-                        Icon(
-                            if (showingPanel) ReplyIcons.Keyboard else ReplyIcons.Emoji,
-                            contentDescription = if (showingPanel) "键盘" else "表情",
-                        )
-                    }
+                if (target.replyTo.isNotEmpty()) {
+                    Text(
+                        "回复 @${target.replyTo}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                    )
                 }
-                Spacer(Modifier.weight(1f))
-                Button(
-                    onClick = {
-                        if (sending) return@Button
-                        sending = true
-                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                        scope.launch {
-                            val ok = onSend(value.text.trim())
-                            sending = false
-                            if (ok) close()
-                        }
-                    },
-                    shapes = ButtonDefaults.shapes(),
-                    enabled = value.text.isNotBlank() && !sending,
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                TextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .heightIn(min = 112.dp, max = 220.dp)
+                        .focusRequester(focus)
+                        .onFocusChanged { if (it.isFocused) panel = false },
+                    placeholder = { Text("评论") },
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    shape = FieldShape,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    AnimatedContent(
-                        targetState = sending,
-                        transitionSpec = {
-                            motion.crossfade()
+                    IconButton(
+                        onClick = {
+                            if (panel) {
+                                panel = false
+                                runCatching { focus.requestFocus() }
+                                keyboard?.show()
+                            } else {
+                                keyboard?.hide()
+                                panel = true
+                            }
                         },
-                        label = "sendState",
-                    ) { busy ->
-                        if (busy) {
-                            LoadingIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary)
-                        } else {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(YoinSymbols.Send, null, Modifier.size(18.dp))
-                                Text("发送")
+                        shapes = IconButtonDefaults.shapes(),
+                    ) {
+                        AnimatedContent(
+                            targetState = panel,
+                            transitionSpec = {
+                                androidx.compose.animation.scaleIn(motion.scale) +
+                                    androidx.compose.animation.fadeIn(motion.fade) togetherWith
+                                    androidx.compose.animation.scaleOut(motion.scale) +
+                                    androidx.compose.animation.fadeOut(motion.fade)
+                            },
+                            label = "composerToggle",
+                        ) { showingPanel ->
+                            Icon(
+                                if (showingPanel) ReplyIcons.Keyboard else ReplyIcons.Emoji,
+                                contentDescription = if (showingPanel) "键盘" else "表情",
+                            )
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Button(
+                        onClick = {
+                            if (sending) return@Button
+                            sending = true
+                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                            scope.launch {
+                                val ok = onSend(value.text.trim())
+                                sending = false
+                                if (ok) close()
+                            }
+                        },
+                        shapes = ButtonDefaults.shapes(),
+                        enabled = value.text.isNotBlank() && !sending,
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                    ) {
+                        AnimatedContent(
+                            targetState = sending,
+                            transitionSpec = {
+                                motion.crossfade()
+                            },
+                            label = "sendState",
+                        ) { busy ->
+                            if (busy) {
+                                LoadingIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary)
+                            } else {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(YoinSymbols.Send, null, Modifier.size(18.dp))
+                                    Text("发送")
+                                }
                             }
                         }
                     }
                 }
+                AnimatedVisibility(
+                    visible = panel,
+                    enter = expandVertically(YoinMotion.defaultSpatialSpec()) + androidx.compose.animation.fadeIn(YoinMotion.defaultEffectsSpec()),
+                    exit = shrinkVertically(YoinMotion.defaultSpatialSpec()) + androidx.compose.animation.fadeOut(YoinMotion.defaultEffectsSpec()),
+                ) {
+                    EmotePanel(
+                        peek = peek,
+                        modifier = Modifier.fillMaxWidth().height(300.dp),
+                        onPick = { insert(it.text) },
+                    )
+                }
             }
-            AnimatedVisibility(
-                visible = panel,
-                enter = expandVertically(YoinMotion.defaultSpatialSpec()) + androidx.compose.animation.fadeIn(YoinMotion.defaultEffectsSpec()),
-                exit = shrinkVertically(YoinMotion.defaultSpatialSpec()) + androidx.compose.animation.fadeOut(YoinMotion.defaultEffectsSpec()),
-            ) {
-                EmotePanel(
-                    modifier = Modifier.fillMaxWidth().height(300.dp),
-                    onPick = { insert(it.text) },
-                )
-            }
+            EmotePeekOverlay(peek, Modifier.matchParentSize())
         }
     }
 }
 
+/**
+ * Packages as a tab row under their grid. A tap inserts; press and hold
+ * previews ([emotePeek]) without inserting.
+ */
 @Composable
-private fun EmotePanel(modifier: Modifier = Modifier, onPick: (Emote) -> Unit) {
+private fun EmotePanel(peek: EmotePeekState, modifier: Modifier = Modifier, onPick: (Emote) -> Unit) {
     var packages by remember { mutableStateOf(EmoteCache.packages) }
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableIntStateOf(0) }
@@ -284,16 +297,32 @@ private fun EmotePanel(modifier: Modifier = Modifier, onPick: (Emote) -> Unit) {
                     label = "emotePackage",
                 ) { p ->
                     val big = p.emotes.firstOrNull()?.size ?: 1
+                    val kaomoji = p.type == 4
+                    val gridState = rememberLazyGridState()
+                    val cells = remember(p) { HashMap<String, LayoutCoordinates>() }
+                    val cellPx = with(LocalDensity.current) { (if (big >= 2) 64.dp else 44.dp).roundToPx() * 2 }
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(if (p.type == 4) 88.dp else if (big >= 2) 64.dp else 44.dp),
+                        columns = GridCells.Adaptive(if (kaomoji) 88.dp else if (big >= 2) 64.dp else 44.dp),
+                        state = gridState,
                         contentPadding = PaddingValues(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .emotePeek(
+                                peek = peek,
+                                gridState = gridState,
+                                cells = cells,
+                                emotes = p.emotes,
+                                kaomoji = kaomoji,
+                                placeholder = { Images.thumb(it.url, cellPx) },
+                                haptic = haptic,
+                            ),
                     ) {
                         items(p.emotes, key = { it.text }) { e ->
                             Box(
                                 Modifier
+                                    .onPlaced { cells[e.text] = it }
                                     .clip(ContinuousRoundedCornerShape(10.dp))
                                     .clickable {
                                         haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
@@ -303,12 +332,11 @@ private fun EmotePanel(modifier: Modifier = Modifier, onPick: (Emote) -> Unit) {
                                     .then(if (p.type == 4) Modifier.height(36.dp) else Modifier.aspectRatio(1f)),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                if (p.type == 4 || e.url.isEmpty()) {
+                                if (kaomoji || e.url.isEmpty()) {
                                     Text(e.text, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Clip)
                                 } else {
-                                    val px = with(LocalDensity.current) { (if (big >= 2) 64.dp else 44.dp).roundToPx() * 2 }
                                     AsyncImage(
-                                        model = Images.thumb(e.url, px),
+                                        model = Images.thumb(e.url, cellPx),
                                         contentDescription = e.text,
                                         contentScale = ContentScale.Fit,
                                         modifier = Modifier.fillMaxSize(),

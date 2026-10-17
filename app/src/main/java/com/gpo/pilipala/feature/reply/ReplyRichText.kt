@@ -1,17 +1,26 @@
 package com.gpo.pilipala.feature.reply
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
@@ -21,6 +30,7 @@ import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -28,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.toSize
 import coil3.compose.AsyncImage
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.core.util.IdUtils
@@ -49,10 +60,18 @@ private const val UP_TAG_ID = "tag:up"
 /** Optional leading "name UP" used by the sub-reply preview rows. */
 internal data class RichPrefix(val name: String, val mid: Long, val face: String, val isUp: Boolean)
 
+/** Inline emote sizes (em of the body text); 2+ = a package's big stickers, laid out larger as bilibili does. */
+private const val EmoteEm = 1.4f
+private const val BigEmoteEm = 3.2f
+
+private val EmoteTapShape = RoundedCornerShape(6.dp)
+
 /**
  * Comment body: inline emotes, @mentions, topics, jump-url keywords, BV/av ids,
  * URLs and (on video pages) mm:ss timestamps. Links are native [LinkAnnotation]s,
  * so taps outside them fall through to the row's own click / long-press.
+ * Tapping an emote previews it ([InlineEmotePreviewDialog]); a long press on
+ * it is the row's ([onEmoteLongPress]).
  */
 @Composable
 internal fun ReplyRichText(
@@ -63,6 +82,8 @@ internal fun ReplyRichText(
     maxLines: Int = Int.MAX_VALUE,
     prefix: RichPrefix? = null,
     onTimestampClick: ((Long) -> Unit)? = null,
+    onEmoteLongPress: (() -> Unit)? = null,
+    onTextLayout: ((TextLayoutResult) -> Unit)? = null,
 ) {
     val nav = LocalNavigator.current
     val primary = MaterialTheme.colorScheme.primary
@@ -72,19 +93,31 @@ internal fun ReplyRichText(
         buildReplyText(content, prefix, primary, nav, if (hasTs) { s: Long -> tsCallback?.invoke(s) } else null)
     }
     val density = LocalDensity.current
-    val inline = remember(content, prefix != null && prefix.isUp, density) {
+    var preview by remember { mutableStateOf<InlineEmotePreview?>(null) }
+    val longPress by rememberUpdatedState(onEmoteLongPress)
+    val hasLongPress = onEmoteLongPress != null
+    val inline = remember(content, prefix != null && prefix.isUp, density, hasLongPress) {
         buildMap {
             content.emotes.forEach { (key, emote) ->
-                val sizeEm = if (emote.size >= 2) 2.6f else 1.4f
+                val big = emote.size >= 2
+                val sizeEm = if (big) BigEmoteEm else EmoteEm
+                val model = Images.thumb(emote.url, with(density) { (if (big) 48.dp else 24.dp).roundToPx() * 2 })
+                val previewModel = Images.thumb(emote.url, with(density) { (if (big) 144.dp else 120.dp).roundToPx() })
+                val name = emote.name.ifEmpty { key.removeSurrounding("[", "]") }
                 put(
                     "emote:$key",
                     InlineTextContent(Placeholder(sizeEm.em, sizeEm.em, PlaceholderVerticalAlign.TextCenter)) {
-                        val px = with(density) { (if (emote.size >= 2) 48.dp else 24.dp).roundToPx() * 2 }
-                        AsyncImage(
-                            model = Images.thumb(emote.url, px),
-                            contentDescription = key,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize(),
+                        InlineEmote(
+                            model = model,
+                            name = name,
+                            onLongPress = if (hasLongPress) {
+                                { longPress?.invoke() }
+                            } else {
+                                null
+                            },
+                            onOpen = { source ->
+                                preview = InlineEmotePreview(previewModel, model, name, emote.pack, big, source)
+                            },
                         )
                     },
                 )
@@ -113,6 +146,33 @@ internal fun ReplyRichText(
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         inlineContent = inline,
+        onTextLayout = onTextLayout ?: {},
+    )
+    preview?.let { p ->
+        InlineEmotePreviewDialog(p) { preview = null }
+    }
+}
+
+/** One inline emote: tap previews it out of its own bounds (on screen). */
+@Composable
+private fun InlineEmote(model: String, name: String, onLongPress: (() -> Unit)?, onOpen: (Rect) -> Unit) {
+    val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    AsyncImage(
+        model = model,
+        contentDescription = name,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier
+            .fillMaxSize()
+            .onPlaced { coords[0] = it }
+            .clip(EmoteTapShape)
+            .combinedClickable(
+                onClickLabel = "预览",
+                onLongClick = onLongPress,
+                onClick = {
+                    val c = coords[0]?.takeIf { it.isAttached } ?: return@combinedClickable
+                    onOpen(Rect(c.positionOnScreen(), c.size.toSize()))
+                },
+            ),
     )
 }
 

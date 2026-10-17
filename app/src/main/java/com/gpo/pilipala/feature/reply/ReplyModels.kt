@@ -25,8 +25,13 @@ internal data class ReplyMember(
 @Immutable
 internal data class ReplyPicture(val src: String, val width: Int, val height: Int)
 
+/**
+ * An inline emote. [size] 2+ = the big stickers some packages use, laid out
+ * larger inline. [name] is its short label ("doge", "大笑"); [pack] the
+ * package part of "[包_名]" codes, empty when the code has none.
+ */
 @Immutable
-internal data class ReplyEmote(val url: String, val size: Int)
+internal data class ReplyEmote(val url: String, val size: Int, val name: String = "", val pack: String = "")
 
 @Immutable
 internal data class ReplyJump(
@@ -78,7 +83,18 @@ internal data class Reply(
 )
 
 @Immutable
-internal data class Emote(val text: String, val url: String, val size: Int)
+internal data class Emote(val text: String, val url: String, val size: Int, val alias: String = "") {
+    /** Short label for the hold preview. */
+    val label: String get() = alias.ifEmpty { text.removeSurrounding("[", "]").substringAfterLast('_') }
+}
+
+/** "[包_名]" → ("名", "包"); "[doge]" → ("doge", ""). [title] wins for the name when the API sends one. */
+internal fun emoteLabel(code: String, title: String): Pair<String, String> {
+    val inner = code.removeSurrounding("[", "]")
+    val pack = if ('_' in inner) inner.substringBefore('_') else ""
+    val name = title.ifEmpty { inner.substringAfterLast('_') }
+    return name to pack.takeIf { it != name }.orEmpty()
+}
 
 @Immutable
 internal data class EmotePackage(
@@ -102,7 +118,8 @@ private fun String.unescapeHtml(): String = replace("&amp;", "&")
 internal fun parseContent(c: JsonObject?): ReplyContent {
     val emotes = c.obj("emote")?.mapNotNull { (k, v) ->
         val o = v as? JsonObject ?: return@mapNotNull null
-        k to ReplyEmote(o.str("url"), o.obj("meta").int("size", 1).coerceIn(1, 3))
+        val (name, pack) = emoteLabel(k, o.str("jump_title").ifEmpty { o.obj("meta").str("alias") })
+        k to ReplyEmote(o.str("url"), o.obj("meta").int("size", 1).coerceIn(1, 3), name, pack)
     }?.toMap().orEmpty()
     val ats = c.obj("at_name_to_mid")?.mapValues { it.value.asLong() }.orEmpty()
     val jumps = c.obj("jump_url")?.mapNotNull { (k, v) ->
@@ -177,7 +194,7 @@ internal fun parseEmotePackages(data: JsonObject?): List<EmotePackage> =
             icon = p.str("url"),
             type = type,
             emotes = p.arr("emote").objects().map {
-                Emote(it.str("text"), it.str("url"), it.obj("meta").int("size", 1).coerceIn(1, 2))
+                Emote(it.str("text"), it.str("url"), it.obj("meta").int("size", 1).coerceIn(1, 2), it.obj("meta").str("alias"))
             },
         )
     }.filter { it.emotes.isNotEmpty() }

@@ -2,6 +2,7 @@ package com.gpo.pilipala.feature.reply
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,13 +32,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -65,6 +69,9 @@ private const val KEY_COMPOSE = "reply:compose"
 private const val KEY_STATE = "reply:state"
 private const val KEY_FOOTER = "reply:footer"
 
+/** The previous order while the new one loads after a 热门 / 最新 switch. */
+private const val StaleAlpha = 0.38f
+
 /**
  * Comment list for any subject. CONTRACT — signature is fixed.
  * type: 1 = video, 11 = dynamic (images), 17 = dynamic (text/forward), 12 = article, 14 = audio.
@@ -88,6 +95,7 @@ fun ReplyList(
     val listState = rememberLazyListState()
     val pager = vm.pager
     val me by Account.user.collectAsState()
+    val motion = replyMotion()
     LoadMoreEffect(listState) { pager.loadMore() }
 
     val actions = rememberReplyActions(
@@ -102,6 +110,33 @@ fun ReplyList(
         derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.key == KEY_COMPOSE } }
     }
     val hasContent = pager.items.isNotEmpty() || vm.top.isNotEmpty()
+    // Rows: entrances are ours (Entrance), so no item fade-in; placement springs stand down while a row resizes.
+    val placement = remember(ui.layout) { ui.layout.gated(motion.offset) }
+
+    // 热门 / 最新: the old order dims while the new one loads, then leaves as the new rows rise in.
+    val stale = remember { Animatable(1f) }
+    val lastRequest = remember { intArrayOf(vm.requestedGen) }
+    val staleSpec = YoinMotion.defaultEffectsSpec<Float>()
+    LaunchedEffect(vm.requestedGen) {
+        val request = vm.requestedGen
+        if (request == lastRequest[0]) return@LaunchedEffect
+        val fulfilled = vm.listGen == lastRequest[0]
+        lastRequest[0] = request
+        if (fulfilled) stale.snapTo(1f)
+        stale.animateTo(StaleAlpha, staleSpec)
+    }
+
+    // A comment just sent sits at the top: bring it into view when the list is scrolled away.
+    LaunchedEffect(vm, listState) {
+        vm.sentEvents.collect { target ->
+            if (target.root != 0L) return@collect
+            repeat(2) { withFrameNanos { } }
+            val info = listState.layoutInfo
+            if (info.visibleItemsInfo.any { it.key == KEY_COMPOSE }) return@collect
+            val composeIndex = info.totalItemsCount - 1 - pager.items.size - vm.top.size - 1
+            if (composeIndex >= 0) listState.animateScrollToItem(composeIndex)
+        }
+    }
 
     Box(modifier) {
         RefreshBox(
@@ -121,7 +156,13 @@ fun ReplyList(
                     }
                 }
                 items(vm.top, key = { "reply:t${it.rpid}" }, contentType = { "reply" }) { r ->
-                    ReplyRow(r, actions, Modifier.animateItem().readingWidth()) { actions.onOpenThread?.invoke(r) }
+                    ReplyRow(
+                        r,
+                        actions,
+                        Modifier
+                            .animateItem(fadeInSpec = null, placementSpec = placement, fadeOutSpec = motion.fade)
+                            .readingWidth(),
+                    ) { actions.onOpenThread?.invoke(r) }
                 }
                 if (pager.items.isEmpty()) {
                     item(key = KEY_STATE, contentType = "reply:state") {
@@ -133,8 +174,18 @@ fun ReplyList(
                         )
                     }
                 } else {
-                    items(pager.items, key = { "reply:${it.rpid}" }, contentType = { "reply" }) { r ->
-                        ReplyRow(r, actions, Modifier.animateItem().readingWidth()) { actions.onOpenThread?.invoke(r) }
+                    // Keyed by generation: a sort switch swaps every row (old ones fade, new ones rise).
+                    val gen = vm.listGen
+                    items(pager.items, key = { "reply:$gen:${it.rpid}" }, contentType = { "reply" }) { r ->
+                        val rowGen = remember { gen }
+                        ReplyRow(
+                            r,
+                            actions,
+                            Modifier
+                                .animateItem(fadeInSpec = null, placementSpec = placement, fadeOutSpec = motion.fade)
+                                .graphicsLayer { alpha = if (rowGen != vm.requestedGen) stale.value else 1f }
+                                .readingWidth(),
+                        ) { actions.onOpenThread?.invoke(r) }
                     }
                     item(key = KEY_FOOTER, contentType = "reply:footer") {
                         PagerFooter(pager, Modifier.readingWidth())

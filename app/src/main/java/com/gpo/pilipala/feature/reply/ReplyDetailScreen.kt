@@ -22,8 +22,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +57,7 @@ fun ReplyDetailScreen(route: Route.ReplyDetail) {
     val pager = vm.pager
     val me by Account.user.collectAsState()
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    val motion = replyMotion()
     LoadMoreEffect(listState) { pager.loadMore() }
 
     val actions = rememberReplyActions(
@@ -69,6 +73,18 @@ fun ReplyDetailScreen(route: Route.ReplyDetail) {
         onOpenThread = null,
         onTimestampClick = null,
     )
+    val placement = remember(ui.layout) { ui.layout.gated(motion.offset) }
+
+    // A reply just sent lands under the header: bring it into view when the thread is scrolled away.
+    LaunchedEffect(vm, listState) {
+        vm.sentEvents.collect {
+            repeat(2) { withFrameNanos { } }
+            if (listState.layoutInfo.visibleItemsInfo.none { it.key == "thread:header" }) {
+                listState.animateScrollToItem(1)
+            }
+        }
+    }
+
     val replyToRoot = {
         val root = vm.root
         if (requireLogin(nav, toast)) {
@@ -116,7 +132,9 @@ fun ReplyDetailScreen(route: Route.ReplyDetail) {
                         ReplyRow(
                             reply = root,
                             actions = actions,
-                            modifier = Modifier.animateItem().readingWidth(),
+                            modifier = Modifier
+                                .animateItem(fadeInSpec = null, placementSpec = placement, fadeOutSpec = motion.fade)
+                                .readingWidth(),
                             avatarSize = 40.dp,
                             showPreview = false,
                             clampLines = false,
@@ -134,7 +152,9 @@ fun ReplyDetailScreen(route: Route.ReplyDetail) {
                             ReplyRow(
                                 reply = r,
                                 actions = actions,
-                                modifier = Modifier.animateItem().readingWidth(),
+                                modifier = Modifier
+                                    .animateItem(fadeInSpec = null, placementSpec = placement, fadeOutSpec = motion.fade)
+                                    .readingWidth(),
                                 avatarSize = 32.dp,
                                 showPreview = false,
                                 clampLines = false,
