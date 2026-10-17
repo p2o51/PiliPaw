@@ -1,7 +1,11 @@
 package com.gpo.pilipala.feature.library
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -20,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -31,6 +36,10 @@ import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
+import com.gpo.pilipala.feature.player.PlayQueues
+import com.gpo.pilipala.feature.player.QueueItem
+import com.gpo.pilipala.navigation.LocalNavigator
+import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.VideoCardH
@@ -94,6 +103,16 @@ internal class LaterViewModel : ViewModel() {
         pager.update { emptyList() }
         count = 0
     }
+
+    /** 稍后再看 as a playlist (the whole list is already loaded); null when nothing is playable. */
+    fun queueRoute(shuffle: Boolean, from: String? = null): Route.Video? {
+        val items = pager.items
+            .filter { it.target == null && it.bvid.isNotEmpty() }
+            .map { QueueItem(it.bvid, it.aid, it.cid, it.title, it.cover, it.ownerName, it.duration) }
+            .let { if (shuffle) it.shuffled() else it }
+        val start = from?.let { b -> items.indexOfFirst { it.bvid == b } }?.coerceAtLeast(0) ?: 0
+        return PlayQueues.create("稍后再看", items, start)?.let { PlayQueues.route(it) }
+    }
 }
 
 private enum class LaterConfirm { Watched, All }
@@ -108,6 +127,11 @@ fun LaterScreen() {
     var confirm by remember { mutableStateOf<LaterConfirm?>(null) }
     var sheet by remember { mutableStateOf<VideoItem?>(null) }
     val gridState = rememberLazyGridState()
+    val nav = LocalNavigator.current
+    val startQueue: (Boolean, String?) -> Unit = { shuffle, from ->
+        val route = vm.queueRoute(shuffle, from)
+        if (route != null) nav.push(route) else toast("没有可播放的视频")
+    }
 
     LibraryScaffold(
         title = "稍后再看",
@@ -146,6 +170,15 @@ fun LaterScreen() {
                 state = gridState,
                 contentPadding = listPadding,
             ) {
+                item(key = "__play", span = { GridItemSpan(maxLineSpan) }) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        QueuePlayButtons(
+                            loading = false,
+                            onPlay = { startQueue(false, null) },
+                            onShuffle = { startQueue(true, null) },
+                        )
+                    }
+                }
                 items(vm.pager.items, key = { it.aid }) { item ->
                     VideoCardH(
                         item,
@@ -164,7 +197,12 @@ fun LaterScreen() {
         ItemActionSheet(
             title = item.title,
             cover = item.cover,
-            actions = listOf(
+            actions = listOfNotNull(
+                if (item.target == null && item.bvid.isNotEmpty()) {
+                    SheetAction("从这里播放", YoinSymbols.Playlist) { startQueue(false, item.bvid) }
+                } else {
+                    null
+                },
                 SheetAction("移除", YoinSymbols.Delete, destructive = true) {
                     scope.launch {
                         runCatching { vm.remove(item) }

@@ -349,7 +349,9 @@ private fun CoverLoading(ctrl: PiliPlayerController, cover: String, big: Boolean
         }
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
         val waitingForUser = ctrl.phase is PlayerPhase.Ready && !ctrl.playWhenReady && !ctrl.isBuffering
-        val loading = !waitingForUser && ctrl.phase !is PlayerPhase.Error
+        // 仅听声音 (play queue): the cover stays up while only the sound plays.
+        val listening = ctrl.audioOnly && ctrl.phase is PlayerPhase.Ready && !ctrl.isBuffering
+        val loading = !waitingForUser && !listening && ctrl.phase !is PlayerPhase.Error
         AnimatedVisibility(
             visible = loading,
             enter = fadeIn(YoinMotion.defaultEffectsSpec()) + scaleIn(YoinMotion.defaultSpatialSpec(), initialScale = 0.8f),

@@ -12,6 +12,8 @@ import com.gpo.pilipala.core.net.asObj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.IdUtils
+import com.gpo.pilipala.feature.player.PlayQueue
+import com.gpo.pilipala.feature.player.PlayQueues
 import com.gpo.pilipala.feature.player.PlayTarget
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.VideoItem
@@ -19,6 +21,7 @@ import com.gpo.pilipala.ui.components.friendlyMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
@@ -66,10 +69,29 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
     val actions = ArchiveActions(viewModelScope)
     val up = UpRelation(viewModelScope) { messages.tryEmit(it) }
 
+    /** The 收藏夹 / 稍后再看 queue this page plays from (null = a single video, or lost with the process). */
+    val queue: PlayQueue? = PlayQueues.get(route.playlistId)
+
     private var loadJob: Job? = null
 
     init {
         load()
+        // The player steps the queue (also in the background); the page follows its current item.
+        queue?.let { q -> viewModelScope.launch { q.index.drop(1).collect { followQueue(q, it) } } }
+    }
+
+    private fun followQueue(q: PlayQueue, i: Int) {
+        val item = q.items.getOrNull(i) ?: return
+        val c = q.cidOf(i)
+        if (item.bvid == bvid && (c <= 0 || c == cid)) return
+        if (c > 0) {
+            cid = c
+            target = PlayTarget(bvid = item.bvid, aid = item.aid, cid = c, title = item.title, cover = item.cover)
+        }
+        if (item.bvid != bvid) {
+            bvid = item.bvid
+            load(keepContent = true)
+        }
     }
 
     val cover: String get() = detail?.pic ?: route.cover
@@ -163,6 +185,7 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
 
     /** Auto-play next: next part, else next video in the season. Returns false at the end. */
     fun playNext(): Boolean {
+        if (queue != null) return false // the queue decides (the player steps it)
         val d = detail ?: return false
         if (d.pages.size > 1) {
             val i = d.pages.indexOfFirst { it.cid == cid }

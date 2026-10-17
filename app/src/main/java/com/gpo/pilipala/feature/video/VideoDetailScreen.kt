@@ -35,7 +35,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.feature.player.BiliPlayerState
 import com.gpo.pilipala.feature.player.BiliVideoPlayer
+import com.gpo.pilipala.feature.player.PlayQueue
+import com.gpo.pilipala.feature.player.attachQueue
 import com.gpo.pilipala.feature.player.rememberBiliPlayerState
 import com.gpo.pilipala.feature.reply.ReplyList
 import com.gpo.pilipala.navigation.LocalNavigator
@@ -53,7 +56,7 @@ import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.flow.merge
 
-private enum class VideoSheet { Coin, Fav, Pages, Season, Triple }
+private enum class VideoSheet { Coin, Fav, Pages, Season, Triple, Queue }
 
 @Composable
 fun VideoDetailScreen(route: Route.Video) {
@@ -79,6 +82,13 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     DisposableEffect(vm, playerState) {
         onDispose { vm.rememberPosition(playerState.positionMs) }
     }
+    // The queue (收藏夹 / 稍后再看 as a playlist) drives the player: completion, notification
+    // previous / next and the play mode. Attached before the player's first load runs.
+    val queue = vm.queue
+    DisposableEffect(playerState, queue) {
+        playerState.attachQueue(queue)
+        onDispose { playerState.attachQueue(null) }
+    }
     LaunchedEffect(playerState, vm.detail?.ownerName) { playerState.artist = vm.detail?.ownerName.orEmpty() }
 
     val seek: (Long) -> Unit = remember(playerState) { { s -> playerState.seekTo(s * 1000) } }
@@ -91,7 +101,8 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
                 onFullscreenChange = { vm.fullscreen = it },
                 onBack = { if (vm.fullscreen) vm.fullscreen = false else nav.pop() },
                 modifier = m,
-                onCompleted = { if (AppSettings.autoPlayNext.value) vm.playNext() },
+                // With a queue the player steps it itself; pages / season only without one.
+                onCompleted = { if (AppSettings.autoPlayNext.value && vm.queue == null) vm.playNext() },
             )
         }
     }
@@ -110,7 +121,10 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         compactPagerState = rememberPagerState { 2 },
         compactPage = { page, pad ->
             if (page == 0) {
-                IntroPane(vm, pad, includeRelated = true, onSeek = seek, gate = gate, onSheet = openSheet, onFollow = onFollow, context = context)
+                IntroPane(
+                    vm, pad, includeRelated = true, onSeek = seek, gate = gate, onSheet = openSheet, onFollow = onFollow, context = context,
+                    queue = queue, player = playerState,
+                )
             } else {
                 CommentsPane(vm, pad, seek)
             }
@@ -118,12 +132,16 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         expandedMain = { pad ->
             IntroPane(vm, pad, includeRelated = false, onSeek = seek, gate = gate, onSheet = openSheet, onFollow = onFollow, context = context)
         },
-        sideTabs = listOf(DetailTab("评论", replyCount), DetailTab("相关")),
+        sideTabs = buildList {
+            add(DetailTab("评论", replyCount))
+            add(DetailTab("相关"))
+            if (queue != null) add(DetailTab("播放列表", "${queue.size}"))
+        },
         sidePage = { page, pad ->
-            if (page == 0) {
-                CommentsPane(vm, pad, seek)
-            } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
+            when {
+                page == 0 -> CommentsPane(vm, pad, seek)
+                page == 2 && queue != null -> QueueTab(queue, playerState, pad)
+                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
                     relatedItems(vm, showTitle = false)
                 }
             }
@@ -178,6 +196,9 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
                 onDismiss = { sheet = null },
             )
         }
+        VideoSheet.Queue -> if (queue != null) {
+            QueueSheet(queue, playerState, onDismiss = { sheet = null })
+        }
         null -> Unit
     }
 
@@ -216,6 +237,8 @@ private fun IntroPane(
     onSheet: (VideoSheet) -> Unit,
     onFollow: () -> Unit,
     context: Context,
+    queue: PlayQueue? = null,
+    player: BiliPlayerState? = null,
 ) {
     val effects = YoinMotion.defaultEffectsSpec<Float>()
     val state = when {
@@ -256,6 +279,12 @@ private fun IntroPane(
                     item("actions") {
                         Spacer(Modifier.height(16.dp))
                         VideoActions(vm, d, gate, onSheet, context)
+                    }
+                    if (queue != null && player != null) {
+                        item("queue") {
+                            Spacer(Modifier.height(20.dp))
+                            QueueBlock(queue, player, onShowAll = { onSheet(VideoSheet.Queue) })
+                        }
                     }
                     if (d.pages.size > 1) {
                         item("pages") {

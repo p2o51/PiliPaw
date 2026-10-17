@@ -20,6 +20,8 @@ sealed interface Route : NavKey {
         val title: String = "",
         /** Resume position, seconds. */
         val progress: Long = 0,
+        /** In-memory play queue (`PlayQueues`) this video plays from; empty = a single video. */
+        val playlistId: String = "",
     ) : Route
 
     @Serializable data class Bangumi(val seasonId: Long = 0, val epId: Long = 0, val cover: String = "") : Route

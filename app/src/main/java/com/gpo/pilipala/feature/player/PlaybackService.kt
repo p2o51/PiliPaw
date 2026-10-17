@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Bundle
 import androidx.media3.common.Player
 import androidx.media3.common.util.BitmapLoader
 import androidx.media3.common.util.Util
@@ -13,11 +14,14 @@ import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
+import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import com.gpo.pilipala.MainActivity
@@ -114,7 +118,7 @@ class PlaybackService : MediaSessionService() {
             )
         }
 
-        /** ±10s in the notification's back/forward slots (previous/next are not offered). */
+        /** ±10s in the notification's back/forward slots (a single video: previous/next are not offered). */
         internal val mediaButtons: List<CommandButton> by lazy {
             listOf(
                 CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10)
@@ -129,25 +133,69 @@ class PlaybackService : MediaSessionService() {
                     .build(),
             )
         }
+
+        /** Custom session command behind the notification's play-mode button. */
+        internal const val ACTION_PLAY_MODE = "com.gpo.pilipala.session.PLAY_MODE"
+        internal val playModeCommand = SessionCommand(ACTION_PLAY_MODE, Bundle.EMPTY)
+
+        /** A queue is attached: previous / next in the back/forward slots, the play mode in the overflow. */
+        internal fun queueButtons(mode: PlayMode): List<CommandButton> = listOf(
+            CommandButton.Builder(CommandButton.ICON_PREVIOUS)
+                .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS)
+                .setDisplayName("上一个")
+                .setSlots(CommandButton.SLOT_BACK)
+                .build(),
+            CommandButton.Builder(CommandButton.ICON_NEXT)
+                .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT)
+                .setDisplayName("下一个")
+                .setSlots(CommandButton.SLOT_FORWARD)
+                .build(),
+            CommandButton.Builder(
+                when (mode) {
+                    PlayMode.ListLoop -> CommandButton.ICON_REPEAT_ALL
+                    PlayMode.Shuffle -> CommandButton.ICON_SHUFFLE_ON
+                    PlayMode.RepeatOne -> CommandButton.ICON_REPEAT_ONE
+                },
+            )
+                .setSessionCommand(playModeCommand)
+                .setDisplayName(mode.label)
+                .setSlots(CommandButton.SLOT_OVERFLOW)
+                .build(),
+        )
     }
 }
 
-/** Session callback: no playlist commands, so the system shows ±10s instead of previous/next. */
-internal object PiliSessionCallback : MediaSession.Callback {
-    private val playerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
-        .removeAll(
-            Player.COMMAND_SEEK_TO_PREVIOUS,
-            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
-            Player.COMMAND_SEEK_TO_NEXT,
-            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-        )
-        .build()
-
+/**
+ * Session callback. Which transport commands exist is decided by the controller's
+ * session player (previous / next only while a queue is attached, so a single video
+ * keeps ±10s); the buttons come from [buttons], the play-mode tap goes to [onPlayMode].
+ */
+internal class PiliSessionCallback(
+    private val buttons: () -> List<CommandButton>,
+    private val onPlayMode: () -> Unit,
+) : MediaSession.Callback {
     override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
         MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-            .setAvailablePlayerCommands(playerCommands)
-            .setMediaButtonPreferences(PlaybackService.mediaButtons)
+            .setAvailableSessionCommands(
+                MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                    .add(PlaybackService.playModeCommand)
+                    .build(),
+            )
+            .setMediaButtonPreferences(buttons())
             .build()
+
+    override fun onCustomCommand(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        customCommand: SessionCommand,
+        args: Bundle,
+    ): ListenableFuture<SessionResult> {
+        if (customCommand.customAction == PlaybackService.ACTION_PLAY_MODE) {
+            onPlayMode()
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+        return super.onCustomCommand(session, controller, customCommand, args)
+    }
 }
 
 /** Notification / lock-screen artwork through Coil (and so through BiliClient.http). */

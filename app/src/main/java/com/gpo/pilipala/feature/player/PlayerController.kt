@@ -27,6 +27,7 @@ import androidx.media3.exoplayer.source.ConcatenatingMediaSource2
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
@@ -153,6 +154,18 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     private var lastHeartbeatAt = 0L
     private var backgrounded = false
 
+    /** Play queue driving what plays next (收藏夹 / 稍后再看 as a playlist); null = a single video. */
+    var queue: PlayQueue? = null
+        private set
+    private var queueJob: Job? = null
+    private var advanceJob: Job? = null
+    private var skipJob: Job? = null
+    private var queueFailures = 0
+
+    /** 仅听声音: only the DASH audio stream is loaded (video track off for progressive streams). */
+    var audioOnly by mutableStateOf(false)
+        private set
+
     private val dataSourceFactory by lazy {
         OkHttpDataSource.Factory(BiliClient.http).setDefaultRequestProperties(BiliClient.mediaHeaders())
     }
@@ -175,12 +188,20 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
                 Player.STATE_READY -> {
                     if (phase !is PlayerPhase.Ready) phase = PlayerPhase.Ready
                     ended = false
+                    queueFailures = 0
                     tick()
                 }
                 Player.STATE_ENDED -> {
                     ended = true
                     tick()
                     heartbeat(-1)
+                    val q = queue
+                    if (q != null) {
+                        // The queue decides what comes next (also in the background, where the page cannot).
+                        endJob?.cancel()
+                        scope.launch(Dispatchers.Main) { if (queue === q && ended) playQueueIndex(q.nextIndex()) }
+                        return
+                    }
                     onCompleted()
                     // Nothing queued after this one (auto-play-next resets `ended` via load) → drop the notification.
                     endJob?.cancel()
@@ -220,6 +241,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
                 prepare(pos, playWhenReady = true)
             } else {
                 phase = PlayerPhase.Error(errorLabel(error))
+                onQueueItemFailed()
             }
         }
 
@@ -261,9 +283,10 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
 
     // ── Public API ───────────────────────────────────────────────────────────
 
-    fun load(t: PlayTarget, force: Boolean = false) {
+    /** [fresh]: a queue step — start from 0 and play, whatever history says. */
+    fun load(t: PlayTarget, force: Boolean = false, fresh: Boolean = false) {
         val cur = target
-        if (!force && cur != null && cur.cid == t.cid && cur.epId == t.epId && cur.bvid == t.bvid &&
+        if (!force && !fresh && cur != null && cur.cid == t.cid && cur.epId == t.epId && cur.bvid == t.bvid &&
             phase !is PlayerPhase.Error && phase !is PlayerPhase.Idle
         ) {
             return
@@ -272,7 +295,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
             ResumeMemory.put(cur.cid, positionMs)
             heartbeat(if (ended) -1 else exactPositionMs() / 1000, force = true)
         }
-        val keepPosition = if (force && cur?.cid == t.cid) positionMs else -1L
+        val keepPosition = if (force && !fresh && cur?.cid == t.cid) positionMs else -1L
         heartbeatJob?.cancel()
         phase = PlayerPhase.Loading
         target = t
@@ -307,19 +330,23 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
                 currentAudio = StreamPicker.audio(pi, AppSettings.defaultAudioQuality.value)?.id ?: 0
                 val duration = pi.timelengthMs
                 val remembered = ResumeMemory.get(t.cid)
+                // Queue items play like tracks: from the top unless the page asks for a position.
+                val queued = fresh || queue?.items?.any { it.bvid == t.bvid && t.bvid.isNotEmpty() } == true
                 val start = when {
                     keepPosition >= 0 -> keepPosition
                     t.startPositionMs > 0 -> t.startPositionMs
+                    queued -> 0L
                     remembered > 0 -> remembered
                     pi.lastPlayTimeMs > 0 && (duration <= 0 || pi.lastPlayTimeMs < duration - 5_000) -> pi.lastPlayTimeMs
                     else -> 0L
                 }
                 if (duration > 0) durationMs = duration
-                prepare(start, playWhenReady = force || AppSettings.autoPlay.value)
+                prepare(start, playWhenReady = force || fresh || AppSettings.autoPlay.value)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 phase = PlayerPhase.Error(e.message?.takeIf { it.isNotBlank() } ?: "加载失败")
+                onQueueItemFailed()
             }
         }
         sideJobs += scope.launch {
@@ -389,7 +416,121 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
 
     fun changeLoop(on: Boolean) {
         loop = on
-        exo?.repeatMode = if (on) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        applyRepeat()
+    }
+
+    /** 洗脑循环 or the queue's 单曲循环 → the player repeats the item itself (no reload, no completion). */
+    private fun applyRepeat() {
+        exo?.repeatMode = if (loop || queue?.mode?.value == PlayMode.RepeatOne) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+    }
+
+    // ── Play queue ──────────────────────────────────────────────────────────
+
+    /** Attaches the page's queue: completion, notification previous / next and the mode follow it. */
+    fun attachQueue(q: PlayQueue?) {
+        if (q === queue) return
+        queueJob?.cancel()
+        advanceJob?.cancel()
+        skipJob?.cancel()
+        queueFailures = 0
+        queue = q
+        if (q != null) {
+            queueJob = scope.launch {
+                launch {
+                    q.mode.collect {
+                        applyRepeat()
+                        refreshSessionControls()
+                    }
+                }
+                launch { q.audioOnly.collect { changeAudioOnly(it) } }
+            }
+        } else {
+            changeAudioOnly(false)
+            applyRepeat()
+        }
+        refreshSessionControls()
+    }
+
+    /** Next / previous in the queue. Previous restarts the item first when it has played over 3s. */
+    fun skipQueue(forward: Boolean) {
+        val q = queue ?: return
+        if (!forward && exactPositionMs() > 3_000 && phase is PlayerPhase.Ready) {
+            seekTo(0)
+            return
+        }
+        playQueueIndex(if (forward) q.nextIndex() else q.previousIndex())
+    }
+
+    /** Plays queue item [i] from the top; the page follows through [PlayQueue.index]. */
+    fun playQueueIndex(i: Int) {
+        val q = queue ?: return
+        val item = q.items.getOrNull(i) ?: return
+        advanceJob?.cancel()
+        skipJob?.cancel()
+        advanceJob = scope.launch {
+            var cid = q.cidOf(i)
+            if (cid <= 0) {
+                phase = PlayerPhase.Loading
+                cid = try {
+                    resolveFirstCid(item)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    0L
+                }
+            }
+            artist = item.owner
+            if (cid <= 0) {
+                q.moveTo(i)
+                phase = PlayerPhase.Error("加载失败")
+                onQueueItemFailed()
+                return@launch
+            }
+            q.rememberCid(item.bvid, cid)
+            load(
+                PlayTarget(bvid = item.bvid, aid = item.aid, cid = cid, title = item.title, cover = item.cover),
+                fresh = true,
+            )
+            // After the player switched, so the page's own load of this item is a no-op.
+            q.moveTo(i)
+        }
+    }
+
+    /** A queue item that cannot play (失效, no stream) is skipped — a few in a row at most. */
+    private fun onQueueItemFailed() {
+        val q = queue ?: return
+        if (q.size < 2 || queueFailures >= 3) return
+        queueFailures++
+        skipJob?.cancel()
+        skipJob = scope.launch {
+            delay(1_500)
+            if (queue === q && phase is PlayerPhase.Error) playQueueIndex(q.nextIndex())
+        }
+    }
+
+    private fun changeAudioOnly(on: Boolean) {
+        if (on == audioOnly) return
+        audioOnly = on
+        applyVideoTrack()
+        // The picture comes back (or goes) with the next rendered frame; the cover covers the gap.
+        firstFrameRendered = false
+        if (exo != null && info?.isDash == true && phase !is PlayerPhase.Error) reprepare()
+    }
+
+    private fun applyVideoTrack() {
+        val p = exo ?: return
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, backgrounded || audioOnly)
+            .build()
+    }
+
+    private fun sessionButtons(): List<CommandButton> =
+        queue?.let { PlaybackService.queueButtons(it.mode.value) } ?: PlaybackService.mediaButtons
+
+    /** Previous / next appear or go, and the mode button follows the queue's mode. */
+    private fun refreshSessionControls() {
+        sessionPlayer?.notifyCommandsChanged()
+        session?.setMediaButtonPreferences(sessionButtons())
     }
 
     fun setSleepTimer(minutes: Int) {
@@ -460,10 +601,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     fun setBackground(bg: Boolean) {
         if (bg == backgrounded) return
         backgrounded = bg
-        val p = exo ?: return
-        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, bg)
-            .build()
+        applyVideoTrack()
     }
 
     override fun release() {
@@ -478,6 +616,11 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         sleepJob?.cancel()
         subtitleJob?.cancel()
         endJob?.cancel()
+        queueJob?.cancel()
+        advanceJob?.cancel()
+        skipJob?.cancel()
+        queue = null
+        audioOnly = false
         hostWanted = false
         session?.let { if (hosted) PlaybackService.detach(it) }
         hosted = false
@@ -529,15 +672,16 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
             .setSeekForwardIncrementMs(10_000)
             .build()
         p.addListener(listener)
-        p.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         exo = p
         player = p
+        applyRepeat()
+        applyVideoTrack()
         val sp = SessionPlayer(p)
         session = runCatching {
             MediaSession.Builder(context, sp)
                 .setId("pili-player-${sessionIds.incrementAndGet()}")
-                .setCallback(PiliSessionCallback)
-                .setMediaButtonPreferences(PlaybackService.mediaButtons)
+                .setCallback(PiliSessionCallback(buttons = ::sessionButtons, onPlayMode = { queue?.cycleMode() }))
+                .setMediaButtonPreferences(sessionButtons())
                 .setBitmapLoader(CoilBitmapLoader(context))
                 .apply { target?.let { setSessionActivity(PlaybackService.sessionActivity(context, it)) } }
                 .build()
@@ -568,12 +712,14 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     /**
      * What the session (notification, lock screen, headsets) sees: our title / UP / cover
      * instead of the stream's metadata, and play() through the controller (retry, replay).
+     * Previous / next exist only while a queue is attached and step through it; a single
+     * video hides them so the system shows ±10s.
      */
     private inner class SessionPlayer(p: Player) : ForwardingPlayer(p) {
         private val wrapped = HashMap<Player.Listener, Player.Listener>()
 
         override fun addListener(listener: Player.Listener) {
-            val w = MetadataOverrideListener(listener, ::sessionMetadata)
+            val w = MetadataOverrideListener(listener, ::sessionMetadata, ::sessionCommands)
             wrapped[listener] = w
             super.addListener(w)
         }
@@ -586,6 +732,25 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
 
         override fun play() = this@PiliPlayerController.play()
 
+        override fun getAvailableCommands(): Player.Commands = sessionCommands(super.getAvailableCommands())
+
+        override fun isCommandAvailable(command: Int): Boolean = availableCommands.contains(command)
+
+        override fun hasNextMediaItem(): Boolean = queue != null || super.hasNextMediaItem()
+
+        override fun hasPreviousMediaItem(): Boolean = queue != null || super.hasPreviousMediaItem()
+
+        override fun seekToNext() = if (queue != null) skipQueue(forward = true) else super.seekToNext()
+
+        override fun seekToNextMediaItem() = if (queue != null) skipQueue(forward = true) else super.seekToNextMediaItem()
+
+        override fun seekToPrevious() = if (queue != null) skipQueue(forward = false) else super.seekToPrevious()
+
+        override fun seekToPreviousMediaItem() {
+            val q = queue
+            if (q != null) playQueueIndex(q.previousIndex()) else super.seekToPreviousMediaItem()
+        }
+
         fun notifyMetadataChanged() {
             val m = sessionMetadata()
             val events = Player.Events(FlagSet.Builder().add(Player.EVENT_MEDIA_METADATA_CHANGED).build())
@@ -594,6 +759,27 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
                 it.onEvents(this, events)
             }
         }
+
+        fun notifyCommandsChanged() {
+            val c = availableCommands
+            val events = Player.Events(FlagSet.Builder().add(Player.EVENT_AVAILABLE_COMMANDS_CHANGED).build())
+            wrapped.values.toList().forEach {
+                it.onAvailableCommandsChanged(c)
+                it.onEvents(this, events)
+            }
+        }
+    }
+
+    private fun sessionCommands(base: Player.Commands): Player.Commands {
+        val skip = intArrayOf(
+            Player.COMMAND_SEEK_TO_PREVIOUS,
+            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+            Player.COMMAND_SEEK_TO_NEXT,
+            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+        )
+        val b = base.buildUpon()
+        if (queue != null) b.addAll(*skip) else b.removeAll(*skip)
+        return b.build()
     }
 
     private fun reprepare() {
@@ -653,6 +839,8 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
                 ?: return videoSource
             currentAudio = a.id
             val aUrl = a.urls[urlAttempt % a.urls.size]
+            // 仅听声音: the audio stream alone (nothing to download or decode for the picture).
+            if (audioOnly) return progressiveFactory.createMediaSource(metadataItem(aUrl))
             val audioSource = progressiveFactory.createMediaSource(MediaItem.fromUri(aUrl))
             return MergingMediaSource(false, true, videoSource, audioSource)
         }
@@ -737,13 +925,14 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
 }
 
 /**
- * Forwards every callback, swapping in our metadata. Written out by hand: Kotlin's
- * `by` delegation skips Java default methods, which is all of [Player.Listener].
+ * Forwards every callback, swapping in our metadata and transport commands. Written out
+ * by hand: Kotlin's `by` delegation skips Java default methods, which is all of [Player.Listener].
  */
 @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
 private class MetadataOverrideListener(
     private val d: Player.Listener,
     private val metadata: () -> MediaMetadata,
+    private val commands: (Player.Commands) -> Player.Commands,
 ) : Player.Listener {
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = d.onMediaMetadataChanged(metadata())
     override fun onEvents(player: Player, events: Player.Events) = d.onEvents(player, events)
@@ -753,7 +942,7 @@ private class MetadataOverrideListener(
     override fun onPlaylistMetadataChanged(mediaMetadata: MediaMetadata) = d.onPlaylistMetadataChanged(mediaMetadata)
     override fun onIsLoadingChanged(isLoading: Boolean) = d.onIsLoadingChanged(isLoading)
     override fun onLoadingChanged(isLoading: Boolean) = d.onLoadingChanged(isLoading)
-    override fun onAvailableCommandsChanged(availableCommands: Player.Commands) = d.onAvailableCommandsChanged(availableCommands)
+    override fun onAvailableCommandsChanged(availableCommands: Player.Commands) = d.onAvailableCommandsChanged(commands(availableCommands))
     override fun onTrackSelectionParametersChanged(parameters: androidx.media3.common.TrackSelectionParameters) =
         d.onTrackSelectionParametersChanged(parameters)
     override fun onPlayerStateChanged(playWhenReady: Boolean, playbackState: Int) = d.onPlayerStateChanged(playWhenReady, playbackState)
