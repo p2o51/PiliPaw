@@ -56,6 +56,8 @@ import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.asBool
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.feature.live.LiveDefaultQn
+import com.gpo.pilipala.feature.live.LiveQnNames
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.friendlyMessage
@@ -245,6 +247,7 @@ private fun ColumnScope.PlayBody() {
     val autoFs by AppSettings.autoFullscreenLandscape.state.collectAsState()
     val bg by AppSettings.backgroundPlay.state.collectAsState()
     val pip by AppSettings.autoPip.state.collectAsState()
+    val liveQn by LiveDefaultQn.state.collectAsState()
 
     SettingsGroup("画质") {
         item {
@@ -255,6 +258,16 @@ private fun ColumnScope.PlayBody() {
         }
         item {
             SettingsToggleItem("解码格式", SettingsChoices.codec, codec, { AppSettings.set(AppSettings.preferredCodec, it) }, icon = PiliSymbols.Video)
+        }
+        item {
+            SettingsChoiceItem(
+                "直播默认画质",
+                SettingsChoices.liveQuality,
+                liveQn,
+                { AppSettings.set(LiveDefaultQn, it) },
+                icon = PiliSymbols.Live,
+                fallbackLabel = LiveQnNames[liveQn] ?: liveQn.toString(),
+            )
         }
     }
     SettingsGroup("播放") {

@@ -1,6 +1,7 @@
 package com.gpo.pilipala.feature.settings
 
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.gpo.pilipala.feature.live.LiveQnChoices
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import java.util.Locale
@@ -53,6 +54,8 @@ internal object SettingsChoices {
         Choice(30250, "杜比全景声"),
         Choice(30251, "Hi-Res 无损"),
     )
+
+    val liveQuality = LiveQnChoices.map { (qn, label) -> Choice(qn, label) }
 
     val codec = listOf(
         Choice(0, "AVC"),

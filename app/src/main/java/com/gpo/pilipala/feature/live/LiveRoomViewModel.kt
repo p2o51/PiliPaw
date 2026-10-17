@@ -1,6 +1,7 @@
 package com.gpo.pilipala.feature.live
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -8,19 +9,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.session.MediaSession
 import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.BiliHosts
 import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asObj
-import com.gpo.pilipala.core.net.asString
 import com.gpo.pilipala.core.net.bool
 import com.gpo.pilipala.core.net.int
 import com.gpo.pilipala.core.net.long
@@ -29,8 +33,12 @@ import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.path
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.core.util.Images
 import com.gpo.pilipala.ui.components.friendlyMessage
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -39,6 +47,9 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 
 internal val LiveDefaultQn = AppSettings.register("live_default_qn", 10000)
+
+/** 直播默认画质 choices, best first (pilipala's LiveQuality list). */
+internal val LiveQnChoices: List<Pair<Int, String>> = listOf(30000, 20000, 10000, 400, 250, 150, 80).map { it to LiveQnNames.getValue(it) }
 
 internal class LiveRoomViewModel(
     val roomId: Long,
@@ -74,6 +85,13 @@ internal class LiveRoomViewModel(
 
     val player: ExoPlayer by lazy { buildPlayer() }
     private var playerBuilt = false
+    private var userPaused = false
+
+    // Background: the session is handed to LivePlaybackService while hosted.
+    private var session: MediaSession? = null
+    private var hosted = false
+    /** The live page is the one on screen (not covered by another page). */
+    private var visible = true
 
     // ── Chat ──────────────────────────────────────────────────────────────
     val messages = mutableStateListOf<LiveChat>()
@@ -85,6 +103,9 @@ internal class LiveRoomViewModel(
     var tipVisible by mutableStateOf(false)
         private set
     var danmakuOn by mutableStateOf(AppSettings.danmakuEnabled.value)
+    /** The room's `[code]` emotes (logged in only), for messages that don't carry their own. */
+    var roomEmotes by mutableStateOf<Map<String, LiveEmote>>(emptyMap())
+        private set
     private var socket: LiveDanmakuSocket? = null
     private var pollJob: Job? = null
     private var tipJob: Job? = null
@@ -102,6 +123,21 @@ internal class LiveRoomViewModel(
     init {
         loadInfo()
         startChat()
+        loadRoomEmotes()
+        viewModelScope.launch { AppSettings.backgroundPlay.state.collect { syncBackgroundHost() } }
+    }
+
+    private fun loadRoomEmotes() {
+        if (!BiliClient.isLoggedIn) return
+        viewModelScope.launch {
+            runCatching {
+                BiliClient.getData(
+                    "${BiliHosts.LIVE}/xlive/web-ucenter/v2/emoticon/GetEmoticons",
+                    mapOf("platform" to "pc", "room_id" to roomId),
+                ).asObj
+            }.onSuccess { roomEmotes = LiveMessages.roomEmotes(it) }
+                .onFailure { Log.w(TAG, "emoticons", it) }
+        }
     }
 
     fun loadInfo() {
@@ -122,7 +158,30 @@ internal class LiveRoomViewModel(
         }
     }
 
-    private suspend fun fetchInfo(): LiveRoomInfo {
+    private suspend fun fetchInfo(): LiveRoomInfo = coroutineScope {
+        val extra = async { runCatching { fetchExtra() }.getOrNull() }
+        val base = fetchBase()
+        val e = extra.await() ?: return@coroutineScope base
+        base.copy(
+            description = e.description.ifEmpty { base.description },
+            tags = e.tags,
+            areaName = base.areaName.ifEmpty { e.areaName },
+            parentAreaName = base.parentAreaName.ifEmpty { e.parentAreaName },
+        )
+    }
+
+    /** Room/get_info: the only public endpoint that still has tags. */
+    private suspend fun fetchExtra(): LiveRoomInfo {
+        val d = BiliClient.getData("${BiliHosts.LIVE}/room/v1/Room/get_info", mapOf("room_id" to roomId)).asObj
+        return LiveRoomInfo(
+            description = Fmt.stripTags(d.str("description")).trim(),
+            tags = d.str("tags").split(',').map { it.trim() }.filter { it.isNotEmpty() },
+            areaName = d.str("area_name"),
+            parentAreaName = d.str("parent_area_name"),
+        )
+    }
+
+    private suspend fun fetchBase(): LiveRoomInfo {
         val h5 = runCatching {
             BiliClient.getData(
                 "${BiliHosts.LIVE}/xlive/web-room/v1/index/getH5InfoByRoom",
@@ -147,6 +206,8 @@ internal class LiveRoomViewModel(
                 anchorName = anchor.obj("base_info").str("uname"),
                 anchorFace = anchor.obj("base_info").str("face"),
                 attention = anchor.obj("relation_info").long("attention"),
+                description = Fmt.stripTags(room.str("description")).trim(),
+                news = h5.obj("news_info").str("content").trim(),
             )
         }
         val d = BiliClient.getData(
@@ -171,6 +232,8 @@ internal class LiveRoomViewModel(
             anchorName = anchor.obj("base_info").str("uname"),
             anchorFace = anchor.obj("base_info").str("face"),
             attention = anchor.obj("relation_info").long("attention"),
+            description = Fmt.stripTags(room.str("description")).trim(),
+            news = d.obj("news_info").str("content").trim(),
         )
     }
 
@@ -255,7 +318,17 @@ internal class LiveRoomViewModel(
         userPaused = false
         val dsf = OkHttpDataSource.Factory(BiliClient.http)
             .setDefaultRequestProperties(BiliClient.mediaHeaders())
-        val item = MediaItem.fromUri(url)
+        val room = info
+        val item = MediaItem.Builder()
+            .setUri(url)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(room?.title?.ifEmpty { null })
+                    .setArtist(room?.anchorName?.ifEmpty { null })
+                    .apply { room?.cover?.ifEmpty { null }?.let { setArtworkUri(Uri.parse(Images.normalize(it))) } }
+                    .build(),
+            )
+            .build()
         val source = if (url.contains(".m3u8")) {
             HlsMediaSource.Factory(dsf).createMediaSource(item)
         } else {
@@ -268,10 +341,17 @@ internal class LiveRoomViewModel(
 
     private fun buildPlayer(): ExoPlayer {
         playerBuilt = true
-        return ExoPlayer.Builder(appContext).build().apply {
+        return ExoPlayer.Builder(appContext)
+            .setAudioAttributes(
+                AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
+                true,
+            )
+            .setHandleAudioBecomingNoisy(true)
+            .build().apply {
             addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(playing: Boolean) {
                     this@LiveRoomViewModel.isPlaying = playing
+                    if (playing) syncBackgroundHost()
                 }
 
                 override fun onPlaybackStateChanged(state: Int) {
@@ -297,33 +377,75 @@ internal class LiveRoomViewModel(
         }
     }
 
-    private var userPaused = false
-
     fun togglePlay() {
-        if (player.isPlaying) {
-            userPaused = true
-            player.pause()
+        if (player.isPlaying) userPause() else userPlay()
+    }
+
+    private fun userPause() {
+        userPaused = true
+        player.pause()
+    }
+
+    private fun userPlay() {
+        userPaused = false
+        if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) {
+            loadStream()
         } else {
-            userPaused = false
-            if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) {
-                loadStream()
-            } else {
-                // Live: jump back to the edge after a pause.
+            // Live: jump back to the edge after a pause.
+            player.seekToDefaultPosition()
+            player.play()
+        }
+    }
+
+    /** The page is covered by another one: stop, and let go of the notification. */
+    fun pauseForBackground() {
+        if (!playerBuilt) return
+        player.pause()
+        visible = false
+        syncBackgroundHost()
+    }
+
+    /** The app went to the background: keep the audio going when background play is on. */
+    fun onAppStopped() {
+        if (!playerBuilt) return
+        if (!(AppSettings.backgroundPlay.value && hosted && player.isPlaying)) player.pause()
+    }
+
+    fun resumeFromBackground() {
+        visible = true
+        if (playerBuilt && !userPaused && info?.liveStatus != 0 && streamError == null) {
+            if (!player.isPlaying) {
                 player.seekToDefaultPosition()
                 player.play()
             }
         }
+        syncBackgroundHost()
     }
 
-    fun pauseForBackground() {
-        if (playerBuilt) player.pause()
+    // ── Background (MediaSession + LivePlaybackService) ───────────────────
+
+    private fun ensureSession(): MediaSession? {
+        session?.let { return it }
+        val sp = LiveSessionPlayer(player, onPlay = ::userPlay, onPause = ::userPause)
+        session = runCatching {
+            MediaSession.Builder(appContext, sp)
+                .setId("pili-live-$roomId-${System.nanoTime()}")
+                .setCallback(LiveSessionCallback)
+                .setBitmapLoader(LiveBitmapLoader(appContext))
+                .setSessionActivity(LivePlaybackService.sessionActivity(appContext))
+                .build()
+        }.onFailure { Log.w(TAG, "session", it) }.getOrNull()
+        return session
     }
 
-    fun resumeFromBackground() {
-        if (playerBuilt && !userPaused && info?.liveStatus != 0 && streamError == null) {
-            player.seekToDefaultPosition()
-            player.play()
-        }
+    /** Hands the session to the service while playing on a visible page with background play on. */
+    private fun syncBackgroundHost() {
+        if (!playerBuilt) return
+        val want = AppSettings.backgroundPlay.value && visible && (player.isPlaying || hosted)
+        if (want == hosted) return
+        val s = ensureSession() ?: return
+        hosted = want
+        if (want) LivePlaybackService.attach(appContext, s) else LivePlaybackService.detach(s)
     }
 
     fun refresh() {
@@ -381,26 +503,42 @@ internal class LiveRoomViewModel(
             ).asObj
         }.getOrNull() ?: return
         val fresh = data.arr("room").objects().mapNotNull { o ->
-            val text = o.str("text")
-            val name = o.str("nickname").ifEmpty { o.path("user.base.name").asString() }
-            val key = "h${o.long("uid")}-${o.str("timeline")}-${text.hashCode()}"
-            if (text.isEmpty() || !seenHistory.add(key)) return@mapNotNull null
-            LiveChat(
-                key = key,
-                uid = o.long("uid"),
-                name = name,
-                text = text,
-                face = o.path("user.base.face").asString(),
-                emoticon = o.obj("emoticon").str("url"),
-            )
+            val key = "h${o.long("uid")}-${o.str("timeline")}-${o.str("text").hashCode()}"
+            if (!seenHistory.add(key)) return@mapNotNull null
+            LiveMessages.history(o, key)
         }
         if (fresh.isNotEmpty()) appendChats(fresh)
     }
 
     private fun appendChats(list: List<LiveChat>) {
-        messages.addAll(list)
+        val keys = messages.mapTo(HashSet()) { it.key }
+        val fresh = ArrayList<LiveChat>(list.size)
+        for (c in list) {
+            if (!keys.add(c.key)) continue
+            if (c.kind == LiveChatKind.Gift && mergeGift(c, fresh)) continue
+            fresh += c
+        }
+        messages.addAll(fresh)
         if (messages.size > 400) messages.removeRange(0, messages.size - 300)
-        _incoming.tryEmit(list.filter { it.kind == LiveChatKind.Chat && it.emoticon.isEmpty() })
+        _incoming.tryEmit(fresh.filter { it.kind == LiveChatKind.Chat && it.sticker == null })
+    }
+
+    /** Folds a gift into a recent row of the same combo (same sender + gift), bumping its count. */
+    private fun mergeGift(g: LiveChat, pending: MutableList<LiveChat>): Boolean {
+        fun same(o: LiveChat) = o.kind == LiveChatKind.Gift && o.comboKey == g.comboKey && o.giftName == g.giftName
+        val p = pending.indexOfLast(::same)
+        if (p >= 0) {
+            pending[p] = pending[p].copy(giftNum = pending[p].giftNum + g.giftNum)
+            return true
+        }
+        val from = (messages.size - 20).coerceAtLeast(0)
+        for (i in messages.lastIndex downTo from) {
+            if (same(messages[i])) {
+                messages[i] = messages[i].copy(giftNum = messages[i].giftNum + g.giftNum)
+                return true
+            }
+        }
+        return false
     }
 
     private fun showTip(t: String) {
@@ -503,6 +641,12 @@ internal class LiveRoomViewModel(
     override fun onCleared() {
         socket?.close()
         pollJob?.cancel()
+        session?.let {
+            if (hosted) LivePlaybackService.detach(it)
+            it.release()
+        }
+        hosted = false
+        session = null
         if (playerBuilt) player.release()
         super.onCleared()
     }
