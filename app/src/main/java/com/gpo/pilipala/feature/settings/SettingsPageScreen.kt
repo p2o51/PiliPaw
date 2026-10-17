@@ -368,13 +368,13 @@ private fun ColumnScope.DanmakuBody() {
     }
     SettingsGroup("屏蔽") {
         item {
-            SettingsSwitchItem("顶部弹幕", hideTop, { AppSettings.set(AppSettings.danmakuHideTop, it) }, icon = PiliSymbols.Up, enabled = enabled)
+            SettingsSwitchItem("顶部弹幕", hideTop, { AppSettings.set(AppSettings.danmakuHideTop, it) }, icon = PiliSymbols.DanmakuTop, enabled = enabled)
         }
         item {
-            SettingsSwitchItem("底部弹幕", hideBottom, { AppSettings.set(AppSettings.danmakuHideBottom, it) }, icon = YoinSymbols.Download, enabled = enabled)
+            SettingsSwitchItem("底部弹幕", hideBottom, { AppSettings.set(AppSettings.danmakuHideBottom, it) }, icon = PiliSymbols.DanmakuBottom, enabled = enabled)
         }
         item {
-            SettingsSwitchItem("滚动弹幕", hideScroll, { AppSettings.set(AppSettings.danmakuHideScroll, it) }, icon = YoinSymbols.Back, enabled = enabled)
+            SettingsSwitchItem("滚动弹幕", hideScroll, { AppSettings.set(AppSettings.danmakuHideScroll, it) }, icon = PiliSymbols.DanmakuScroll, enabled = enabled)
         }
     }
 }

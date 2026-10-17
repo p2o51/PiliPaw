@@ -218,7 +218,8 @@ fun WebScreen(route: Route.Web) {
                             if (host.contains("bilibili.com") || host.contains("b23.tv")) {
                                 val target = LinkRouter.route(url)
                                 if (target !is Route.Web) {
-                                    navState.push(target)
+                                    // A short link that redirects straight to a native page replaces this one.
+                                    if (request.isRedirect && !view.canGoBack()) navState.replace(target) else navState.push(target)
                                     return true
                                 }
                             }
