@@ -1,9 +1,11 @@
 package com.gpo.pilipala.feature.live
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,11 +46,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.ui.compose.ContentFrame
+import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
+import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
+import com.gpo.pilipala.feature.player.rememberLandscapeTurn
+import com.gpo.pilipala.feature.player.turnedContent
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinMotion
@@ -87,6 +95,26 @@ internal fun LivePlayerView(
         }
     }
 
+    // Large screens ignore (or letterbox) orientation requests, so a landscape stream in a
+    // portrait window turns in software, like the video player: the picture springs from
+    // the inline size into the whole window and follows the device's turn direction.
+    val configuration = LocalConfiguration.current
+    val activity = LocalActivity.current
+    val phone = configuration.smallestScreenWidthDp < 600
+    val windowPortrait = configuration.screenHeightDp > configuration.screenWidthDp
+    val multiWindow = remember(configuration) { activity?.isInMultiWindowMode == true }
+    val turned = fullscreen && !pip && !phone && windowPortrait && !vm.isPortraitStream && !multiWindow
+    val turn = rememberLandscapeTurn(turned)
+    val turnAngle = remember { Animatable(0f) }
+    val turnTarget = if (turned) turn else 0f
+    val turnSpec = YoinMotion.defaultSpatialSpec<Float>()
+    LaunchedEffect(turnTarget) { turnAngle.animateTo(turnTarget, turnSpec) }
+    // A SurfaceView cannot be rotated; the turned picture (and its spring back) draws through a TextureView.
+    val turning by remember { derivedStateOf { turnAngle.value != 0f } }
+    val surfaceType = if (turned || turning) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
+    // Window insets describe the unturned window; the turned frame has no bars to avoid.
+    val chromeInsets = fullscreen && !turned
+
     Box(
         modifier
             .background(Color.Black)
@@ -95,118 +123,121 @@ internal fun LivePlayerView(
                 tapCount++
             },
     ) {
-        if (live) {
-            ContentFrame(
-                player = vm.player,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-            )
-            LiveDanmakuLayer(vm.incoming, enabled = vm.danmakuOn && !pip, big = fullscreen, modifier = Modifier.fillMaxSize())
-        } else {
-            val cover = info?.cover?.ifEmpty { info.background }.orEmpty()
-            NetImage(
-                cover,
-                Modifier.fillMaxSize(),
-                shape = androidx.compose.ui.graphics.RectangleShape,
-                thumbWidth = 720.dp,
-            )
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
-        }
-
-        // Center: buffering / offline / error.
-        AnimatedContent(
-            targetState = when {
-                vm.loadingInfo -> CenterState.Loading
-                info != null && (info.liveStatus == 0 || vm.streamError == "未开播") -> CenterState.Offline
-                vm.streamError != null -> CenterState.Error
-                vm.loadingStream || vm.isBuffering -> CenterState.Loading
-                else -> CenterState.None
-            },
-            transitionSpec = { fadeInSpec togetherWith fadeOutSpec },
-            modifier = Modifier.align(Alignment.Center),
-            label = "center",
-        ) { state ->
-            when (state) {
-                CenterState.Loading -> LoadingIndicator(color = Color.White)
-                CenterState.Offline -> CenterPill("未开播")
-                CenterState.Error -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CenterPill(vm.streamError ?: "播放失败")
-                    TextButton(onClick = { vm.loadStream() }) { Text("重试", color = Color.White) }
-                }
-                CenterState.None -> Spacer(Modifier.size(1.dp))
+        Box(Modifier.fillMaxSize().turnedContent(turned) { turnAngle.value }) {
+            if (live) {
+                ContentFrame(
+                    player = vm.player,
+                    modifier = Modifier.fillMaxSize(),
+                    surfaceType = surfaceType,
+                    contentScale = ContentScale.Fit,
+                )
+                LiveDanmakuLayer(vm.incoming, enabled = vm.danmakuOn && !pip, big = fullscreen, modifier = Modifier.fillMaxSize())
+            } else {
+                val cover = info?.cover?.ifEmpty { info.background }.orEmpty()
+                NetImage(
+                    cover,
+                    Modifier.fillMaxSize(),
+                    shape = androidx.compose.ui.graphics.RectangleShape,
+                    thumbWidth = 720.dp,
+                )
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
             }
-        }
 
-        AnimatedVisibility(
-            visible = chromeVisible && !pip,
-            enter = fadeIn(YoinMotion.defaultEffectsSpec()),
-            exit = fadeOut(YoinMotion.defaultEffectsSpec()),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            Box(Modifier.fillMaxSize()) {
-                // Top bar
-                Row(
-                    Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(Scrim, Color.Transparent)))
-                        .then(if (fullscreen) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier)
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OverlayIcon(YoinSymbols.Back, "返回", onBack)
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        info?.title.orEmpty(),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
+            // Center: buffering / offline / error.
+            AnimatedContent(
+                targetState = when {
+                    vm.loadingInfo -> CenterState.Loading
+                    info != null && (info.liveStatus == 0 || vm.streamError == "未开播") -> CenterState.Offline
+                    vm.streamError != null -> CenterState.Error
+                    vm.loadingStream || vm.isBuffering -> CenterState.Loading
+                    else -> CenterState.None
+                },
+                transitionSpec = { fadeInSpec togetherWith fadeOutSpec },
+                modifier = Modifier.align(Alignment.Center),
+                label = "center",
+            ) { state ->
+                when (state) {
+                    CenterState.Loading -> LoadingIndicator(color = Color.White)
+                    CenterState.Offline -> CenterPill("未开播")
+                    CenterState.Error -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CenterPill(vm.streamError ?: "播放失败")
+                        TextButton(onClick = { vm.loadStream() }) { Text("重试", color = Color.White) }
+                    }
+                    CenterState.None -> Spacer(Modifier.size(1.dp))
                 }
-                // Bottom bar
-                if (live) {
+            }
+
+            AnimatedVisibility(
+                visible = chromeVisible && !pip,
+                enter = fadeIn(YoinMotion.defaultEffectsSpec()),
+                exit = fadeOut(YoinMotion.defaultEffectsSpec()),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    // Top bar
                     Row(
                         Modifier
-                            .align(Alignment.BottomCenter)
+                            .align(Alignment.TopCenter)
                             .fillMaxWidth()
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, Scrim)))
-                            .then(if (fullscreen) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier)
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                            .background(Brush.verticalGradient(listOf(Scrim, Color.Transparent)))
+                            .then(if (chromeInsets) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier)
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        OverlayIcon(
-                            if (vm.isPlaying) YoinSymbols.PauseFilled else YoinSymbols.PlayFilled,
-                            if (vm.isPlaying) "暂停" else "播放",
-                        ) {
-                            haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            vm.togglePlay()
-                            tapCount++
-                        }
-                        OverlayIcon(YoinSymbols.Refresh, "刷新") {
-                            vm.loadStream()
-                            tapCount++
-                        }
-                        Spacer(Modifier.weight(1f))
-                        OverlayIcon(
-                            if (vm.danmakuOn) PiliSymbols.Danmaku else PiliSymbols.DanmakuOff,
-                            "弹幕",
-                        ) {
-                            vm.danmakuOn = !vm.danmakuOn
-                            haptic.performHapticFeedback(
-                                if (vm.danmakuOn) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff,
-                            )
-                            tapCount++
-                        }
-                        QualityButton(vm) { tapCount++ }
-                        if (onPip != null) OverlayIcon(PiliSymbols.Pip, "小窗", onPip)
-                        OverlayIcon(
-                            if (fullscreen) PiliSymbols.FullscreenExit else PiliSymbols.Fullscreen,
-                            if (fullscreen) "退出全屏" else "全屏",
-                            onToggleFullscreen,
+                        OverlayIcon(YoinSymbols.Back, "返回", onBack)
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            info?.title.orEmpty(),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
                         )
+                    }
+                    // Bottom bar
+                    if (live) {
+                        Row(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .background(Brush.verticalGradient(listOf(Color.Transparent, Scrim)))
+                                .then(if (chromeInsets) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier)
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            OverlayIcon(
+                                if (vm.isPlaying) YoinSymbols.PauseFilled else YoinSymbols.PlayFilled,
+                                if (vm.isPlaying) "暂停" else "播放",
+                            ) {
+                                haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                vm.togglePlay()
+                                tapCount++
+                            }
+                            OverlayIcon(YoinSymbols.Refresh, "刷新") {
+                                vm.loadStream()
+                                tapCount++
+                            }
+                            Spacer(Modifier.weight(1f))
+                            OverlayIcon(
+                                if (vm.danmakuOn) PiliSymbols.Danmaku else PiliSymbols.DanmakuOff,
+                                "弹幕",
+                            ) {
+                                vm.danmakuOn = !vm.danmakuOn
+                                haptic.performHapticFeedback(
+                                    if (vm.danmakuOn) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff,
+                                )
+                                tapCount++
+                            }
+                            QualityButton(vm) { tapCount++ }
+                            if (onPip != null) OverlayIcon(PiliSymbols.Pip, "小窗", onPip)
+                            OverlayIcon(
+                                if (fullscreen) PiliSymbols.FullscreenExit else PiliSymbols.Fullscreen,
+                                if (fullscreen) "退出全屏" else "全屏",
+                                onToggleFullscreen,
+                            )
+                        }
                     }
                 }
             }

@@ -102,12 +102,12 @@ internal fun BangumiHeader(
                         Text(
                             "${Fmt.count(d.ratingCount)}人评",
                             style = MaterialTheme.typography.labelSmall,
-                            color = colors.outline,
+                            color = colors.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 4.dp),
                         )
                     }
                 } else {
-                    Text("暂无评分", style = MaterialTheme.typography.labelMedium, color = colors.outline)
+                    Text("暂无评分", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -363,7 +363,7 @@ private fun EpisodeTile(ep: BangumiEpisode, selected: Boolean, onClick: () -> Un
                 ep.title,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = if (selected) colors.primary else colors.outline,
+                color = if (selected) colors.primary else colors.onSurfaceVariant,
                 maxLines = 1,
                 modifier = Modifier.weight(1f, fill = false),
             )
@@ -404,7 +404,7 @@ internal fun EpisodeGridSheet(
             Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.width(8.dp))
-                Text("${groups.sumOf { it.episodes.size }}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.outline)
+                Text("${groups.sumOf { it.episodes.size }}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(8.dp))
             Box(Modifier.fillMaxWidth().height((LocalConfiguration.current.screenHeightDp * 0.7f).dp)) {

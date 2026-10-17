@@ -51,17 +51,22 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.YoinMotion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Infinite feed state for the home tabs. Unlike the shared Pager it separates
  * the first-page error (full-page ErrorState) from a load-more error (retry
  * footer), keeps user refreshes distinct from the initial load, and reports a
  * failed refresh over existing items as a one-shot message.
+ *
+ * [loader] runs on [Dispatchers.Default]: parsing and mapping a feed page stays off the
+ * main thread (a load-more lands mid-fling), and only the final `items` swap touches it.
  */
 @Stable
 internal class FeedPager<T>(
@@ -102,7 +107,7 @@ internal class FeedPager<T>(
             error = null
             moreError = null
             try {
-                val page = loader(null)
+                val page = withContext(Dispatchers.Default) { loader(null) }
                 items = page.items.distinctBy(key)
                 hasMore = page.hasMore
                 cursor = page.nextCursor
@@ -123,7 +128,7 @@ internal class FeedPager<T>(
         job = scope.launch {
             loadingMore = true
             try {
-                val page = loader(cursor)
+                val page = withContext(Dispatchers.Default) { loader(cursor) }
                 val merged = (items + page.items).distinctBy(key)
                 val added = merged.size - items.size
                 items = merged
@@ -278,7 +283,7 @@ private fun <T> FeedFooter(pager: FeedPager<T>) {
             LoadingFooter()
         }
         else -> Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
-            Text("没有更多了", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+            Text("没有更多了", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

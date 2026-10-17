@@ -68,6 +68,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -379,12 +380,20 @@ private fun ChatList(vm: LiveRoomViewModel, modifier: Modifier = Modifier) {
             if (stick) seenCount = vm.messages.size
         }
     }
+    // Quiet rooms glide to the newest row; when batches arrive faster than the glide
+    // (busy rooms) the list snaps instead of living in an endless restarted scroll
+    // animation; the new rows still fade in.
+    val lastFollowAt = remember { longArrayOf(0L) }
     LaunchedEffect(count, stick) {
         if (stick && count > 0) {
-            listState.animateScrollToItem(count - 1)
+            val now = android.os.SystemClock.uptimeMillis()
+            val busy = now - lastFollowAt[0] < 800
+            lastFollowAt[0] = now
+            if (busy) listState.scrollToItem(count - 1) else listState.animateScrollToItem(count - 1)
             seenCount = count
         }
     }
+    val rowFade = YoinMotion.defaultEffectsSpec<Float>()
 
     Box(modifier) {
         if (count == 0) {
@@ -404,7 +413,8 @@ private fun ChatList(vm: LiveRoomViewModel, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             items(vm.messages, key = { it.key }) { chat ->
-                LiveChatItem(chat, vm.roomEmotes, Modifier.animateItem())
+                // No placement animation: trimming the buffer's head must not move every visible row.
+                LiveChatItem(chat, vm.roomEmotes, Modifier.animateItem(fadeInSpec = rowFade, placementSpec = null, fadeOutSpec = null))
             }
         }
         // Join / follow tip: over the oldest rows, never over the newest.
@@ -529,15 +539,24 @@ private fun rememberIsInPip(): Boolean {
     return pip
 }
 
+/**
+ * Immersive fullscreen. Only phones ask for an orientation: large screens (sw ≥ 600dp)
+ * ignore the request on Android 16+ or letterbox the app into a rotated box, so there
+ * [LivePlayerView] turns the picture itself.
+ */
 @Composable
 private fun FullscreenEffect(fullscreen: Boolean, portrait: Boolean) {
     val activity = LocalActivity.current ?: return
-    DisposableEffect(fullscreen, portrait) {
+    val phone = LocalConfiguration.current.smallestScreenWidthDp < 600
+    DisposableEffect(fullscreen, portrait, phone) {
         val window = activity.window
         val controller = WindowCompat.getInsetsController(window, window.decorView)
+        val lockOrientation = fullscreen && phone
         if (fullscreen) {
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.systemBars())
+        }
+        if (lockOrientation) {
             activity.requestedOrientation = if (portrait) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
             } else {
@@ -545,10 +564,8 @@ private fun FullscreenEffect(fullscreen: Boolean, portrait: Boolean) {
             }
         }
         onDispose {
-            if (fullscreen) {
-                controller.show(WindowInsetsCompat.Type.systemBars())
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            }
+            if (fullscreen) controller.show(WindowInsetsCompat.Type.systemBars())
+            if (lockOrientation) activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
 }
