@@ -231,8 +231,8 @@ fun BiliVideoPlayer(
     val configuration = LocalConfiguration.current
     val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val phone = configuration.smallestScreenWidthDp < 600
-    // Phones turn the display; large screens ignore (or letterbox) orientation requests,
-    // so there the picture itself turns when the window is portrait (see FullscreenWindowEffect).
+    // Phones turn the display. Large screens try a real rotation first and turn the picture
+    // itself when the platform ignores or letterboxes the request (rememberLargeScreenFullscreen).
     FullscreenWindowEffect(
         activity = activity,
         fullscreen = fullscreen,
@@ -240,7 +240,11 @@ fun BiliVideoPlayer(
     )
     val windowPortrait = configuration.screenHeightDp > configuration.screenWidthDp
     val multiWindow = remember(configuration) { activity?.isInMultiWindowMode == true }
-    val turned = !phone && fullscreen && windowPortrait && !portraitVideo && !inPip && !ctrl.pipForcedFullscreen && !multiWindow
+    val large = rememberLargeScreenFullscreen(
+        activity = activity,
+        want = !phone && fullscreen && !portraitVideo && !inPip && !ctrl.pipForcedFullscreen && !multiWindow && !ctrl.fullscreenByRotation,
+    )
+    val turned = large == LargeFullscreen.Turn && windowPortrait
     val turn = rememberLandscapeTurn(turned)
     val turnAngle = remember { Animatable(0f) }
     val turnTarget = if (turned) turn else 0f

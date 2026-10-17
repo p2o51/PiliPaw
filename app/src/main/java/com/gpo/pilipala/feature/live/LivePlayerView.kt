@@ -103,7 +103,11 @@ internal fun LivePlayerView(
     val phone = configuration.smallestScreenWidthDp < 600
     val windowPortrait = configuration.screenHeightDp > configuration.screenWidthDp
     val multiWindow = remember(configuration) { activity?.isInMultiWindowMode == true }
-    val turned = fullscreen && !pip && !phone && windowPortrait && !vm.isPortraitStream && !multiWindow
+    val large = com.gpo.pilipala.feature.player.rememberLargeScreenFullscreen(
+        activity = activity,
+        want = fullscreen && !pip && !phone && !vm.isPortraitStream && !multiWindow,
+    )
+    val turned = large == com.gpo.pilipala.feature.player.LargeFullscreen.Turn && windowPortrait
     val turn = rememberLandscapeTurn(turned)
     val turnAngle = remember { Animatable(0f) }
     val turnTarget = if (turned) turn else 0f

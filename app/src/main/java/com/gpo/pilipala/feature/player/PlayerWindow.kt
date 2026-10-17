@@ -14,6 +14,11 @@ import android.view.Surface
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.awaitCancellation
+import com.gpo.pilipala.core.settings.AppSettings
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -71,13 +76,8 @@ internal fun enterPip(activity: Activity?, aspect: Float): Boolean {
  * with [lockLandscape], asks for sensor-landscape. Everything is restored when
  * fullscreen ends or the player leaves composition.
  *
- * [lockLandscape] is for phones only. On large screens (sw ≥ 600dp) Android 16+
- * ignores orientation requests from apps targeting SDK 36, and the opt-out
- * (PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY) does not rotate the display
- * either: devices like the Pixel Tablet set ignoreOrientationRequest, so a
- * landscape request only letterboxes the app into a landscape box inside the
- * portrait screen. Large screens turn the picture in software instead
- * ([turnedContent]).
+ * [lockLandscape] is for phones only; large screens go through
+ * [rememberLargeScreenFullscreen] (try a real rotation, else turn the picture).
  */
 @Composable
 internal fun FullscreenWindowEffect(activity: Activity?, fullscreen: Boolean, lockLandscape: Boolean) {
@@ -97,6 +97,96 @@ internal fun FullscreenWindowEffect(activity: Activity?, fullscreen: Boolean, lo
         }
     }
 }
+
+/** How a large screen shows a landscape picture fullscreen while its window is portrait. */
+internal enum class LargeFullscreen {
+    /** Not applicable (phone, portrait video, PiP, multi-window, not fullscreen). */
+    Off,
+    /** Landscape requested; waiting to see whether the display really turns. */
+    Trying,
+    /** The display turned: plain landscape fullscreen, nothing to do in software. */
+    Rotated,
+    /** The request was ignored or only letterboxed the app: turn the picture itself. */
+    Turn,
+}
+
+/**
+ * Remembered per device: asking for landscape here only letterboxes the app into a
+ * landscape box (displays with ignoreOrientationRequest, e.g. the Pixel Tablet), so
+ * later fullscreens go straight to the turned picture without that flash.
+ */
+private val LargeScreenRotationLetterboxes = AppSettings.register("player_large_rotation_letterboxes", false)
+
+/** True when the display itself is drawn landscape (a real rotation, not a letterbox). */
+internal fun displayIsLandscape(activity: Activity): Boolean {
+    @Suppress("DEPRECATION")
+    val display = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) activity.display else activity.windowManager.defaultDisplay)
+        ?: return false
+    val mode = display.mode
+    val naturalLandscape = mode.physicalWidth > mode.physicalHeight
+    val quarterTurn = display.rotation == Surface.ROTATION_90 || display.rotation == Surface.ROTATION_270
+    return naturalLandscape != quarterTurn
+}
+
+/**
+ * Large-screen fullscreen for a landscape picture. Android 16+ ignores orientation
+ * requests on sw ≥ 600dp displays for apps targeting SDK 36 unless they opt out
+ * (the manifest sets PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY), and some
+ * tablets letterbox instead of rotating. So: ask for sensor-landscape, and if the
+ * display really turns within [TryRotationMs], that is fullscreen. Otherwise give
+ * the request back and turn the picture in software ([turnedContent]). A device
+ * that letterboxed is remembered so it skips the attempt next time.
+ *
+ * [want] must not depend on the window's current orientation, or the rotation it
+ * causes would end the attempt.
+ */
+@Composable
+internal fun rememberLargeScreenFullscreen(activity: Activity?, want: Boolean): LargeFullscreen {
+    var mode by remember { mutableStateOf(LargeFullscreen.Off) }
+    LaunchedEffect(activity, want) {
+        if (activity == null || !want) {
+            mode = LargeFullscreen.Off
+            return@LaunchedEffect
+        }
+        if (displayIsLandscape(activity)) {
+            // Already landscape (the device was turned): plain fullscreen.
+            mode = LargeFullscreen.Rotated
+            return@LaunchedEffect
+        }
+        if (LargeScreenRotationLetterboxes.value) {
+            mode = LargeFullscreen.Turn
+            return@LaunchedEffect
+        }
+        val previous = activity.requestedOrientation
+        mode = LargeFullscreen.Trying
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // Local, not [mode]: on exit the next effect run may reset [mode] before this finally runs.
+        var holding = true
+        try {
+            val rotated = withTimeoutOrNull(TryRotationMs) {
+                while (!displayIsLandscape(activity)) delay(40)
+                true
+            } == true
+            if (rotated) {
+                mode = LargeFullscreen.Rotated
+                awaitCancellation()
+            } else {
+                activity.requestedOrientation = previous
+                holding = false
+                if (activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+                    // The app went landscape but the display did not: a letterbox.
+                    AppSettings.set(LargeScreenRotationLetterboxes, true)
+                }
+                mode = LargeFullscreen.Turn
+            }
+        } finally {
+            if (holding) activity.requestedOrientation = previous
+        }
+    }
+    return mode
+}
+
+private const val TryRotationMs = 900L
 
 /**
  * Which way a software-turned landscape picture faces: +90 (turned clockwise, the

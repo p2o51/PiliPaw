@@ -21,6 +21,13 @@
         android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true">
 
+        <!-- Android 16+ ignores orientation requests on large screens for apps targeting 36.
+             Opt out so tablets that honour them really rotate into fullscreen; where the
+             display still won't turn (it letterboxes), the player turns the picture itself. -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
