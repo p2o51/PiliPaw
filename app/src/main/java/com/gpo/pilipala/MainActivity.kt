@@ -26,6 +26,7 @@ import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.feature.player.PlaybackService
 import com.gpo.pilipala.navigation.AppNavHost
 import com.gpo.pilipala.navigation.LinkRouter
+import com.gpo.pilipala.navigation.Navigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.LocalSnackbarHost
 import com.gpo.pilipala.ui.theme.PiliTheme
@@ -55,16 +56,18 @@ class MainActivity : ComponentActivity() {
                 val snackbar = remember { SnackbarHostState() }
                 val rootScope = androidx.compose.runtime.rememberCoroutineScope()
                 val backStack = rememberNavBackStack(Route.Main)
+                val navigator = remember(backStack) { Navigator(backStack) }
                 LaunchedEffect(Unit) {
                     for (link in deepLinks) {
                         val top = backStack.lastOrNull()
                         if (link.resume && (top is Route.Video || top is Route.Bangumi)) continue
-                        backStack.add(link.route)
+                        // Through the navigator, so the covered page is frozen for its later reveal.
+                        navigator.push(link.route)
                     }
                 }
                 CompositionLocalProvider(LocalSnackbarHost provides snackbar, com.gpo.pilipala.ui.components.LocalToastScope provides rootScope) {
                     Box(Modifier.fillMaxSize()) {
-                        AppNavHost(backStack)
+                        AppNavHost(navigator)
                         SnackbarHost(
                             snackbar,
                             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp),

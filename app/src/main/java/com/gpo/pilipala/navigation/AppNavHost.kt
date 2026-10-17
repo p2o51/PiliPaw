@@ -1,22 +1,29 @@
 package com.gpo.pilipala.navigation
 
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
-import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberDecoratedNavEntries
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.scene.SceneInfo
+import androidx.navigation3.scene.SinglePaneSceneStrategy
+import androidx.navigation3.scene.rememberSceneState
 import androidx.navigation3.ui.NavDisplay
+import androidx.navigationevent.compose.rememberNavigationEventState
 import com.gpo.pilipala.feature.article.OpusScreen
 import com.gpo.pilipala.feature.article.ReadScreen
 import com.gpo.pilipala.feature.bangumi.BangumiDetailScreen
@@ -50,73 +57,131 @@ import com.gpo.pilipala.feature.settings.SettingsPageScreen
 import com.gpo.pilipala.feature.settings.SettingsScreen
 import com.gpo.pilipala.feature.video.VideoDetailScreen
 import com.gpo.pilipala.feature.web.WebScreen
+import com.gpo.pilipala.navigation.transition.BackInputBlocker
+import com.gpo.pilipala.navigation.transition.BackPhase
+import com.gpo.pilipala.navigation.transition.BeneathPage
+import com.gpo.pilipala.navigation.transition.LocalPageTransitions
+import com.gpo.pilipala.navigation.transition.PageBackHandler
+import com.gpo.pilipala.navigation.transition.PageEntryFrame
+import com.gpo.pilipala.navigation.transition.pageClosingTransform
+import com.gpo.pilipala.navigation.transition.pagePopTransform
+import com.gpo.pilipala.navigation.transition.pagePushTransform
+import com.gpo.pilipala.navigation.transition.rememberPageTransitions
+import com.gpo.pilipala.navigation.transition.voteHighFrameRate
 import com.gpo.pilipala.ui.shell.MainShell
-import com.gpo.pilipala.ui.theme.YoinMotion
 
 /**
- * Single NavDisplay for the whole app. Push/pop ride the AOSP cross-activity
- * slide (Yoin: platform mimicry for page changes), predictive back scrubs the
- * same transition.
+ * Single NavDisplay for the whole app, wrapped in the page-transition host
+ * (navigation/transition): pushes grow out of the tapped card (container
+ * transform) or enter on Yoin's forward mirror; back is the in-window AOSP
+ * cross-activity replica for every pushed page (predictive-back Pattern B).
+ *
+ * NavDisplay's own predictive pop is not used: it is driven through the
+ * scene-state overload with a NavigationEventState that no handler feeds, and
+ * [PageBackHandler] (composed first, so in-page BackHandlers outrank it)
+ * owns the gesture.
  */
 @Composable
-fun AppNavHost(backStack: NavBackStack<NavKey>) {
-    val navigator = remember(backStack) { Navigator(backStack) }
-    val offset = with(LocalDensity.current) { 96.dp.roundToPx() }
-    CompositionLocalProvider(LocalNavigator provides navigator) {
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-            NavDisplay(
-                backStack = backStack,
-                onBack = { navigator.pop() },
-                entryDecorators = listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator(),
-                ),
-                transitionSpec = {
-                    YoinMotion.crossActivitySlideIn(offset * 4) togetherWith YoinMotion.crossActivitySlideOut(-offset)
-                },
-                popTransitionSpec = {
-                    YoinMotion.crossActivitySlideIn(-offset) togetherWith YoinMotion.crossActivitySlideOut(offset * 4)
-                },
-                predictivePopTransitionSpec = {
-                    YoinMotion.crossActivitySlideIn(-offset) togetherWith YoinMotion.crossActivitySlideOut(offset * 4)
-                },
-                entryProvider = entryProvider {
-                    entry<Route.Main> { MainShell() }
-                    entry<Route.Video> { VideoDetailScreen(it) }
-                    entry<Route.Bangumi> { BangumiDetailScreen(it) }
-                    entry<Route.LiveRoom> { LiveRoomScreen(it) }
-                    entry<Route.Search> { SearchScreen(it) }
-                    entry<Route.SearchResult> { SearchResultScreen(it) }
-                    entry<Route.Member> { MemberScreen(it) }
-                    entry<Route.MemberArchive> { MemberArchiveScreen(it) }
-                    entry<Route.MemberDynamics> { MemberDynamicsScreen(it) }
-                    entry<Route.MemberSeasons> { MemberSeasonsScreen(it) }
-                    entry<Route.MemberCoin> { MemberCoinScreen(it) }
-                    entry<Route.MemberLike> { MemberLikeScreen(it) }
-                    entry<Route.MemberArticle> { MemberArticleScreen(it) }
-                    entry<Route.DynamicDetail> { DynamicDetailScreen(it) }
-                    entry<Route.ReplyDetail> { ReplyDetailScreen(it) }
-                    entry<Route.Opus> { OpusScreen(it) }
-                    entry<Route.Read> { ReadScreen(it) }
-                    entry<Route.Fav> { FavScreen(it) }
-                    entry<Route.FavDetail> { FavDetailScreen(it) }
-                    entry<Route.Later> { LaterScreen() }
-                    entry<Route.History> { HistoryScreen() }
-                    entry<Route.Subscription> { SubscriptionScreen(it) }
-                    entry<Route.SubDetail> { SubDetailScreen(it) }
-                    entry<Route.Follow> { FollowScreen(it) }
-                    entry<Route.Fans> { FansScreen(it) }
-                    entry<Route.Blacklist> { BlacklistScreen() }
-                    entry<Route.Messages> { MessagesScreen() }
-                    entry<Route.MessageList> { MessageListScreen(it) }
-                    entry<Route.WhisperDetail> { WhisperDetailScreen(it) }
-                    entry<Route.Login> { LoginScreen() }
-                    entry<Route.Settings> { SettingsScreen() }
-                    entry<Route.SettingsPage> { SettingsPageScreen(it) }
-                    entry<Route.About> { AboutScreen() }
-                    entry<Route.Web> { WebScreen(it) }
-                },
-            )
+fun AppNavHost(navigator: Navigator) {
+    val backStack = navigator.backStack
+    val transitions = rememberPageTransitions(backStack)
+    val configuration = LocalConfiguration.current
+    SideEffect {
+        navigator.transitions = transitions
+        transitions.configStamp = configuration.uiMode * 31 + configuration.densityDpi
+    }
+    val density = LocalDensity.current
+    val decorators = listOf(
+        rememberSaveableStateHolderNavEntryDecorator<NavKey>(),
+        rememberViewModelStoreNavEntryDecorator<NavKey>(),
+        remember(transitions) {
+            NavEntryDecorator<NavKey>(onPop = { key -> transitions.onEntryPopped(key) }) { entry ->
+                PageEntryFrame(transitions, entry.contentKey) { entry.Content() }
+            }
+        },
+    )
+    val entries = rememberDecoratedNavEntries(backStack, decorators, appEntryProvider)
+
+    CompositionLocalProvider(LocalNavigator provides navigator, LocalPageTransitions provides transitions) {
+        // First in composition = lowest back priority (see PageBackHandler).
+        PageBackHandler(transitions, canGoBack = backStack.size > 1)
+        val backdrop = MaterialTheme.colorScheme.surfaceContainerHighest
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(backdrop)
+                .onSizeChanged { transitions.hostSize = it }
+                .voteHighFrameRate(transitions.phase != BackPhase.Idle),
+        ) {
+            BeneathPage(transitions, backdrop)
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pageClosingTransform(transitions)
+                    .background(MaterialTheme.colorScheme.surface),
+            ) {
+                val sceneState = rememberSceneState(
+                    entries,
+                    listOf(SinglePaneSceneStrategy()),
+                    emptyList(),
+                    null,
+                    { navigator.pop() },
+                )
+                val scene = sceneState.currentScene
+                val navigationState = rememberNavigationEventState(
+                    currentInfo = SceneInfo(scene),
+                    backInfo = sceneState.previousScenes.map { SceneInfo(it) },
+                )
+                NavDisplay(
+                    sceneState,
+                    navigationState,
+                    Modifier.fillMaxSize(),
+                    Alignment.TopStart,
+                    null,
+                    { pagePushTransform(transitions, density) },
+                    { pagePopTransform() },
+                    { _ -> pagePopTransform() },
+                )
+            }
+            BeneathPage(transitions, backdrop, over = true)
+            BackInputBlocker(transitions)
         }
     }
+}
+
+private val appEntryProvider = entryProvider<NavKey> {
+    entry<Route.Main> { MainShell() }
+    entry<Route.Video> { VideoDetailScreen(it) }
+    entry<Route.Bangumi> { BangumiDetailScreen(it) }
+    entry<Route.LiveRoom> { LiveRoomScreen(it) }
+    entry<Route.Search> { SearchScreen(it) }
+    entry<Route.SearchResult> { SearchResultScreen(it) }
+    entry<Route.Member> { MemberScreen(it) }
+    entry<Route.MemberArchive> { MemberArchiveScreen(it) }
+    entry<Route.MemberDynamics> { MemberDynamicsScreen(it) }
+    entry<Route.MemberSeasons> { MemberSeasonsScreen(it) }
+    entry<Route.MemberCoin> { MemberCoinScreen(it) }
+    entry<Route.MemberLike> { MemberLikeScreen(it) }
+    entry<Route.MemberArticle> { MemberArticleScreen(it) }
+    entry<Route.DynamicDetail> { DynamicDetailScreen(it) }
+    entry<Route.ReplyDetail> { ReplyDetailScreen(it) }
+    entry<Route.Opus> { OpusScreen(it) }
+    entry<Route.Read> { ReadScreen(it) }
+    entry<Route.Fav> { FavScreen(it) }
+    entry<Route.FavDetail> { FavDetailScreen(it) }
+    entry<Route.Later> { LaterScreen() }
+    entry<Route.History> { HistoryScreen() }
+    entry<Route.Subscription> { SubscriptionScreen(it) }
+    entry<Route.SubDetail> { SubDetailScreen(it) }
+    entry<Route.Follow> { FollowScreen(it) }
+    entry<Route.Fans> { FansScreen(it) }
+    entry<Route.Blacklist> { BlacklistScreen() }
+    entry<Route.Messages> { MessagesScreen() }
+    entry<Route.MessageList> { MessageListScreen(it) }
+    entry<Route.WhisperDetail> { WhisperDetailScreen(it) }
+    entry<Route.Login> { LoginScreen() }
+    entry<Route.Settings> { SettingsScreen() }
+    entry<Route.SettingsPage> { SettingsPageScreen(it) }
+    entry<Route.About> { AboutScreen() }
+    entry<Route.Web> { WebScreen(it) }
 }

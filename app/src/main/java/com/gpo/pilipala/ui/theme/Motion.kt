@@ -25,6 +25,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.unit.dp
 
 enum class YoinMotionRole {
     Expressive,
@@ -461,8 +462,30 @@ object YoinMotion {
     )
 }
 
-/** AOSP cross-activity tokens (ported from Yoin's ui/navigation/back). */
+/**
+ * AOSP cross-activity tokens (ported from Yoin's ui/navigation/back, see the
+ * predictive-back doctrine's tokens table). Do not invent new values: every
+ * page transition in navigation/transition reads these.
+ */
 object BackMotionTokens {
+    /** AOSP `Interpolators.EMPHASIZED`, the platform curve for the open/close rides. */
     val EmphasizedEasing = androidx.compose.animation.core.CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+
+    /** AOSP `DefaultCrossActivityBackAnimation.POST_COMMIT_DURATION`. */
     const val PostCommitDurationMs = 450
+
+    /** AOSP `CrossActivityBackAnimation.MAX_SCALE`: the closing page shrinks to this. */
+    const val PopPageScaleTarget = 0.9f
+
+    /** Window-corner stand-in the closing page clips to while it shrinks. */
+    val PopPageCornerRadius = 28.dp
+
+    /** AOSP `cross_activity_back_entering_start_offset`: where the revealed page waits (back) / the pushed page starts (open). */
+    val EnteringStartOffset = 96.dp
+
+    /** AOSP `displayBoundsMargin`: the shrunken page never passes this margin. */
+    val DisplayBoundsMargin = 8.dp
+
+    /** Container transform: the corner a card source starts from (its cover's 12dp). */
+    val ContainerSourceCorner = 12.dp
 }

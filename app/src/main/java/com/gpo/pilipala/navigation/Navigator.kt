@@ -5,26 +5,42 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.gpo.pilipala.core.util.IdUtils
+import com.gpo.pilipala.navigation.transition.PageTransitions
 
-/** App-wide navigation handle: `LocalNavigator.current.push(Route.Video(bvid))`. */
-class Navigator(private val backStack: NavBackStack<NavKey>) {
+/**
+ * App-wide navigation handle: `LocalNavigator.current.push(Route.Video(bvid))`.
+ *
+ * Every change goes through the host's [PageTransitions] once AppNavHost has
+ * attached it: a push freezes the page it covers (what a later back reveals)
+ * and picks container transform vs forward mirror; a pop plays the same
+ * commit ride as a 3-button back and removes the entry only when it lands.
+ */
+class Navigator(internal val backStack: NavBackStack<NavKey>) {
+    internal var transitions: PageTransitions? = null
+
     fun push(route: Route) {
+        transitions?.beforePush(route)
         backStack.add(route)
     }
 
+    /** True when there was a page to leave; the entry is removed once the close motion lands. */
     fun pop(): Boolean {
         if (backStack.size <= 1) return false
-        backStack.removeAt(backStack.lastIndex)
+        val t = transitions
+        if (t != null) t.requestPop() else backStack.removeAt(backStack.lastIndex)
         return true
     }
 
     fun replace(route: Route) {
+        transitions?.beforeReplace(route)
         if (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
         backStack.add(route)
     }
 
     fun popToMain() {
-        while (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
+        // Drop what sits between, then close the top page onto the shell.
+        while (backStack.size > 2) backStack.removeAt(backStack.lastIndex - 1)
+        pop()
     }
 
     /** Open any bilibili link (or anything else) — native page when we know it, WebView otherwise. */

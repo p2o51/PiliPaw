@@ -46,6 +46,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.CoverBadge
 import com.gpo.pilipala.ui.components.NetImage
@@ -209,6 +210,7 @@ private fun LiveCard(room: LiveRoomItem) {
     val nav = LocalNavigator.current
     Column(
         Modifier
+            .pageSharedSource(Route.LiveRoom(room.roomId, room.cover, room.title))
             .clip(YoinContainerShapes.Card)
             .clickable { nav.push(Route.LiveRoom(room.roomId, room.cover, room.title)) },
     ) {
