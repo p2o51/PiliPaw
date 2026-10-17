@@ -162,7 +162,8 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
             aid = d.aid,
             cid = page.cid,
             title = d.title,
-            cover = page.cover.ifEmpty { d.pic },
+            // The part's first_frame is often black; the session / notification artwork keeps the video's cover.
+            cover = d.pic,
         )
     }
 

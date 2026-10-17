@@ -46,7 +46,7 @@ internal class RcmdViewModel : ViewModel() {
     private var appIdx = 0L
 
     /** App-feed cards keep what "不感兴趣" needs; web cards are only hidden locally. */
-    private val appRefs = mutableMapOf<Any, AppFeedRef>()
+    private val appRefs = java.util.concurrent.ConcurrentHashMap<Any, AppFeedRef>() // filled off the main thread
 
     val feed = FeedPager(viewModelScope, key = { it.feedKey() }) { cursor -> load(cursor == null) }
 

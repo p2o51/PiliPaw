@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -102,24 +103,33 @@ internal fun DetailScaffold(
 
             twoPane -> {
                 val cfg = LocalConfiguration.current
-                val sideWidth: Dp = minOf(400.dp, (cfg.screenWidthDp * 0.4f).dp)
+                val w = cfg.screenWidthDp
+                // Wide windows (tablet landscape) give the side pane a little more, so the
+                // player column is not one huge 16:9 block over a sliver of intro.
+                val sideWidth: Dp = minOf(480.dp, (w * if (w >= 1200) 0.36f else 0.4f).dp)
                 Row(
                     Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Column(Modifier.weight(1f).fillMaxHeight()) {
-                        Spacer(Modifier.height(8.dp))
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f)
-                                .clip(YoinContainerShapes.Card)
-                                .background(Color.Black),
-                        ) {
-                            player(Modifier.fillMaxSize())
-                        }
-                        Box(Modifier.weight(1f)) {
-                            expandedMain(PaddingValues(top = 4.dp, bottom = navBottom + 16.dp))
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                        // The player takes at most ~58% of the height (16:9 width derived from
+                        // it, centered), so the title, UP and actions stay above the fold.
+                        val playerWidth = minOf(maxWidth, maxHeight * 0.58f * (16f / 9f))
+                        Column(Modifier.fillMaxSize()) {
+                            Spacer(Modifier.height(8.dp))
+                            Box(
+                                Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .width(playerWidth)
+                                    .aspectRatio(16f / 9f)
+                                    .clip(YoinContainerShapes.Card)
+                                    .background(Color.Black),
+                            ) {
+                                player(Modifier.fillMaxSize())
+                            }
+                            Box(Modifier.weight(1f)) {
+                                expandedMain(PaddingValues(top = 4.dp, bottom = navBottom + 16.dp))
+                            }
                         }
                     }
                     val sideState = rememberPagerState { sideTabs.size }
@@ -186,7 +196,7 @@ private fun DetailTabRow(tabs: List<DetailTab>, state: PagerState, container: Co
                             Text(
                                 tab.count,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }

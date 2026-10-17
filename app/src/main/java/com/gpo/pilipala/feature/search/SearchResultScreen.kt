@@ -90,8 +90,10 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // ── ViewModels ──────────────────────────────────────────────────────────────
 
@@ -198,10 +200,15 @@ internal class SearchTabViewModel(val keyword: String, val tab: SearchTab) : Vie
         }
     }
 
+    /** Parsing and mapping a result page (tag stripping, highlights) runs off the main thread. */
     private suspend fun load(p: Int): SearchPage {
-        val res = SearchApi.search(tab, keyword, p, order.ifEmpty { null }, duration, tids)
+        val order = order.ifEmpty { null }
+        val duration = duration
+        val tids = tids
+        val res = withContext(Dispatchers.Default) { SearchApi.search(tab, keyword, p, order, duration, tids) }
         if (tab == SearchTab.User && BiliClient.isLoggedIn) {
-            runCatching { SearchApi.relations(res.items.filterIsInstance<UserHit>().map { it.mid }) }
+            val mids = res.items.filterIsInstance<UserHit>().map { it.mid }
+            runCatching { withContext(Dispatchers.Default) { SearchApi.relations(mids) } }
                 .getOrNull()?.let { following.putAll(it) }
         }
         return res
@@ -364,7 +371,7 @@ private fun TabLabel(label: String, count: Int?) {
                 if (n >= 1000) "999+" else n.toString(),
                 modifier = Modifier.padding(start = 4.dp),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

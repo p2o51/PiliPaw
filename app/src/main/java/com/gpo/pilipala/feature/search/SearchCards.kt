@@ -50,6 +50,10 @@ import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import java.util.Locale
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 
 // ── 番剧 / 影视 ─────────────────────────────────────────────────────────────
 
@@ -72,7 +76,8 @@ internal fun MediaCard(hit: MediaHit, modifier: Modifier = Modifier) {
                 val badge = hit.badge.ifEmpty { hit.typeLabel }
                 if (badge.isNotEmpty()) CoverBadge(badge, Modifier.align(Alignment.TopEnd).padding(6.dp))
             }
-            Column(Modifier.weight(1f).height(133.dp)) {
+            // Grows past the cover's height instead of squashing the score / 观看 row.
+            Column(Modifier.weight(1f).heightIn(min = 133.dp)) {
                 Text(
                     hit.title,
                     style = MaterialTheme.typography.titleMedium,
@@ -102,7 +107,7 @@ internal fun MediaCard(hit: MediaHit, modifier: Modifier = Modifier) {
                     Text(
                         hit.styles,
                         style = MaterialTheme.typography.labelMedium,
-                        color = scheme.outline,
+                        color = scheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -133,7 +138,7 @@ internal fun MediaCard(hit: MediaHit, modifier: Modifier = Modifier) {
                                     style = MaterialTheme.typography.labelSmall,
                                     color = scheme.onSurfaceVariant,
                                 )
-                                Text("人评分", style = MaterialTheme.typography.labelSmall, color = scheme.outline)
+                                Text("人评分", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -180,12 +185,11 @@ internal fun LiveCard(hit: LiveHit, modifier: Modifier = Modifier) {
             if (hit.living) {
                 CoverBadge("直播中", Modifier.align(Alignment.TopEnd).padding(6.dp))
             }
+            CoverLabelScrim()
             Row(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .clip(SearchCoverShape)
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f))))
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -303,7 +307,7 @@ internal fun UserRow(
                 Text(
                     hit.sign,
                     style = MaterialTheme.typography.bodySmall,
-                    color = scheme.outline,
+                    color = scheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -326,7 +330,7 @@ private fun CountPair(n: Long, label: String) {
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.width(3.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -421,7 +425,7 @@ internal fun ArticleRow(hit: ArticleHit, modifier: Modifier = Modifier) {
                         )
                     }
                     if (hit.category.isNotEmpty()) {
-                        Text(hit.category, style = MaterialTheme.typography.labelMedium, color = scheme.outline, maxLines = 1)
+                        Text(hit.category, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant, maxLines = 1)
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -432,7 +436,7 @@ internal fun ArticleRow(hit: ArticleHit, modifier: Modifier = Modifier) {
                         Text(
                             Fmt.relativeTime(hit.pubTime),
                             style = MaterialTheme.typography.labelSmall,
-                            color = scheme.outline,
+                            color = scheme.onSurfaceVariant,
                             maxLines = 1,
                         )
                     }
@@ -440,4 +444,29 @@ internal fun ArticleRow(hit: ArticleHit, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+/**
+ * Scrim under the white labels at a cover's bottom edge: a fixed 48dp ramp, so the
+ * labels stay legible on bright covers whatever the label row's own height.
+ */
+@Composable
+private fun BoxScope.CoverLabelScrim() {
+    Box(
+        Modifier
+            .matchParentSize()
+            .clip(SearchCoverShape)
+            .drawWithCache {
+                val h = minOf(48.dp.toPx(), size.height)
+                val top = size.height - h
+                val brush = Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    0.4f to Color.Black.copy(alpha = 0.35f),
+                    1f to Color.Black.copy(alpha = 0.7f),
+                    startY = top,
+                    endY = size.height,
+                )
+                onDrawBehind { drawRect(brush, topLeft = Offset(0f, top), size = Size(size.width, h)) }
+            },
+    )
 }

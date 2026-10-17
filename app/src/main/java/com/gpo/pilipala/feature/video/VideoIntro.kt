@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
@@ -115,7 +116,7 @@ internal fun VideoHeader(d: VideoDetail, onSeek: ((Long) -> Unit)?, modifier: Mo
             Text(
                 Fmt.date(d.pubdate, "yyyy-MM-dd HH:mm"),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         if (d.honor.isNotEmpty()) {
@@ -147,7 +148,9 @@ internal fun VideoHeader(d: VideoDetail, onSeek: ((Long) -> Unit)?, modifier: Mo
                         d.bvid,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
+                        // 48dp touch target around the glyph-sized label (the look stays the same).
                         modifier = Modifier
+                            .minimumInteractiveComponentSize()
                             .clip(ContinuousRoundedCornerShape(6.dp))
                             .clickable {
                                 clipboard.setText(AnnotatedString(d.bvid))
@@ -230,7 +233,7 @@ internal fun UpCard(
                 }
                 if (fans >= 0) {
                     Spacer(Modifier.width(3.dp))
-                    Text("粉丝", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                    Text("粉丝", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -305,7 +308,7 @@ internal fun StaffRow(staff: List<Staff>, modifier: Modifier = Modifier) {
                 Avatar(s.face, 44.dp)
                 Spacer(Modifier.height(4.dp))
                 Text(s.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(s.title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                Text(s.title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
         }
     }
@@ -326,6 +329,7 @@ internal fun TagChips(tags: List<String>, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .clip(ContinuousRoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.secondaryContainer)
                     .clickable { nav.push(Route.SearchResult(t)) }
@@ -342,7 +346,7 @@ internal fun SectionTitle(text: String, modifier: Modifier = Modifier, trailing:
         Text(text, style = MaterialTheme.typography.titleMedium)
         if (trailing != null) {
             Spacer(Modifier.width(8.dp))
-            Text(trailing, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+            Text(trailing, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

@@ -122,15 +122,24 @@ class BangumiDetailViewModel(private val route: Route.Bangumi) : ViewModel() {
         load(keepContent = true)
     }
 
-    fun playNext(): Boolean {
+    /** Auto-play next / 下一集: the next episode of the list the current one is in. */
+    fun playNext(): Boolean = step(+1, apply = true)
+
+    /** 上一集 in the player and the system media controls. */
+    fun playPrevious(): Boolean = step(-1, apply = true)
+
+    /** Whether [playNext] / [playPrevious] has somewhere to go (reads snapshot state). */
+    fun hasNext(): Boolean = step(+1, apply = false)
+    fun hasPrevious(): Boolean = step(-1, apply = false)
+
+    private fun step(delta: Int, apply: Boolean): Boolean {
         val d = detail ?: return false
         val list = if (d.episodes.any { it.id == epId }) d.episodes else d.sections.firstOrNull { s -> s.episodes.any { it.id == epId } }?.episodes.orEmpty()
         val i = list.indexOfFirst { it.id == epId }
-        if (i in 0 until list.lastIndex) {
-            play(list[i + 1], d)
-            return true
-        }
-        return false
+        val ep = list.getOrNull(i + delta)
+        if (i < 0 || ep == null) return false
+        if (apply) play(ep, d)
+        return true
     }
 
     fun rememberPosition(ms: Long) {

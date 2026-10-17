@@ -59,6 +59,10 @@ import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.yoin.symbols.PiliSymbols
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 
 private val CoverShape = ContinuousRoundedCornerShape(12.dp)
 private val PageMargin = 16.dp
@@ -216,12 +220,11 @@ private fun LiveCard(room: LiveRoomItem) {
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f)) {
             NetImage(room.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 360.dp)
+            CoverLabelScrim()
             Row(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .clip(CoverShape)
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f))))
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -337,12 +340,11 @@ private fun BangumiCard(item: BangumiItem, modifier: Modifier = Modifier, showPr
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 240.dp)
             if (item.badge.isNotEmpty()) CoverBadge(item.badge, Modifier.align(Alignment.TopEnd).padding(6.dp))
             if (item.order.isNotEmpty() || item.score.isNotEmpty()) {
+                CoverLabelScrim()
                 Row(
                     Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .clip(CoverShape)
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f))))
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -382,4 +384,29 @@ private fun BangumiCard(item: BangumiItem, modifier: Modifier = Modifier, showPr
             }
         }
     }
+}
+
+/**
+ * Scrim under the white labels at a cover's bottom edge: a fixed 48dp ramp, so the
+ * labels stay legible on bright covers whatever the label row's own height.
+ */
+@Composable
+private fun BoxScope.CoverLabelScrim() {
+    Box(
+        Modifier
+            .matchParentSize()
+            .clip(CoverShape)
+            .drawWithCache {
+                val h = minOf(48.dp.toPx(), size.height)
+                val top = size.height - h
+                val brush = Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    0.4f to Color.Black.copy(alpha = 0.35f),
+                    1f to Color.Black.copy(alpha = 0.7f),
+                    startY = top,
+                    endY = size.height,
+                )
+                onDrawBehind { drawRect(brush, topLeft = Offset(0f, top), size = Size(size.width, h)) }
+            },
+    )
 }

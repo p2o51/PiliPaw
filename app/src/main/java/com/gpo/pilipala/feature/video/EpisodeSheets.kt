@@ -87,7 +87,7 @@ internal fun EpisodeRow(
             Text(
                 if (currentIndex >= 0) "${currentIndex + 1}/${entries.size}" else "${entries.size}",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.weight(1f))
             if (onShowAll != null) {
@@ -167,7 +167,7 @@ private fun EpisodeCard(entry: EpisodeEntry, selected: Boolean, withCover: Boole
                 Text(
                     entry.index,
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (selected) colors.primary else colors.outline,
+                    color = if (selected) colors.primary else colors.onSurfaceVariant,
                     fontWeight = FontWeight.SemiBold,
                 )
                 if (entry.badge.isNotEmpty()) {
@@ -211,7 +211,7 @@ internal fun EpisodeListSheet(
             Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 Spacer(Modifier.width(8.dp))
-                Text("${groups.sumOf { it.entries.size }}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.outline)
+                Text("${groups.sumOf { it.entries.size }}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(8.dp))
             // Flatten into rows: headers + entries.
@@ -284,7 +284,7 @@ private fun EpisodeListRow(entry: EpisodeEntry, selected: Boolean, onClick: () -
                 Text(
                     entry.index,
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (selected) colors.primary else colors.outline,
+                    color = if (selected) colors.primary else colors.onSurfaceVariant,
                     fontWeight = FontWeight.SemiBold,
                 )
                 if (entry.badge.isNotEmpty()) {
@@ -301,7 +301,7 @@ private fun EpisodeListRow(entry: EpisodeEntry, selected: Boolean, onClick: () -
                 }
                 if (entry.cover.isEmpty() && entry.duration > 0) {
                     Spacer(Modifier.weight(1f))
-                    Text(Fmt.duration(entry.duration), style = MaterialTheme.typography.labelSmall, color = colors.outline)
+                    Text(Fmt.duration(entry.duration), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
                 }
             }
             Text(

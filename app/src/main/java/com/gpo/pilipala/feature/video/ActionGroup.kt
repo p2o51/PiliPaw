@@ -114,12 +114,13 @@ private fun ActionToggle(item: ActionSpec, shapes: ToggleButtonShapes, modifier:
     }
     val colors = MaterialTheme.colorScheme
     val container by animateColorAsState(
-        if (item.checked) colors.primaryContainer else colors.surfaceContainerHigh,
+        // primary / onPrimary like FollowToggle: reads as "done" even under low-chroma CoverThemes.
+        if (item.checked) colors.primary else colors.surfaceContainerHigh,
         YoinMotion.defaultEffectsSpec(),
         label = "actionContainer",
     )
     val content by animateColorAsState(
-        if (item.checked) colors.onPrimaryContainer else colors.onSurfaceVariant,
+        if (item.checked) colors.onPrimary else colors.onSurfaceVariant,
         YoinMotion.defaultEffectsSpec(),
         label = "actionContent",
     )

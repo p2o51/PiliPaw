@@ -250,7 +250,7 @@ private fun QueueTitle(queue: PlayQueue, index: Int, modifier: Modifier = Modifi
             Text(
                 "${index + 1}/${queue.size}",
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 2.dp),
             )
         }
@@ -373,7 +373,7 @@ private fun QueueRow(item: QueueItem, position: Int, current: Boolean, playing: 
                 Text(
                     "${position + 1}",
                     style = MaterialTheme.typography.labelMedium,
-                    color = colors.outline,
+                    color = colors.onSurfaceVariant,
                     maxLines = 1,
                 )
             }

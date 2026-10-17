@@ -15,6 +15,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridItemScope
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -159,7 +165,7 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
                 page == 0 -> CommentsPane(vm, pad, seek)
                 page == 2 && queue != null -> QueueTab(queue, playerState, pad)
                 else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
-                    relatedItems(vm, showTitle = false)
+                    relatedItems(vm)
                 }
             }
         },
@@ -269,9 +275,15 @@ private fun IntroPane(
             1 -> ErrorState(vm.error.orEmpty(), onRetry = { vm.load() })
             else -> {
                 val d = vm.detail ?: return@AnimatedContent
-                LazyColumn(Modifier.fillMaxSize().readingWidth(), contentPadding = pad) {
-                    item("header") { VideoHeader(d, onSeek, Modifier.padding(top = 14.dp)) }
-                    item("up") {
+                // A grid so 相关推荐 runs two columns once the pane is wide enough (tablet
+                // portrait); every intro block spans the full line.
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(RelatedMinCell),
+                    modifier = Modifier.fillMaxSize().readingWidth(),
+                    contentPadding = pad,
+                ) {
+                    full("header") { VideoHeader(d, onSeek, Modifier.padding(top = 14.dp)) }
+                    full("up") {
                         Spacer(Modifier.height(12.dp))
                         if (d.staff.size > 1) {
                             StaffRow(d.staff)
@@ -288,23 +300,23 @@ private fun IntroPane(
                         }
                     }
                     if (vm.tags.isNotEmpty()) {
-                        item("tags") {
-                            Spacer(Modifier.height(8.dp))
+                        full("tags") {
+                            // The chips' 48dp touch targets already add space above them.
                             TagChips(vm.tags)
                         }
                     }
-                    item("actions") {
+                    full("actions") {
                         Spacer(Modifier.height(16.dp))
                         VideoActions(vm, d, gate, onSheet, context)
                     }
                     if (queue != null && player != null) {
-                        item("queue") {
+                        full("queue") {
                             Spacer(Modifier.height(20.dp))
                             QueueBlock(queue, player, onShowAll = { onSheet(VideoSheet.Queue) })
                         }
                     }
                     if (d.pages.size > 1) {
-                        item("pages") {
+                        full("pages") {
                             Spacer(Modifier.height(20.dp))
                             EpisodeRow(
                                 title = "分P",
@@ -316,7 +328,7 @@ private fun IntroPane(
                         }
                     }
                     d.season?.let { s ->
-                        item("season") {
+                        full("season") {
                             Spacer(Modifier.height(20.dp))
                             EpisodeRow(
                                 title = "合集",
@@ -330,8 +342,8 @@ private fun IntroPane(
                         }
                     }
                     if (includeRelated) {
-                        item("relatedGap") { Spacer(Modifier.height(20.dp)) }
-                        relatedItems(vm, showTitle = true)
+                        full("relatedGap") { Spacer(Modifier.height(20.dp)) }
+                        relatedGridItems(vm)
                     }
                 }
             }
@@ -412,15 +424,31 @@ private fun CommentsPane(vm: VideoDetailViewModel, pad: PaddingValues, onSeek: (
     }
 }
 
-private fun LazyListScope.relatedItems(vm: VideoDetailViewModel, showTitle: Boolean) {
-    if (showTitle) {
-        item("relatedTitle") { SectionTitle("相关推荐", Modifier.padding(bottom = 4.dp)) }
-    }
+/** 相关推荐 for the side pane's 相关 tab (the tab names it, so no title). */
+private fun LazyListScope.relatedItems(vm: VideoDetailViewModel) {
     when {
         vm.relatedLoading && vm.related.isEmpty() -> item("relatedLoading") { LoadingFooter() }
         vm.related.isEmpty() -> item("relatedEmpty") {
             Box(Modifier.fillMaxWidth().height(200.dp)) { EmptyState("暂无相关推荐") }
         }
         else -> items(vm.related, key = { "r_${it.bvid}" }) { VideoCardH(it) }
+    }
+}
+
+/** Narrowest cell for the 相关推荐 rows: one column on phones, two from tablet portrait. */
+private val RelatedMinCell = 360.dp
+
+/** A full-line item of the intro grid. */
+private fun LazyGridScope.full(key: String, content: @Composable LazyGridItemScope.() -> Unit) =
+    item(key = key, span = { GridItemSpan(maxLineSpan) }, content = content)
+
+private fun LazyGridScope.relatedGridItems(vm: VideoDetailViewModel) {
+    full("relatedTitle") { SectionTitle("相关推荐", Modifier.padding(bottom = 4.dp)) }
+    when {
+        vm.relatedLoading && vm.related.isEmpty() -> full("relatedLoading") { LoadingFooter() }
+        vm.related.isEmpty() -> full("relatedEmpty") {
+            Box(Modifier.fillMaxWidth().height(200.dp)) { EmptyState("暂无相关推荐") }
+        }
+        else -> gridItems(vm.related, key = { "r_${it.bvid}" }) { VideoCardH(it) }
     }
 }
