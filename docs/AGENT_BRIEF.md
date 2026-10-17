@@ -61,9 +61,11 @@ working, good-looking UI now; tests/QA later. UI language is Chinese (keep pilip
 2. **Motion = springs.** Use `YoinMotion.defaultSpatialSpec()/fastSpatialSpec()/defaultEffectsSpec()`
    (or `MaterialTheme.motionScheme`). No tweens/easing curves except platform-mimicking page slides.
    Everything that changes state animates (AnimatedContent/animate*AsState), zero hard cuts.
-3. **Color = M3 tokens only** (`MaterialTheme.colorScheme.*`). The app follows system dynamic
-   color. Video/bangumi/live detail pages wrap in `CoverTheme(cover)`. Hard-coded colors only for
-   scrims over video/images.
+3. **Color = M3 tokens only** (`MaterialTheme.colorScheme.*`). The app theme is a dual-seed
+   expressive scheme (`ExpressiveColorSchemeFactory.fromSeeds`: primary from the wallpaper's
+   seed, tertiary from a second seed; 设置 › 外观 › 配色风格 can switch back to the system scheme).
+   Video/bangumi/live/member pages wrap in `CoverTheme(cover)` (cover base + accent, Yoin-style)
+   and paint `ExpressivePageBackground`. Hard-coded colors only for scrims over video/images.
 4. **Color blocks, not strokes**: no `HorizontalDivider`, no outlined cards, no borders on covers
    or avatars. Separate groups with `surfaceContainer*` blocks + spacing. Cards = filled surfaces
    with `YoinContainerShapes.Card` (continuous corners).
