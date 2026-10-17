@@ -67,8 +67,14 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.util.Calendar
+import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Immutable
 internal data class HistoryEntry(
@@ -94,12 +100,18 @@ internal data class HistoryEntry(
     val uri: String,
     val videos: Int,
     val newDesc: String,
+    /** Precomputed off main: 今天 / 昨天 / 3月12日 / 2023年3月12日. */
+    val dayLabel: String,
+    /** Precomputed off main: HH:mm. */
+    val timeText: String,
 ) {
     val key: String get() = "${business}_$kid"
 }
 
-private fun JsonObject.toHistory(): HistoryEntry {
+private fun JsonObject.toHistory(today: LocalDate): HistoryEntry {
     val h = obj("history")
+    val viewAt = long("view_at")
+    val at = Instant.ofEpochSecond(viewAt).atZone(HistoryZone)
     return HistoryEntry(
         kid = long("kid"),
         business = h.str("business"),
@@ -116,12 +128,14 @@ private fun JsonObject.toHistory(): HistoryEntry {
         authorName = str("author_name"),
         authorFace = str("author_face"),
         authorMid = long("author_mid"),
-        viewAt = long("view_at"),
+        viewAt = viewAt,
         badge = str("badge"),
         liveStatus = int("live_status"),
         uri = str("uri"),
         videos = int("videos"),
         newDesc = str("new_desc"),
+        dayLabel = dayLabel(at.toLocalDate(), today),
+        timeText = if (viewAt > 0) HistoryTimeFmt.format(at) else "",
     )
 }
 
@@ -138,10 +152,13 @@ internal class HistoryViewModel : ViewModel() {
                 "business" to (parts?.getOrNull(2) ?: ""),
             ),
         ).asObj
-        val list = data.arr("list").objects().map { it.toHistory() }
-        val c = data.obj("cursor")
-        val max = c.long("max")
-        Page(list, hasMore = list.isNotEmpty() && max != 0L, nextCursor = "$max|${c.long("view_at")}|${c.str("business")}")
+        withContext(Dispatchers.Default) {
+            val today = LocalDate.now(HistoryZone)
+            val list = data.arr("list").objects().map { it.toHistory(today) }
+            val c = data.obj("cursor")
+            val max = c.long("max")
+            Page(list, hasMore = list.isNotEmpty() && max != 0L, nextCursor = "$max|${c.long("view_at")}|${c.str("business")}")
+        }
     }
     val paused = AppSettings.pauseHistory
 
@@ -169,18 +186,17 @@ internal class HistoryViewModel : ViewModel() {
     }
 }
 
+private val HistoryZone: ZoneId = ZoneId.systemDefault()
+private val HistoryTimeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.CHINA)
+private val HistoryDayFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)
+private val HistoryYearDayFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日", Locale.CHINA)
+
 /** 今天 / 昨天 / 3月12日 / 2023年3月12日 */
-private fun dayLabel(unix: Long): String {
-    val cal = Calendar.getInstance().apply { timeInMillis = unix * 1000 }
-    val now = Calendar.getInstance()
-    val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-    fun same(a: Calendar, b: Calendar) = a.get(Calendar.YEAR) == b.get(Calendar.YEAR) && a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
-    return when {
-        same(cal, now) -> "今天"
-        same(cal, yesterday) -> "昨天"
-        cal.get(Calendar.YEAR) == now.get(Calendar.YEAR) -> Fmt.date(unix, "M月d日")
-        else -> Fmt.date(unix, "yyyy年M月d日")
-    }
+private fun dayLabel(day: LocalDate, today: LocalDate): String = when {
+    day == today -> "今天"
+    day == today.minusDays(1) -> "昨天"
+    day.year == today.year -> HistoryDayFmt.format(day)
+    else -> HistoryYearDayFmt.format(day)
 }
 
 @Composable
@@ -255,7 +271,7 @@ fun HistoryScreen() {
             ) {
                 var lastDay: String? = null
                 vm.pager.items.forEach { e ->
-                    val day = dayLabel(e.viewAt)
+                    val day = e.dayLabel
                     if (day != lastDay) {
                         lastDay = day
                         item(key = "day_$day", span = { GridItemSpan(maxLineSpan) }, contentType = "day") {
@@ -409,9 +425,9 @@ private fun HistoryCard(
                     )
                 }
                 Text(
-                    Fmt.date(e.viewAt, "HH:mm"),
+                    e.timeText,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

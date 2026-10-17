@@ -180,7 +180,7 @@ private fun SubFolderRow(
                     Text(
                         "${f.mediaCount}个视频",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

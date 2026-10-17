@@ -72,9 +72,11 @@ import com.gpo.pilipala.ui.components.RefreshBox
 import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.yoin.symbols.PiliSymbols
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 
 @Immutable
@@ -107,11 +109,14 @@ private fun titleOf(kind: String) = when (kind) {
 
 internal class MessageListViewModel(private val kind: String) : ViewModel() {
     val pager = Pager<MsgEntry>(viewModelScope, dedupKey = { it.key }) { cursor ->
-        when (kind) {
-            "reply" -> loadFeed("/x/msgfeed/reply", "reply_time", cursor) { parseReply(it) }
-            "at" -> loadFeed("/x/msgfeed/at", "at_time", cursor) { parseAt(it) }
-            "like" -> loadLike(cursor)
-            else -> loadSystem()
+        // JSON mapping stays off the main thread.
+        withContext(Dispatchers.Default) {
+            when (kind) {
+                "reply" -> loadFeed("/x/msgfeed/reply", "reply_time", cursor) { parseReply(it) }
+                "at" -> loadFeed("/x/msgfeed/at", "at_time", cursor) { parseAt(it) }
+                "like" -> loadLike(cursor)
+                else -> loadSystem()
+            }
         }
     }
 
@@ -379,7 +384,7 @@ private fun FeedRow(e: MsgEntry, modifier: Modifier = Modifier) {
             Text(
                 Fmt.relativeTime(e.time),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -397,14 +402,16 @@ private fun LikeRow(e: MsgEntry, modifier: Modifier = Modifier) {
             .clickable { if (e.uri.isNotEmpty()) nav.openUrl(e.uri) }
             .padding(horizontal = 12.dp, vertical = 12.dp),
     ) {
-        // Overlapping avatars, first on top.
+        // Overlapping avatars, first on top. Only the front one opens a profile: the ones
+        // behind show 14dp slivers, too thin to hit; tapping them falls through to the row.
         Box(Modifier.width(42.dp + 14.dp * (shown.size - 1).coerceAtLeast(0)).height(42.dp)) {
             shown.forEachIndexed { i, u ->
                 Avatar(
                     u.face,
                     42.dp,
                     Modifier.offset(x = 14.dp * i).zIndex((shown.size - i).toFloat()),
-                ) { nav.push(Route.Member(u.mid, u.face, u.name)) }
+                    onClick = if (i == 0) ({ nav.push(Route.Member(u.mid, u.face, u.name)) }) else null,
+                )
             }
         }
         Spacer(Modifier.width(12.dp))
@@ -426,7 +433,7 @@ private fun LikeRow(e: MsgEntry, modifier: Modifier = Modifier) {
             VSpace(8)
             SourceBlock(e.sourceText, e.sourceImage)
             VSpace(6)
-            Text(Fmt.relativeTime(e.time), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            Text(Fmt.relativeTime(e.time), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -444,7 +451,7 @@ private fun SystemCard(e: MsgEntry, modifier: Modifier = Modifier) {
     ) {
         Text(e.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         VSpace(2)
-        Text(e.timeText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+        Text(e.timeText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (e.content.isNotEmpty()) {
             VSpace(10)
             Text(e.content, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
