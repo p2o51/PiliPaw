@@ -6,7 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,17 +33,21 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -58,7 +62,12 @@ import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asObj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.feature.home.Blacklist
 import com.gpo.pilipala.feature.home.CollapsingHeader
+import com.gpo.pilipala.feature.home.FeedCardSheet
+import com.gpo.pilipala.feature.home.ReselectEffect
+import com.gpo.pilipala.feature.home.feedItemMotion
+import com.gpo.pilipala.feature.home.withoutBlocked
 import com.gpo.pilipala.feature.home.SegmentTabs
 import com.gpo.pilipala.feature.home.mainTabBottomInset
 import com.gpo.pilipala.feature.home.rememberHeaderScrollBehavior
@@ -80,10 +89,14 @@ import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
+import com.gpo.pilipala.ui.shell.LocalTabReselect
 import com.gpo.yoin.symbols.PiliSymbols
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 
@@ -116,6 +129,9 @@ fun RankScreen() {
     val scope = rememberCoroutineScope()
     val behavior = rememberHeaderScrollBehavior()
     val pageSpec = YoinMotion.defaultSpatialSpec<Float>()
+    val shellReselect = LocalTabReselect.current
+    val pageReselects = remember { MutableSharedFlow<Int>(extraBufferCapacity = 1) }
+    LaunchedEffect(shellReselect) { shellReselect.collect { pageReselects.tryEmit(pagerState.currentPage) } }
     Column(
         Modifier
             .fillMaxSize()
@@ -134,14 +150,21 @@ fun RankScreen() {
         SegmentTabs(
             labels = RankZones.map { it.label },
             selected = pagerState.targetPage,
-            onSelect = { i -> scope.launch { pagerState.animateScrollToPage(i, animationSpec = pageSpec) } },
+            onSelect = { i ->
+                if (i == pagerState.currentPage && i == pagerState.targetPage) {
+                    pageReselects.tryEmit(i)
+                } else {
+                    scope.launch { pagerState.animateScrollToPage(i, animationSpec = pageSpec) }
+                }
+            },
         )
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxWidth().weight(1f),
             key = { RankZones[it].rid },
         ) { page ->
-            RankZonePage(RankZones[page].rid)
+            val reselect = remember(page) { pageReselects.filter { it == page }.map { } }
+            RankZonePage(RankZones[page].rid, reselect, behavior)
         }
     }
 }
@@ -164,6 +187,16 @@ private class RankZoneViewModel(private val rid: Int) : ViewModel() {
 
     init {
         load()
+        viewModelScope.launch {
+            Blacklist.ensureLoaded()
+            Blacklist.mids.collect { blocked ->
+                if (items.any { it.ownerMid in blocked }) items = items.filterNot { it.ownerMid in blocked }
+            }
+        }
+    }
+
+    fun remove(item: VideoItem) {
+        items = items.filterNot { it.bvid == item.bvid }
     }
 
     fun load() {
@@ -174,6 +207,7 @@ private class RankZoneViewModel(private val rid: Int) : ViewModel() {
             try {
                 val data = BiliClient.getData("/x/web-interface/ranking/v2", mapOf("rid" to rid, "type" to "all")).asObj
                 items = data.arr("list").objects().map { it.toArchiveItem() }.filter { it.bvid.isNotEmpty() }.distinctBy { it.bvid }
+                    .withoutBlocked()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -189,11 +223,17 @@ private class RankZoneViewModel(private val rid: Int) : ViewModel() {
 private enum class RankPhase { Loading, Error, Empty, Content }
 
 @Composable
-private fun RankZonePage(rid: Int) {
+private fun RankZonePage(rid: Int, reselect: Flow<Unit>, headerBehavior: TopAppBarScrollBehavior) {
     val vm: RankZoneViewModel = viewModel(key = "rank_zone_$rid") { RankZoneViewModel(rid) }
     val toast = rememberToast()
     LaunchedEffect(vm) { vm.messages.collect { toast(it) } }
     val state = rememberLazyGridState()
+    ReselectEffect(reselect, state, headerBehavior, vm::load)
+    val haptics = LocalHapticFeedback.current
+    var menu by remember { mutableStateOf<VideoItem?>(null) }
+    menu?.let { item ->
+        FeedCardSheet(item = item, onDismiss = { menu = null }, onRemove = { vm.remove(item) })
+    }
     val bottom = mainTabBottomInset()
     val expanded = widthClass() == WidthClass.Expanded
     val compact = widthClass() == WidthClass.Compact
@@ -225,7 +265,16 @@ private fun RankZonePage(rid: Int) {
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     itemsIndexed(vm.items, key = { _, it -> it.bvid }) { index, item ->
-                        RankRow(rank = index + 1, item = item, coverWidth = if (compact) 136.dp else 168.dp)
+                        RankRow(
+                            rank = index + 1,
+                            item = item,
+                            coverWidth = if (compact) 136.dp else 168.dp,
+                            modifier = feedItemMotion(),
+                            onLongClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                menu = item
+                            },
+                        )
                     }
                 }
             }
@@ -243,15 +292,15 @@ private fun RankZonePage(rid: Int) {
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RankRow(rank: Int, item: VideoItem, coverWidth: Dp) {
+private fun RankRow(rank: Int, item: VideoItem, coverWidth: Dp, modifier: Modifier = Modifier, onLongClick: () -> Unit) {
     val nav = LocalNavigator.current
     val top = rank <= 3
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clip(YoinContainerShapes.Card)
             .background(if (top) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent)
-            .clickable {
+            .combinedClickable(onLongClick = onLongClick) {
                 nav.push(
                     item.target ?: Route.Video(bvid = item.bvid, aid = item.aid, cid = item.cid, cover = item.cover, title = item.title),
                 )

@@ -67,6 +67,10 @@ internal object SettingsChoices {
         Choice("app", "App 端"),
     )
 
+    val rcmdMinDuration = listOf(0, 30, 60, 90, 120).map { Choice(it, if (it == 0) "不过滤" else "$it 秒") }
+
+    val rcmdMinLikeRatio = listOf(0, 1, 2, 3, 4).map { Choice(it, if (it == 0) "不过滤" else "$it%") }
+
     val replySort = listOf(
         Choice(0, "最新"),
         Choice(1, "最热"),

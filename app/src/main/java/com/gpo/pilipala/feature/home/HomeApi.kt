@@ -169,7 +169,7 @@ private fun JsonObject.toWebRcmd(): Pair<VideoItem, Boolean>? {
 }
 
 /** App recommend item (`app.bilibili.com/x/v2/feed/index`). */
-private fun JsonObject.toAppRcmd(): Pair<VideoItem, Boolean>? {
+private fun JsonObject.toAppRcmd(): Triple<VideoItem, Boolean, AppFeedRef>? {
     val cardGoto = str("card_goto")
     if (cardGoto.startsWith("ad") || has("ad_info")) return null
     val goto = str("goto")
@@ -181,7 +181,8 @@ private fun JsonObject.toAppRcmd(): Pair<VideoItem, Boolean>? {
     val followed = Regex("已关注|新关注").containsMatchIn(reasonRaw)
     val reason = if (followed) "" else reasonRaw
     val param = str("param")
-    return when (goto) {
+    val ref = AppFeedRef(goto = goto, id = param, reasonId = dislikeReasonId())
+    val pair: Pair<VideoItem, Boolean> = when (goto) {
         "av" -> {
             val aid = player.long("aid").takeIf { it > 0 } ?: param.toLongOrNull() ?: return null
             VideoItem(
@@ -223,7 +224,17 @@ private fun JsonObject.toAppRcmd(): Pair<VideoItem, Boolean>? {
             ) to followed
         }
         else -> null
-    }
+    } ?: return null
+    return Triple(pair.first, pair.second, ref)
+}
+
+/** The "不感兴趣" reason from `three_point_v2` / `three_point`, if the card offers one. */
+private fun JsonObject.dislikeReasonId(): Int? {
+    val reasons = arr("three_point_v2").objects()
+        .filter { it.str("type") == "dislike" }
+        .flatMap { it.arr("reasons").objects() } + obj("three_point").arr("dislike_reasons").objects()
+    val pick = reasons.firstOrNull { it.str("name").contains("不感兴趣") } ?: reasons.firstOrNull()
+    return pick?.int("id", -1)?.takeIf { it >= 0 }
 }
 
 /** Flutter's RecommendFilter: true = keep. */
@@ -264,10 +275,13 @@ internal object HomeApi {
             .mapNotNull { it.toWebRcmd() }
             .filter { (item, followed) -> keepRcmd(item, followed) }
             .map { it.first }
+            .withoutBlocked()
     }
 
-    /** Returns the items and the smallest `idx` (the cursor for the next page). */
-    suspend fun rcmdApp(idx: Long, pull: Boolean, accessKey: String): Pair<List<VideoItem>, Long> {
+    class AppRcmdPage(val items: List<VideoItem>, val refs: List<AppFeedRef>, val nextIdx: Long)
+
+    /** Items (with their dislike refs, same order) and the smallest `idx` (the next cursor). */
+    suspend fun rcmdApp(idx: Long, pull: Boolean, accessKey: String): AppRcmdPage {
         val params = buildMap {
             put("idx", idx.toString())
             put("flush", "5")
@@ -282,17 +296,18 @@ internal object HomeApi {
         val data = BiliClient.getData(BiliHosts.APP + "/x/v2/feed/index", AppSign.sign(params)).asObj
         val raw = data.arr("items").objects()
         val nextIdx = raw.minOfOrNull { it.long("idx") }?.takeIf { it > 0 } ?: (idx + raw.size)
+        val blocked = Blacklist.mids.value
         val list = raw.mapNotNull { it.toAppRcmd() }
-            .filter { (item, followed) -> keepRcmd(item, followed) }
-            .map { it.first }
-        return list to nextIdx
+            .filter { (item, followed, _) -> keepRcmd(item, followed) && item.ownerMid !in blocked }
+        return AppRcmdPage(list.map { it.first }, list.map { it.third }, nextIdx)
     }
 
     /** Popular list; second = has more. */
     suspend fun hot(pn: Int, ps: Int = 20): Pair<List<VideoItem>, Boolean> {
         val data = BiliClient.getData("/x/web-interface/popular", mapOf("pn" to pn, "ps" to ps)).asObj
-        val list = data.arr("list").objects().map { it.toArchiveItem() }.filter { it.bvid.isNotEmpty() }
-        return list to (!data.bool("no_more") && list.isNotEmpty())
+        val all = data.arr("list").objects().map { it.toArchiveItem() }.filter { it.bvid.isNotEmpty() }
+        val list = all.withoutBlocked()
+        return list to (!data.bool("no_more") && all.isNotEmpty())
     }
 
     suspend fun liveRecommend(page: Int): Pair<List<LiveRoomItem>, Boolean> {

@@ -56,6 +56,11 @@ import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.asBool
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.feature.home.AppAccessKey
+import com.gpo.pilipala.feature.home.AppAuth
+import com.gpo.pilipala.feature.home.RcmdExemptFollowed
+import com.gpo.pilipala.feature.home.RcmdMinDuration
+import com.gpo.pilipala.feature.home.RcmdMinLikeRatio
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.friendlyMessage
@@ -384,7 +389,15 @@ private fun ColumnScope.DanmakuBody() {
 @Composable
 private fun ColumnScope.RecommendBody() {
     val source by AppSettings.rcmdSource.state.collectAsState()
+    val minDuration by RcmdMinDuration.state.collectAsState()
+    val minLikeRatio by RcmdMinLikeRatio.state.collectAsState()
+    val exemptFollowed by RcmdExemptFollowed.state.collectAsState()
+    val accessKey by AppAccessKey.state.collectAsState()
+    val user by Account.user.collectAsState()
     val toast = rememberToast()
+    val scope = rememberCoroutineScope()
+    var fetching by remember { mutableStateOf(false) }
+    val hasKey = accessKey.isNotEmpty() && AppAuth.validKey.isNotEmpty()
     SettingsGroup(null) {
         item {
             SettingsToggleItem(
@@ -392,10 +405,56 @@ private fun ColumnScope.RecommendBody() {
                 icon = YoinSymbols.Sparkle,
                 choices = SettingsChoices.rcmdSource,
                 selected = source,
-                onSelect = {
-                    AppSettings.set(AppSettings.rcmdSource, it)
-                    toast("下次刷新生效")
-                },
+                onSelect = { AppSettings.set(AppSettings.rcmdSource, it) },
+            )
+        }
+        if (source == "app" && user != null) {
+            item {
+                SettingsItem(
+                    title = "access_key",
+                    icon = PiliSymbols.Lock,
+                    enabled = !fetching,
+                    onClick = {
+                        fetching = true
+                        scope.launch {
+                            val result = runCatching { AppAuth.refresh() }
+                            fetching = false
+                            result.onSuccess { toast("已刷新 access_key") }
+                                .onFailure { toast(it.friendlyMessage()) }
+                        }
+                    },
+                    trailing = { ValueLabel(if (fetching) "获取中" else if (hasKey) "已获取" else "未获取") },
+                )
+            }
+        }
+    }
+    SettingsGroup("过滤") {
+        item {
+            SettingsChoiceItem(
+                title = "视频时长",
+                icon = PiliSymbols.Video,
+                choices = SettingsChoices.rcmdMinDuration,
+                selected = minDuration,
+                onSelect = { AppSettings.set(RcmdMinDuration, it) },
+                fallbackLabel = "$minDuration 秒",
+            )
+        }
+        item {
+            SettingsChoiceItem(
+                title = "点赞率",
+                icon = PiliSymbols.ThumbUp,
+                choices = SettingsChoices.rcmdMinLikeRatio,
+                selected = minLikeRatio,
+                onSelect = { AppSettings.set(RcmdMinLikeRatio, it) },
+                fallbackLabel = "$minLikeRatio%",
+            )
+        }
+        item {
+            SettingsSwitchItem(
+                title = "已关注 UP 豁免",
+                checked = exemptFollowed,
+                onCheckedChange = { AppSettings.set(RcmdExemptFollowed, it) },
+                icon = PiliSymbols.PersonCheck,
             )
         }
     }
