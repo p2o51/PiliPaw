@@ -1,5 +1,7 @@
 package com.gpo.pilipala.navigation.transition
 
+import android.content.ComponentCallbacks2
+import android.content.res.Configuration
 import androidx.activity.BackEventCompat
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
@@ -10,6 +12,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.MotionScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -24,7 +27,11 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.toSize
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.gpo.pilipala.navigation.Route
@@ -147,7 +154,8 @@ class PageTransitions internal constructor(
 
     private val sources = HashMap<String, SourceInfo>()
 
-    private class SourceInfo(var count: Int, var bounds: Rect)
+    /** A card key's live sources and the layout of the one placed last. */
+    private class SourceInfo(var count: Int, var coordinates: LayoutCoordinates?)
 
     /** The container's growth, 0 (the card) → 1 (the window): the spatial spring, run to sub-pixel. */
     internal val containerGrowthSpec: FiniteAnimationSpec<Float> = run {
@@ -182,17 +190,30 @@ class PageTransitions internal constructor(
     }
 
     internal fun registerSource(key: String) {
-        val info = sources.getOrPut(key) { SourceInfo(0, Rect.Zero) }
+        val info = sources.getOrPut(key) { SourceInfo(0, null) }
         info.count++
     }
 
-    internal fun unregisterSource(key: String) {
+    internal fun unregisterSource(key: String, coordinates: LayoutCoordinates?) {
         val info = sources[key] ?: return
-        if (--info.count <= 0) sources.remove(key)
+        if (--info.count <= 0) {
+            sources.remove(key)
+        } else if (info.coordinates === coordinates) {
+            // Another card with this key is still around; it notes itself on its next placement.
+            info.coordinates = null
+        }
     }
 
-    internal fun noteSourceBounds(key: String, bounds: Rect) {
-        sources[key]?.bounds = bounds
+    /** Called on every placement of a source: a reference store only. */
+    internal fun noteSourceCoordinates(key: String, coordinates: LayoutCoordinates) {
+        sources[key]?.coordinates = coordinates
+    }
+
+    /** The card's bounds in the window (unclipped, like the snapshot), or null when it is gone. */
+    private fun sourceBounds(key: String): Rect? {
+        val coordinates = sources[key]?.coordinates ?: return null
+        if (!coordinates.isAttached) return null
+        return Rect(coordinates.positionInRoot(), coordinates.size.toSize())
     }
 
     internal fun attachLayer(key: Any, layer: GraphicsLayer) {
@@ -208,6 +229,15 @@ class PageTransitions internal constructor(
         snapshots.remove(key)
     }
 
+    /**
+     * Memory pressure (the app went to the background LRU): keep only the
+     * newest snapshot — the page right beneath the top, which the next back
+     * reveals — and let deeper backs take the no-snapshot dissolve.
+     */
+    internal fun trimSnapshots() {
+        while (snapshots.size > 1) snapshots.remove(snapshots.keys.first())
+    }
+
     // ── Navigator hooks ─────────────────────────────────────────────────────
 
     /**
@@ -216,12 +246,11 @@ class PageTransitions internal constructor(
      */
     internal fun beforePush(route: Route) {
         val backdrop = captureTop()
-        val key = route.sharedKey()
-        val source = key?.let { sources[it] }
-        val container = key != null && source != null && !source.bounds.isEmpty &&
+        val source = route.sharedKey()?.let { sourceBounds(it) }
+        val container = source != null && !source.isEmpty &&
             backdrop != null && phase == BackPhase.Idle
         pendingEnter = backdrop?.let {
-            PageEnter(route.toString(), container, it, source?.bounds ?: Rect.Zero)
+            PageEnter(route.toString(), container, it, source ?: Rect.Zero)
         }
         sceneMirror = backdrop == null
     }
@@ -388,8 +417,12 @@ class PageTransitions internal constructor(
     )
 
     private companion object {
-        /** Full-window snapshots kept (most recently covered first to go … last). */
-        const val MaxSnapshots = 5
+        /**
+         * Full-window snapshots kept (least recently covered goes first). Each
+         * is a window-sized bitmap (~16MB on the tablet); a back past these
+         * takes the no-snapshot dissolve.
+         */
+        const val MaxSnapshots = 3
 
         /** Frames the live page draws, hidden, before it fades over its snapshot. */
         const val RevealHoldFrames = 3
@@ -402,7 +435,23 @@ class PageTransitions internal constructor(
 @Composable
 internal fun rememberPageTransitions(backStack: NavBackStack<NavKey>): PageTransitions {
     val scope = rememberCoroutineScope()
-    return remember(backStack) { PageTransitions(backStack, scope) }
+    val transitions = remember(backStack) { PageTransitions(backStack, scope) }
+    val app = LocalContext.current.applicationContext
+    DisposableEffect(transitions, app) {
+        val callbacks = object : ComponentCallbacks2 {
+            override fun onTrimMemory(level: Int) {
+                if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) transitions.trimSnapshots()
+            }
+
+            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+
+            @Deprecated("Deprecated in Java")
+            override fun onLowMemory() = transitions.trimSnapshots()
+        }
+        app.registerComponentCallbacks(callbacks)
+        onDispose { app.unregisterComponentCallbacks(callbacks) }
+    }
+    return transitions
 }
 
 /** The host's transitions (null outside the NavDisplay, e.g. previews). */

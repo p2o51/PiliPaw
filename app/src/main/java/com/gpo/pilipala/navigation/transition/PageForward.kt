@@ -40,13 +40,14 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.node.LayoutAwareModifierNode
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.toSize
 import androidx.navigation3.scene.Scene
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.theme.BackMotionTokens
@@ -64,19 +65,69 @@ private const val ContainerScrimAlpha = 0.32f
 
 /**
  * A card that opens [route]: a push of that route grows out of the card
- * (container transform). Only registers the card and tracks its bounds —
- * inert when the route has no shared key or outside the NavDisplay.
+ * (container transform). Only registers the card and keeps a reference to
+ * its layout — its bounds are resolved at the push, not on every scroll
+ * frame — inert when the route has no shared key or outside the NavDisplay.
  */
 @Composable
 fun Modifier.pageSharedSource(route: Route): Modifier {
     val key = route.sharedKey() ?: return this
     val transitions = LocalPageTransitions.current ?: return this
-    DisposableEffect(transitions, key) {
-        transitions.registerSource(key)
-        onDispose { transitions.unregisterSource(key) }
+    return this then PageSharedSourceElement(transitions, key)
+}
+
+private class PageSharedSourceElement(
+    val transitions: PageTransitions,
+    val key: String,
+) : ModifierNodeElement<PageSharedSourceNode>() {
+    override fun create() = PageSharedSourceNode(transitions, key)
+
+    override fun update(node: PageSharedSourceNode) = node.update(transitions, key)
+
+    override fun equals(other: Any?): Boolean =
+        other is PageSharedSourceElement && other.transitions === transitions && other.key == key
+
+    override fun hashCode(): Int = 31 * System.identityHashCode(transitions) + key.hashCode()
+
+    override fun InspectorInfo.inspectableProperties() {
+        name = "pageSharedSource"
+        properties["key"] = key
     }
-    return onGloballyPositioned { coordinates ->
-        transitions.noteSourceBounds(key, Rect(coordinates.positionInRoot(), coordinates.size.toSize()))
+}
+
+/**
+ * Registered while attached; [onPlaced] only stores the coordinates
+ * reference (no math, no allocation) — [PageTransitions.beforePush]
+ * resolves the card's bounds from it.
+ */
+private class PageSharedSourceNode(
+    private var transitions: PageTransitions,
+    private var key: String,
+) : Modifier.Node(), LayoutAwareModifierNode {
+    private var coordinates: LayoutCoordinates? = null
+
+    override fun onAttach() {
+        transitions.registerSource(key)
+    }
+
+    override fun onDetach() {
+        transitions.unregisterSource(key, coordinates)
+    }
+
+    override fun onPlaced(coordinates: LayoutCoordinates) {
+        this.coordinates = coordinates
+        transitions.noteSourceCoordinates(key, coordinates)
+    }
+
+    fun update(transitions: PageTransitions, key: String) {
+        if (transitions === this.transitions && key == this.key) return
+        if (isAttached) this.transitions.unregisterSource(this.key, coordinates)
+        this.transitions = transitions
+        this.key = key
+        if (isAttached) {
+            transitions.registerSource(key)
+            coordinates?.let { transitions.noteSourceCoordinates(key, it) }
+        }
     }
 }
 

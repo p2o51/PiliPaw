@@ -107,9 +107,10 @@ object BiliClient {
         params: Map<String, Any?> = emptyMap(),
         wbi: Boolean = false,
         headers: Map<String, String> = emptyMap(),
-    ): JsonObject {
-        val text = getText(url, params, wbi, headers)
-        return parseEnvelope(text)
+    ): JsonObject = withContext(Dispatchers.IO) {
+        // Parse where the body was read: a feed page is hundreds of KB of JSON,
+        // and callers sit on Main (viewModelScope).
+        parseEnvelope(getText(url, params, wbi, headers))
     }
 
     suspend fun getData(

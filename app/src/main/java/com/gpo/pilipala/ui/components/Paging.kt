@@ -13,9 +13,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.Stable
 import com.gpo.pilipala.core.net.BiliException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** One page of results. `hasMore = false` stops further loads. */
 data class Page<T>(val items: List<T>, val hasMore: Boolean, val nextCursor: String? = null)
@@ -55,17 +59,24 @@ class Pager<T>(
     fun refresh() {
         job?.cancel()
         job = scope.launch {
+            val me = coroutineContext.job
             isRefreshing = true
             error = null
-            runCatching { loader(null) }
-                .onSuccess { page ->
-                    items = dedup(page.items)
-                    hasMore = page.hasMore
-                    cursor = page.nextCursor
+            try {
+                val (page, merged) = load(null) { dedup(it.items) }
+                items = merged
+                hasMore = page.hasMore
+                cursor = page.nextCursor
+            } catch (e: Throwable) {
+                ensureActive() // cancelled (a newer refresh, the VM cleared): no error to show
+                error = e.friendlyMessage()
+            } finally {
+                // A newer refresh that cancelled this one owns the flags now.
+                if (job === me) {
+                    isRefreshing = false
+                    initialLoading = false
                 }
-                .onFailure { error = it.friendlyMessage() }
-            isRefreshing = false
-            initialLoading = false
+            }
         }
     }
 
@@ -73,17 +84,33 @@ class Pager<T>(
         if (isRefreshing || isLoadingMore || !hasMore || error != null && items.isEmpty()) return
         job = scope.launch {
             isLoadingMore = true
-            runCatching { loader(cursor) }
-                .onSuccess { page ->
-                    error = null
-                    items = dedup(items + page.items)
-                    hasMore = page.hasMore && page.items.isNotEmpty()
-                    cursor = page.nextCursor
-                }
-                .onFailure { error = it.friendlyMessage() }
-            isLoadingMore = false
+            val before = items
+            try {
+                val (page, merged) = load(cursor) { dedup(before + it.items) }
+                error = null
+                // A local edit (update) landed meanwhile: merge onto it instead.
+                items = if (items === before) merged else dedup(items + page.items)
+                hasMore = page.hasMore && page.items.isNotEmpty()
+                cursor = page.nextCursor
+            } catch (e: Throwable) {
+                ensureActive() // cancelled (a newer refresh, the VM cleared): no error to show
+                error = e.friendlyMessage()
+            } finally {
+                isLoadingMore = false
+            }
         }
     }
+
+    /**
+     * Runs the loader — network, JSON walking, mapping — and [merge] off the
+     * main thread; only the resulting state writes happen on the caller's
+     * (main) dispatcher, so a page landing mid-fling costs no frames.
+     */
+    private suspend fun load(cursor: String?, merge: (Page<T>) -> List<T>): Pair<Page<T>, List<T>> =
+        withContext(Dispatchers.Default) {
+            val page = loader(cursor)
+            page to merge(page)
+        }
 
     /** Local edits (remove an item after delete, etc). */
     fun update(transform: (List<T>) -> List<T>) {

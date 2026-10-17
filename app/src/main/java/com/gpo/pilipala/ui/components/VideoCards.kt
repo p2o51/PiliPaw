@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,8 +24,11 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -92,7 +97,7 @@ fun VideoCardV(
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f)) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 360.dp)
-            CoverScrim(item, Modifier.align(Alignment.BottomCenter))
+            CoverStats(item, Modifier.align(Alignment.BottomCenter))
             if (item.badge.isNotEmpty()) CoverBadge(item.badge, Modifier.align(Alignment.TopEnd).padding(6.dp))
         }
         Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 10.dp)) {
@@ -177,7 +182,7 @@ fun VideoCardH(
                         Text(
                             Fmt.relativeTime(item.pubdate),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -187,9 +192,12 @@ fun VideoCardH(
     }
 }
 
-/** Icon + number pair. */
+/**
+ * Icon + number pair. Information text, so onSurfaceVariant by default —
+ * `outline` is a border token and falls under 4.5:1 at 11sp.
+ */
 @Composable
-fun Stat(icon: ImageVector, text: String, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.outline) {
+fun Stat(icon: ImageVector, text: String, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         Icon(icon, null, Modifier.size(14.dp), tint = tint)
         Text(text, style = MaterialTheme.typography.labelSmall, color = tint)
@@ -197,17 +205,9 @@ fun Stat(icon: ImageVector, text: String, modifier: Modifier = Modifier, tint: C
 }
 
 @Composable
-private fun CoverScrim(item: VideoItem, modifier: Modifier) {
+private fun CoverStats(item: VideoItem, modifier: Modifier) {
     if (item.views < 0 && item.danmaku < 0 && item.duration <= 0) return
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(CoverShape)
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f))))
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
+    CoverScrim(modifier) {
         if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views), tint = Color.White)
         if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku), tint = Color.White)
         Spacer(Modifier.weight(1f))
@@ -215,6 +215,43 @@ private fun CoverScrim(item: VideoItem, modifier: Modifier) {
             Text(Fmt.duration(item.duration), style = MaterialTheme.typography.labelSmall, color = Color.White)
         }
     }
+}
+
+/** Fixed height of the bottom-of-cover scrim, whatever the row's own height. */
+val CoverScrimHeight = 48.dp
+
+private val CoverScrimStops = arrayOf(
+    0f to Color.Transparent,
+    0.4f to Color.Black.copy(alpha = 0.35f),
+    1f to Color.Black.copy(alpha = 0.7f),
+)
+
+/**
+ * The one scrim for white labels on a cover's bottom edge (stats, duration,
+ * live area, episode…): a [CoverScrimHeight] gradient that is already dense
+ * behind the text, so the labels hold on white or bright covers. Drawn in the
+ * cover's [shape] — no clip layer. Place it at the cover's BottomCenter.
+ */
+@Composable
+fun CoverScrim(
+    modifier: Modifier = Modifier,
+    shape: Shape = CoverShape,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = CoverScrimHeight)
+            .drawWithCache {
+                val outline = shape.createOutline(size, layoutDirection, this)
+                val brush = Brush.verticalGradient(*CoverScrimStops)
+                onDrawBehind { drawOutline(outline, brush) }
+            }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        content = content,
+    )
 }
 
 @Composable
