@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gpo.pilipala.core.net.BiliClient
@@ -14,7 +15,10 @@ import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.friendlyMessage
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 @Immutable
@@ -34,6 +38,12 @@ internal data class ComposeTarget(
 internal abstract class BaseReplyViewModel(val oid: Long, val type: Int) : ViewModel() {
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val likes = mutableStateMapOf<Long, LikeState>()
+
+    /** Which rows rise / expand in (kept here so a returning page does not replay it). */
+    val entrance = ReplyEntrance()
+
+    /** A reply landed through the composer (after it was inserted locally). */
+    val sentEvents = MutableSharedFlow<ComposeTarget>(extraBufferCapacity = 1)
     var upperMid: Long = 0
         protected set
     private val liking = mutableSetOf<Long>()
@@ -76,10 +86,24 @@ internal abstract class BaseReplyViewModel(val oid: Long, val type: Int) : ViewM
         return runCatching { ReplyApi.add(oid, type, message, target.root, target.parent, upperMid) }
             .onSuccess { res ->
                 messages.tryEmit(res.toast)
-                res.reply?.let { insertLocally(target, it) }
+                res.reply?.let {
+                    entrance.sent = it.rpid
+                    insertLocally(target, it)
+                    sentEvents.tryEmit(target)
+                }
             }
             .onFailure { messages.tryEmit(it.friendlyMessage()) }
             .isSuccess
+    }
+
+    /** Rows that landed but never composed stop being "new" once their batch settles. */
+    protected fun settleEntrances(ids: () -> List<Long>) {
+        viewModelScope.launch {
+            snapshotFlow(ids).collectLatest {
+                delay(EntranceSettleMs)
+                entrance.settle(it)
+            }
+        }
     }
 
     protected abstract fun removeLocally(rpid: Long)
@@ -97,10 +121,36 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
     var readOnly by mutableStateOf(false)
         private set
 
-    val pager = Pager<Reply>(viewModelScope, dedupKey = { it.rpid }) { cursor ->
-        val page = ReplyApi.main(oid, type, if (sort == 1) 3 else 2, cursor?.toLongOrNull() ?: 0L)
+    /**
+     * Sort switches: [requestedGen] bumps at the tap, [listGen] once the new
+     * first page replaced the list. Rows keyed by their generation leave and
+     * arrive as a cross-fade; rows of an older generation than requested are
+     * the stale list, dimmed until the new one lands.
+     */
+    var requestedGen by mutableIntStateOf(0)
+        private set
+    var listGen by mutableIntStateOf(0)
+        private set
+
+    val pager: Pager<Reply> = Pager(viewModelScope, dedupKey = { it.rpid }) { cursor ->
+        val gen = requestedGen
+        val page = try {
+            ReplyApi.main(oid, type, if (sort == 1) 3 else 2, cursor?.toLongOrNull() ?: 0L)
+        } catch (e: Throwable) {
+            if (cursor == null && gen != listGen && e !is CancellationException) {
+                // The switch failed: drop the stale list so the error and its retry show.
+                listGen = gen
+                entrance.reset()
+                pager.update { emptyList() }
+            }
+            throw e
+        }
         upperMid = page.upperMid
         if (cursor == null) {
+            if (gen != listGen) {
+                listGen = gen
+                entrance.reset()
+            }
             top = page.top
             count = page.count
             readOnly = page.readOnly
@@ -115,6 +165,7 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
 
     init {
         pager.refresh()
+        settleEntrances { top.map { it.rpid } + pager.items.map { it.rpid } }
     }
 
     fun refresh() {
@@ -122,11 +173,12 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
         pager.refresh()
     }
 
+    /** Keeps the current list (dimmed by the UI) until the new order lands, then swaps. */
     fun changeSort(value: Int) {
         if (value == sort) return
         sort = value
         AppSettings.set(AppSettings.replySort, value)
-        pager.update { emptyList() }
+        requestedGen++
         pager.refresh()
     }
 
@@ -185,6 +237,7 @@ internal class ReplyThreadViewModel(oid: Long, type: Int, val rootRpid: Long) : 
 
     init {
         pager.refresh()
+        settleEntrances { listOfNotNull(root?.rpid) + pager.items.map { it.rpid } }
     }
 
     fun refresh() {

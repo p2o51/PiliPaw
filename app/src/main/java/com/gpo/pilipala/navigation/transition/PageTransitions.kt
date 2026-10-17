@@ -415,5 +415,6 @@ fun Route.sharedKey(): String? = when (this) {
     is Route.Bangumi -> "bangumi:${if (epId != 0L) "ep$epId" else "ss$seasonId"}"
     is Route.Member -> "member:$mid"
     is Route.FavDetail -> "fav:$mediaId"
+    is Route.ReplyDetail -> "reply:$rpid"
     else -> null
 }

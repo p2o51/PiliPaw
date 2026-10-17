@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.Alignment
@@ -59,6 +60,9 @@ internal class ReplyUiState {
     var freeCopy by mutableStateOf<String?>(null)
     var composer by mutableStateOf<ComposeTarget?>(null)
     var viewer by mutableStateOf<Pair<List<String>, Int>?>(null)
+
+    /** Rows resizing right now (text expanding, a reply expanding in). */
+    val layout = ReplyLayoutMotion()
 }
 
 @Composable
@@ -90,15 +94,25 @@ internal fun rememberReplyActions(
 ): ReplyActions {
     val nav = LocalNavigator.current
     val toast = rememberToast()
-    return ReplyActions(
-        likeState = { vm.likeState(it) },
-        onLike = { r -> if (!vm.toggleLike(r)) requireLogin(nav, toast) },
-        onReply = { r -> if (requireLogin(nav, toast)) ui.composer = onReply(r) },
-        onOpenThread = onOpenThread,
-        onLongPress = { ui.menuFor = it },
-        onImage = { urls, i -> ui.viewer = urls to i },
-        onTimestampClick = onTimestampClick,
-    )
+    val replyTarget by rememberUpdatedState(onReply)
+    val openThread by rememberUpdatedState(onOpenThread)
+    val timestamp by rememberUpdatedState(onTimestampClick)
+    val hasThread = onOpenThread != null
+    val hasTimestamp = onTimestampClick != null
+    // One instance per surface: rows skip when their host recomposes.
+    return remember(vm, ui, nav, toast, hasThread, hasTimestamp) {
+        ReplyActions(
+            likeState = { vm.likeState(it) },
+            onLike = { r -> if (!vm.toggleLike(r)) requireLogin(nav, toast) },
+            onReply = { r -> if (requireLogin(nav, toast)) ui.composer = replyTarget(r) },
+            onOpenThread = if (hasThread) { r -> openThread?.invoke(r) } else null,
+            onLongPress = { ui.menuFor = it },
+            onImage = { urls, i -> ui.viewer = urls to i },
+            onTimestampClick = if (hasTimestamp) { s -> timestamp?.invoke(s) } else null,
+            entrance = vm.entrance,
+            layout = ui.layout,
+        )
+    }
 }
 
 @Composable
