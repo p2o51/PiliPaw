@@ -77,6 +77,7 @@ private fun BangumiDetailContent(vm: BangumiDetailViewModel) {
     DisposableEffect(vm, playerState) {
         onDispose { vm.rememberPosition(playerState.positionMs) }
     }
+    LaunchedEffect(playerState, vm.detail?.title) { playerState.artist = vm.detail?.title.orEmpty() }
 
     val seek: (Long) -> Unit = remember(playerState) { { s -> playerState.seekTo(s * 1000) } }
     val player = remember(vm, playerState) {

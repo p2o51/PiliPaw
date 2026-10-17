@@ -11,8 +11,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.FlagSet
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -71,6 +74,12 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var exo: ExoPlayer? = null
     private var session: MediaSession? = null
+    private var sessionPlayer: SessionPlayer? = null
+
+    /** Background host: wanted once playback starts, dropped when it ends or the page goes away. */
+    private var hostWanted = false
+    private var hosted = false
+    private var endJob: Job? = null
 
     /** Mirrors progress into a caller-supplied plain [BiliPlayerState] (fallback path). */
     var mirror: BiliPlayerState? = null
@@ -154,6 +163,10 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
             isPlaying = playing
             mirror?.isPlaying = playing
             onPlayingChanged(playing)
+            if (playing && !hostWanted) {
+                hostWanted = true
+                syncBackgroundHost()
+            }
         }
 
         override fun onPlaybackStateChanged(state: Int) {
@@ -169,9 +182,19 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
                     tick()
                     heartbeat(-1)
                     onCompleted()
+                    // Nothing queued after this one (auto-play-next resets `ended` via load) → drop the notification.
+                    endJob?.cancel()
+                    endJob = scope.launch {
+                        delay(3_000)
+                        if (ended) {
+                            hostWanted = false
+                            syncBackgroundHost()
+                        }
+                    }
                 }
                 else -> Unit
             }
+            if (state != Player.STATE_ENDED) endJob?.cancel()
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -232,6 +255,8 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
                 delay(if (isPlaying) 250L else 600L)
             }
         }
+        scope.launch { AppSettings.backgroundPlay.state.collect { syncBackgroundHost() } }
+        scope.launch { snapshotFlow { artist }.collect { sessionPlayer?.notifyMetadataChanged() } }
     }
 
     // ── Public API ───────────────────────────────────────────────────────────
@@ -264,6 +289,8 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         seekGeneration++
         exo?.stop()
         exo?.clearMediaItems()
+        session?.setSessionActivity(PlaybackService.sessionActivity(context, t))
+        sessionPlayer?.notifyMetadataChanged()
         loadJob?.cancel()
         sideJobs.forEach { it.cancel() }
         sideJobs.clear()
@@ -450,8 +477,13 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         heartbeatJob?.cancel()
         sleepJob?.cancel()
         subtitleJob?.cancel()
+        endJob?.cancel()
+        hostWanted = false
+        session?.let { if (hosted) PlaybackService.detach(it) }
+        hosted = false
         session?.release()
         session = null
+        sessionPlayer = null
         exo?.removeListener(listener)
         exo?.release()
         exo = null
@@ -500,10 +532,68 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         p.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         exo = p
         player = p
+        val sp = SessionPlayer(p)
         session = runCatching {
-            MediaSession.Builder(context, p).setId("pili-player-${sessionIds.incrementAndGet()}").build()
+            MediaSession.Builder(context, sp)
+                .setId("pili-player-${sessionIds.incrementAndGet()}")
+                .setCallback(PiliSessionCallback)
+                .setMediaButtonPreferences(PlaybackService.mediaButtons)
+                .setBitmapLoader(CoilBitmapLoader(context))
+                .apply { target?.let { setSessionActivity(PlaybackService.sessionActivity(context, it)) } }
+                .build()
         }.getOrNull()
+        sessionPlayer = sp.takeIf { session != null }
+        syncBackgroundHost()
         return p
+    }
+
+    /** Hands the session to [PlaybackService] (notification + foreground) while background play wants it. */
+    private fun syncBackgroundHost() {
+        val s = session ?: return
+        val want = hostWanted && AppSettings.backgroundPlay.value
+        if (want == hosted) return
+        hosted = want
+        if (want) PlaybackService.attach(context, s) else PlaybackService.detach(s)
+    }
+
+    private fun sessionMetadata(): MediaMetadata {
+        val t = target
+        return MediaMetadata.Builder()
+            .setTitle(t?.title?.takeIf { it.isNotBlank() })
+            .setArtist(artist.takeIf { it.isNotBlank() })
+            .apply { t?.cover?.takeIf { it.isNotBlank() }?.let { setArtworkUri(Uri.parse(BiliClient.resolve(it))) } }
+            .build()
+    }
+
+    /**
+     * What the session (notification, lock screen, headsets) sees: our title / UP / cover
+     * instead of the stream's metadata, and play() through the controller (retry, replay).
+     */
+    private inner class SessionPlayer(p: Player) : ForwardingPlayer(p) {
+        private val wrapped = HashMap<Player.Listener, Player.Listener>()
+
+        override fun addListener(listener: Player.Listener) {
+            val w = MetadataOverrideListener(listener, ::sessionMetadata)
+            wrapped[listener] = w
+            super.addListener(w)
+        }
+
+        override fun removeListener(listener: Player.Listener) {
+            wrapped.remove(listener)?.let { super.removeListener(it) }
+        }
+
+        override fun getMediaMetadata(): MediaMetadata = sessionMetadata()
+
+        override fun play() = this@PiliPlayerController.play()
+
+        fun notifyMetadataChanged() {
+            val m = sessionMetadata()
+            val events = Player.Events(FlagSet.Builder().add(Player.EVENT_MEDIA_METADATA_CHANGED).build())
+            wrapped.values.toList().forEach {
+                it.onMediaMetadataChanged(m)
+                it.onEvents(this, events)
+            }
+        }
     }
 
     private fun reprepare() {
@@ -644,4 +734,57 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         PlaybackException.ERROR_CODE_DECODING_FAILED -> "解码失败"
         else -> "播放失败"
     }
+}
+
+/**
+ * Forwards every callback, swapping in our metadata. Written out by hand: Kotlin's
+ * `by` delegation skips Java default methods, which is all of [Player.Listener].
+ */
+@Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+private class MetadataOverrideListener(
+    private val d: Player.Listener,
+    private val metadata: () -> MediaMetadata,
+) : Player.Listener {
+    override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = d.onMediaMetadataChanged(metadata())
+    override fun onEvents(player: Player, events: Player.Events) = d.onEvents(player, events)
+    override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) = d.onTimelineChanged(timeline, reason)
+    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = d.onMediaItemTransition(mediaItem, reason)
+    override fun onTracksChanged(tracks: androidx.media3.common.Tracks) = d.onTracksChanged(tracks)
+    override fun onPlaylistMetadataChanged(mediaMetadata: MediaMetadata) = d.onPlaylistMetadataChanged(mediaMetadata)
+    override fun onIsLoadingChanged(isLoading: Boolean) = d.onIsLoadingChanged(isLoading)
+    override fun onLoadingChanged(isLoading: Boolean) = d.onLoadingChanged(isLoading)
+    override fun onAvailableCommandsChanged(availableCommands: Player.Commands) = d.onAvailableCommandsChanged(availableCommands)
+    override fun onTrackSelectionParametersChanged(parameters: androidx.media3.common.TrackSelectionParameters) =
+        d.onTrackSelectionParametersChanged(parameters)
+    override fun onPlayerStateChanged(playWhenReady: Boolean, playbackState: Int) = d.onPlayerStateChanged(playWhenReady, playbackState)
+    override fun onPlaybackStateChanged(playbackState: Int) = d.onPlaybackStateChanged(playbackState)
+    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = d.onPlayWhenReadyChanged(playWhenReady, reason)
+    override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) =
+        d.onPlaybackSuppressionReasonChanged(playbackSuppressionReason)
+    override fun onIsPlayingChanged(isPlaying: Boolean) = d.onIsPlayingChanged(isPlaying)
+    override fun onRepeatModeChanged(repeatMode: Int) = d.onRepeatModeChanged(repeatMode)
+    override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = d.onShuffleModeEnabledChanged(shuffleModeEnabled)
+    override fun onPlayerError(error: PlaybackException) = d.onPlayerError(error)
+    override fun onPlayerErrorChanged(error: PlaybackException?) = d.onPlayerErrorChanged(error)
+    override fun onPositionDiscontinuity(reason: Int) = d.onPositionDiscontinuity(reason)
+    override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) =
+        d.onPositionDiscontinuity(oldPosition, newPosition, reason)
+    override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) =
+        d.onPlaybackParametersChanged(playbackParameters)
+    override fun onSeekBackIncrementChanged(seekBackIncrementMs: Long) = d.onSeekBackIncrementChanged(seekBackIncrementMs)
+    override fun onSeekForwardIncrementChanged(seekForwardIncrementMs: Long) = d.onSeekForwardIncrementChanged(seekForwardIncrementMs)
+    override fun onMaxSeekToPreviousPositionChanged(maxSeekToPreviousPositionMs: Long) =
+        d.onMaxSeekToPreviousPositionChanged(maxSeekToPreviousPositionMs)
+    override fun onAudioSessionIdChanged(audioSessionId: Int) = d.onAudioSessionIdChanged(audioSessionId)
+    override fun onAudioAttributesChanged(audioAttributes: AudioAttributes) = d.onAudioAttributesChanged(audioAttributes)
+    override fun onVolumeChanged(volume: Float) = d.onVolumeChanged(volume)
+    override fun onSkipSilenceEnabledChanged(skipSilenceEnabled: Boolean) = d.onSkipSilenceEnabledChanged(skipSilenceEnabled)
+    override fun onDeviceInfoChanged(deviceInfo: androidx.media3.common.DeviceInfo) = d.onDeviceInfoChanged(deviceInfo)
+    override fun onDeviceVolumeChanged(volume: Int, muted: Boolean) = d.onDeviceVolumeChanged(volume, muted)
+    override fun onVideoSizeChanged(videoSize: VideoSize) = d.onVideoSizeChanged(videoSize)
+    override fun onSurfaceSizeChanged(width: Int, height: Int) = d.onSurfaceSizeChanged(width, height)
+    override fun onRenderedFirstFrame() = d.onRenderedFirstFrame()
+    override fun onCues(cues: List<androidx.media3.common.text.Cue>) = d.onCues(cues)
+    override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) = d.onCues(cueGroup)
+    override fun onMetadata(metadata: androidx.media3.common.Metadata) = d.onMetadata(metadata)
 }

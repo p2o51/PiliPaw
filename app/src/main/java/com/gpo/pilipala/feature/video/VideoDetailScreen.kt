@@ -79,6 +79,7 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     DisposableEffect(vm, playerState) {
         onDispose { vm.rememberPosition(playerState.positionMs) }
     }
+    LaunchedEffect(playerState, vm.detail?.ownerName) { playerState.artist = vm.detail?.ownerName.orEmpty() }
 
     val seek: (Long) -> Unit = remember(playerState) { { s -> playerState.seekTo(s * 1000) } }
     val player = remember(vm, playerState) {

@@ -23,6 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation3.runtime.rememberNavBackStack
 import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.feature.player.PlaybackService
 import com.gpo.pilipala.navigation.AppNavHost
 import com.gpo.pilipala.navigation.LinkRouter
 import com.gpo.pilipala.navigation.Route
@@ -32,7 +33,10 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private val deepLinks = Channel<Route>(Channel.UNLIMITED)
+    /** [resume]: from the media notification — the playing page may already be on top. */
+    private class DeepLink(val route: Route, val resume: Boolean)
+
+    private val deepLinks = Channel<DeepLink>(Channel.UNLIMITED)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -52,7 +56,11 @@ class MainActivity : ComponentActivity() {
                 val rootScope = androidx.compose.runtime.rememberCoroutineScope()
                 val backStack = rememberNavBackStack(Route.Main)
                 LaunchedEffect(Unit) {
-                    for (r in deepLinks) backStack.add(r)
+                    for (link in deepLinks) {
+                        val top = backStack.lastOrNull()
+                        if (link.resume && (top is Route.Video || top is Route.Bangumi)) continue
+                        backStack.add(link.route)
+                    }
                 }
                 CompositionLocalProvider(LocalSnackbarHost provides snackbar, com.gpo.pilipala.ui.components.LocalToastScope provides rootScope) {
                     Box(Modifier.fillMaxSize()) {
@@ -74,6 +82,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         val data = intent?.dataString ?: return
-        deepLinks.trySend(LinkRouter.route(data))
+        val resume = intent.getBooleanExtra(PlaybackService.EXTRA_RESUME, false)
+        deepLinks.trySend(DeepLink(LinkRouter.route(data), resume))
     }
 }

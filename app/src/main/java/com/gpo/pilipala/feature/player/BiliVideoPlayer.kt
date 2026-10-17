@@ -84,6 +84,9 @@ open class BiliPlayerState {
     var isPlaying by mutableStateOf(false)
     var positionMs by mutableLongStateOf(0L)
     var durationMs by mutableLongStateOf(0L)
+
+    /** UP / series name for the media notification (title and cover come from [PlayTarget]). */
+    var artist by mutableStateOf("")
     open fun play() {}
     open fun pause() {}
     open fun seekTo(ms: Long) {}
