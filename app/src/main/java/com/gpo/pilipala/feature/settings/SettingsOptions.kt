@@ -12,6 +12,8 @@ internal enum class SettingsPageId(val key: String, val label: String, val title
     Play("play", "播放", "播放设置", YoinSymbols.PlayCircle),
     Danmaku("danmaku", "弹幕", "弹幕设置", PiliSymbols.Danmaku),
     Recommend("recommend", "推荐", "推荐设置", YoinSymbols.Sparkle),
+    Habit("habit", "习惯", "习惯", YoinSymbols.Person),
+    Network("network", "网络与线路", "网络与线路", YoinSymbols.Speed),
     Privacy("privacy", "隐私", "隐私设置", PiliSymbols.Lock),
     Extra("extra", "其他", "其他设置", YoinSymbols.Settings),
     About("about", "关于", "关于", YoinSymbols.Info),

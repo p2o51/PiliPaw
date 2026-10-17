@@ -16,6 +16,7 @@ class PiliApp : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         BiliClient.init(this)
         AppSettings.init(this)
+        com.gpo.pilipala.feature.player.cdn.CdnRouter.init(this)
         Account.init(this)
     }
 

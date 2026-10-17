@@ -130,6 +130,12 @@ private fun SettingsList(
                 SettingsPageId.Play to SettingsChoices.videoQuality.firstOrNull { it.value == qn }?.label,
                 SettingsPageId.Danmaku to if (dmOn) "开启" else "关闭",
                 SettingsPageId.Recommend to SettingsChoices.rcmdSource.firstOrNull { it.value == rcmd }?.label,
+                SettingsPageId.Habit to null,
+                SettingsPageId.Network to when (com.gpo.pilipala.feature.player.cdn.CdnSettings.mode.value) {
+                    "fixed" -> "固定"
+                    "native" -> "原生"
+                    else -> "自动"
+                },
             ).forEach { (id, value) ->
                 item(key = id, paintsOwnSegment = twoPane) {
                     SettingsLinkItem(

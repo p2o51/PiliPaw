@@ -95,6 +95,8 @@ internal fun SettingsPageContent(page: String, showBack: Boolean) {
             SettingsPageId.Play -> PlayBody()
             SettingsPageId.Danmaku -> DanmakuBody()
             SettingsPageId.Recommend -> RecommendBody()
+            SettingsPageId.Habit -> HabitBody()
+            SettingsPageId.Network -> NetworkBody()
             SettingsPageId.Privacy -> PrivacyBody()
             SettingsPageId.Extra -> ExtraBody()
             SettingsPageId.About -> Unit
