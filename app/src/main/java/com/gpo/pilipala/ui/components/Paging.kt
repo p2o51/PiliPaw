@@ -75,6 +75,7 @@ class Pager<T>(
             isLoadingMore = true
             runCatching { loader(cursor) }
                 .onSuccess { page ->
+                    error = null
                     items = dedup(items + page.items)
                     hasMore = page.hasMore && page.items.isNotEmpty()
                     cursor = page.nextCursor

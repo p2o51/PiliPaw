@@ -169,7 +169,14 @@ internal object MemberRepo {
 
     class ArchivePage(val page: Page<VideoItem>, val total: Long)
 
-    suspend fun archive(mid: Long, pn: Int, order: ArchiveOrder, ps: Int = 30): ArchivePage {
+    /**
+     * cursor: null = first page, "<n>" = web page n, "app:<aid>" = app cursor.
+     * The web endpoint (wbi + dm params) is risk-controlled (-352 / 412) on many
+     * networks; on that we switch to the app-signed space/archive/cursor feed.
+     */
+    suspend fun archive(mid: Long, cursor: String?, order: ArchiveOrder, ps: Int = 30): ArchivePage {
+        if (cursor?.startsWith("app:") == true) return appArchive(mid, cursor.removePrefix("app:"), order)
+        val pn = cursor?.toIntOrNull() ?: 1
         val params = mapOf(
             "mid" to mid,
             "ps" to ps,
@@ -184,12 +191,51 @@ internal object MemberRepo {
         val root = try {
             BiliClient.getData("/x/space/wbi/arc/search", params, wbi = true).asObj
         } catch (e: BiliException) {
-            if (e.code == -352) throw BiliException(e.code, "风控校验失败") else throw e
+            if (pn == 1 && (e.code == -352 || e.code == -412 || e.code == 412)) return appArchive(mid, "", order)
+            throw e
         }
         val list = root.obj("list").arr("vlist").objects().map { it.archiveItem(mid) }
         val total = root.obj("page").long("count")
         val hasMore = list.isNotEmpty() && pn.toLong() * ps < total
         return ArchivePage(Page(list, hasMore, (pn + 1).toString()), total)
+    }
+
+    private suspend fun appArchive(mid: Long, aid: String, order: ArchiveOrder): ArchivePage {
+        val params = mutableMapOf(
+            "vmid" to mid.toString(),
+            "order" to order.key,
+            "ps" to "20",
+            "ts" to (System.currentTimeMillis() / 1000).toString(),
+        )
+        if (aid.isNotEmpty()) params["aid"] = aid
+        val signed = com.gpo.pilipala.core.net.AppSign.sign(
+            params,
+            com.gpo.pilipala.core.net.AppSign.ANDROID_HD_KEY,
+            com.gpo.pilipala.core.net.AppSign.ANDROID_HD_SEC,
+        )
+        val root = BiliClient.getData(
+            "${com.gpo.pilipala.core.net.BiliHosts.APP}/x/v2/space/archive/cursor",
+            signed,
+            headers = mapOf("User-Agent" to "okhttp/5.0.0"),
+        ).asObj
+        val items = root.arr("item").objects()
+        val list = items.map { o ->
+            VideoItem(
+                bvid = o.str("bvid"),
+                aid = o.str("param").toLongOrNull() ?: 0,
+                title = o.str("title"),
+                cover = o.str("cover"),
+                duration = o.long("duration"),
+                ownerMid = mid,
+                ownerName = o.str("author"),
+                views = o.long("play", -1),
+                danmaku = o.long("danmaku", -1),
+                pubdate = o.long("ctime"),
+                badge = if (o.bool("is_ugcpay") || o.int("ugc_pay") == 1) "付费" else "",
+            )
+        }
+        val next = items.lastOrNull()?.str("param").orEmpty()
+        return ArchivePage(Page(list, root.bool("has_next") && next.isNotEmpty(), "app:$next"), root.long("count"))
     }
 
     private fun JsonObject.archiveItem(mid: Long): VideoItem = VideoItem(

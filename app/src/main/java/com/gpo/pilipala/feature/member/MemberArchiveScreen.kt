@@ -31,9 +31,8 @@ internal class MemberArchiveViewModel(val mid: Long) : ViewModel() {
     var total by mutableLongStateOf(-1L)
         private set
     val pager = Pager<VideoItem>(viewModelScope, dedupKey = { it.key() }) { cursor ->
-        val pn = cursor?.toIntOrNull() ?: 1
-        val r = MemberRepo.archive(mid, pn, order)
-        if (pn == 1) total = r.total
+        val r = MemberRepo.archive(mid, cursor, order)
+        if (cursor == null) total = r.total
         r.page
     }
 

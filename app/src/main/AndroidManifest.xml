@@ -39,6 +39,14 @@
                 <data android:scheme="https" android:host="www.bilibili.com" />
                 <data android:scheme="https" android:host="m.bilibili.com" />
                 <data android:scheme="https" android:host="b23.tv" />
+                <data android:scheme="https" android:host="space.bilibili.com" />
+                <data android:scheme="https" android:host="live.bilibili.com" />
+                <data android:scheme="https" android:host="t.bilibili.com" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="bilibili" />
             </intent-filter>
         </activity>

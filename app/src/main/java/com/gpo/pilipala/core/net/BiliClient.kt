@@ -198,6 +198,7 @@ object BiliClient {
 
     fun parseEnvelope(text: String): JsonObject {
         val el = runCatching { BiliJson.parseToJsonElement(text) }.getOrNull()
+        if (el == null && text.trimStart().startsWith("<")) throw BiliException(-412, "请求被拦截，稍后再试")
         return el as? JsonObject ?: throw BiliException(-1, "响应解析失败")
     }
 

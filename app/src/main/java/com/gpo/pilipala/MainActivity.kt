@@ -28,11 +28,11 @@ import com.gpo.pilipala.navigation.LinkRouter
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.LocalSnackbarHost
 import com.gpo.pilipala.ui.theme.PiliTheme
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private val deepLinks = MutableSharedFlow<Route>(extraBufferCapacity = 4)
+    private val deepLinks = Channel<Route>(Channel.UNLIMITED)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -49,11 +49,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             PiliTheme {
                 val snackbar = remember { SnackbarHostState() }
+                val rootScope = androidx.compose.runtime.rememberCoroutineScope()
                 val backStack = rememberNavBackStack(Route.Main)
                 LaunchedEffect(Unit) {
-                    deepLinks.collect { backStack.add(it) }
+                    for (r in deepLinks) backStack.add(r)
                 }
-                CompositionLocalProvider(LocalSnackbarHost provides snackbar) {
+                CompositionLocalProvider(LocalSnackbarHost provides snackbar, com.gpo.pilipala.ui.components.LocalToastScope provides rootScope) {
                     Box(Modifier.fillMaxSize()) {
                         AppNavHost(backStack)
                         SnackbarHost(
@@ -73,6 +74,6 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         val data = intent?.dataString ?: return
-        deepLinks.tryEmit(LinkRouter.route(data))
+        deepLinks.trySend(LinkRouter.route(data))
     }
 }

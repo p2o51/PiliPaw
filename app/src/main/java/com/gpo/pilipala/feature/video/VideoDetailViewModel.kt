@@ -82,7 +82,7 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
             val params = if (bvid.isNotEmpty()) mapOf("bvid" to bvid) else mapOf("aid" to route.aid)
             val relatedJob = async { loadRelated() }
             val tagsJob = async { loadTags() }
-            runCatching { parseVideoDetail(BiliClient.getData("/x/web-interface/view", params).asObj!!) }
+            runCatching { parseVideoDetail(BiliClient.getData("/x/web-interface/wbi/view", params, wbi = true).asObj!!) }
                 .onSuccess { d ->
                     val ep = Regex("""/bangumi/play/ep(\d+)""").find(d.redirectUrl)?.groupValues?.get(1)?.toLongOrNull()
                     if (ep != null) {

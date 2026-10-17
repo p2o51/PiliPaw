@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
@@ -194,7 +195,7 @@ private fun DynamicsFeed(vm: DynamicsViewModel) {
     val screenW = LocalConfiguration.current.screenWidthDp.dp
     val side = max(16.dp, (screenW - maxWidth) / 2)
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val bottom = LocalBottomBarInset.current
+    val bottom = LocalBottomBarInset.current + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val gridState = rememberLazyStaggeredGridState()
     val fadeInSpec = YoinMotion.defaultEffectsSpec<Float>()
     val fadeOutSpec = YoinMotion.fastEffectsSpec<Float>()

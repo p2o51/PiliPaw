@@ -144,9 +144,8 @@ internal class MemberViewModel(val mid: Long, val initFace: String, val initName
     var archiveTotal by mutableLongStateOf(-1L)
         private set
     val archive = Pager<VideoItem>(viewModelScope, dedupKey = { it.key() }) { cursor ->
-        val pn = cursor?.toIntOrNull() ?: 1
-        val r = MemberRepo.archive(mid, pn, order)
-        if (pn == 1) archiveTotal = r.total
+        val r = MemberRepo.archive(mid, cursor, order)
+        if (cursor == null) archiveTotal = r.total
         r.page
     }
     val collections = Pager<MemberCollection>(viewModelScope, dedupKey = { "${it.category}-${it.id}" }) { cursor ->
