@@ -634,7 +634,7 @@ internal fun ArticleMeta(h: ArticleHeaderData, modifier: Modifier = Modifier) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(h.authorName, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (h.time.isNotEmpty()) {
-                        Text(h.time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                        Text(h.time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

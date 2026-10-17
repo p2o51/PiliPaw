@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -57,6 +58,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -73,6 +75,7 @@ import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 // ── Viewer state ────────────────────────────────────────────────────────────
 
@@ -110,11 +113,16 @@ internal fun PicGrid(
     modifier: Modifier = Modifier,
 ) {
     if (pics.isEmpty()) return
+    val density = LocalDensity.current
     if (pics.size == 1) {
         val p = pics.first()
         val raw = if (p.width > 0 && p.height > 0) p.width.toFloat() / p.height else 1f
         val ratio = raw.coerceIn(0.66f, 1.78f)
         val isLong = p.height > p.width * 2.5f && p.width > 0
+        // Ask the CDN for the slot's crop (width AND height): a 长图 would otherwise
+        // arrive at ~960×8000 and be decoded whole just to show its center.
+        val wPx = with(density) { 480.dp.roundToPx() }
+        val model = remember(p.url, wPx, ratio) { Images.thumb(p.url, wPx, (wPx / ratio).roundToInt()) }
         Box(
             modifier
                 .fillMaxWidth(if (ratio < 1f) 0.66f else 1f)
@@ -123,11 +131,12 @@ internal fun PicGrid(
                 .clip(PicShape)
                 .clickable { onOpen(0) },
         ) {
-            NetImage(p.url, Modifier.matchParentSize(), shape = PicShape, thumbWidth = 480.dp)
+            NetImage(model, Modifier.matchParentSize(), shape = PicShape, thumbWidth = null)
             if (isLong) CoverBadge("长图", Modifier.align(Alignment.BottomStart).padding(8.dp))
         }
         return
     }
+    val tilePx = with(density) { 240.dp.roundToPx() }
     val cols = if (pics.size == 2 || pics.size == 4) 2 else 3
     Column(
         modifier.widthIn(max = if (cols == 2) 420.dp else 560.dp),
@@ -144,7 +153,8 @@ internal fun PicGrid(
                             .clip(PicShape)
                             .clickable { onOpen(index) },
                     ) {
-                        NetImage(p.url, Modifier.matchParentSize(), shape = PicShape, thumbWidth = 240.dp)
+                        // Square tiles: let the CDN crop to a square instead of decoding a whole long image.
+                        NetImage(Images.thumb(p.url, tilePx, tilePx), Modifier.matchParentSize(), shape = PicShape, thumbWidth = null)
                         if (p.width > 0 && p.height > p.width * 2.5f) {
                             CoverBadge("长图", Modifier.align(Alignment.BottomStart).padding(6.dp))
                         }
@@ -157,6 +167,12 @@ internal fun PicGrid(
 }
 
 // ── Full-screen viewer ──────────────────────────────────────────────────────
+
+private val ViewerTopScrim = Brush.verticalGradient(
+    0f to Color.Black.copy(alpha = 0.55f),
+    0.6f to Color.Black.copy(alpha = 0.3f),
+    1f to Color.Transparent,
+)
 
 @Composable
 internal fun ImageViewerDialog(urls: List<String>, initial: Int, onDismiss: () -> Unit) {
@@ -187,8 +203,13 @@ internal fun ImageViewerDialog(urls: List<String>, initial: Int, onDismiss: () -
                 exit = fadeOut(YoinMotion.fastEffectsSpec()),
                 modifier = Modifier.align(Alignment.TopStart),
             ) {
+                // Scrim behind the white close button and counter so they stay legible over bright pictures.
                 Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
+                    Modifier
+                        .fillMaxWidth()
+                        .background(ViewerTopScrim)
+                        .statusBarsPadding()
+                        .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 28.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = onDismiss, shapes = IconButtonDefaults.shapes()) {

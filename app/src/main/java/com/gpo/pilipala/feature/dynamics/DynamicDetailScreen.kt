@@ -42,12 +42,11 @@ import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
 
 internal sealed interface DetailState {
     data object Loading : DetailState
     data class Error(val message: String) : DetailState
-    data class Ready(val item: JsonObject) : DetailState
+    data class Ready(val item: DynItem) : DetailState
 }
 
 internal class DynamicDetailViewModel(private val id: String) : ViewModel() {
@@ -84,7 +83,7 @@ fun DynamicDetailScreen(route: Route.DynamicDetail) {
                     val ready = vm.state as? DetailState.Ready
                     if (ready != null) {
                         IconButton(
-                            onClick = { shareText(context, dynamicShareUrl(ready.item)) },
+                            onClick = { shareText(context, dynamicShareUrl(ready.item.json)) },
                             shapes = IconButtonDefaults.shapes(),
                         ) { Icon(YoinSymbols.Share, contentDescription = "分享") }
                     }
@@ -110,8 +109,8 @@ fun DynamicDetailScreen(route: Route.DynamicDetail) {
 }
 
 @Composable
-private fun DetailBody(item: JsonObject, navBottom: androidx.compose.ui.unit.Dp) {
-    val (oid, type) = item.commentSubject()
+private fun DetailBody(item: DynItem, navBottom: androidx.compose.ui.unit.Dp) {
+    val (oid, type) = item.json.commentSubject()
     val expanded = widthClass() == WidthClass.Expanded
     val bottomPad = PaddingValues(bottom = navBottom + 24.dp)
     if (oid <= 0) {

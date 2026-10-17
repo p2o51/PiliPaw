@@ -26,10 +26,9 @@ import com.gpo.pilipala.ui.components.LoadingState
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.yoin.symbols.PiliSymbols
-import kotlinx.serialization.json.JsonObject
 
 internal class MemberDynamicsViewModel(mid: Long) : ViewModel() {
-    val pager = Pager<JsonObject>(viewModelScope, dedupKey = { it.dynId.ifEmpty { it.hashCode() } }) { cursor ->
+    val pager = Pager<DynItem>(viewModelScope, dedupKey = { it.key }) { cursor ->
         DynamicsApi.space(mid, cursor)
     }
 
@@ -71,7 +70,7 @@ fun MemberDynamicsList(
                 EmptyState("暂无动态", Modifier.height(320.dp), icon = PiliSymbols.Dynamic)
             }
         }
-        items(pager.items, key = { it.dynId.ifEmpty { it.hashCode().toString() } }) { item ->
+        items(pager.items, key = { it.key }, contentType = { it.kind }) { item ->
             DynamicCard(item, Modifier.readingWidth(720.dp).padding(horizontal = 16.dp))
         }
         if (pager.isLoadingMore) {

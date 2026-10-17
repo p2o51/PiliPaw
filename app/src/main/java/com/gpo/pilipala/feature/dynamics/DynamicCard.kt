@@ -91,6 +91,7 @@ import kotlinx.serialization.json.JsonObject
 
 private val CoverShape = ContinuousRoundedCornerShape(12.dp)
 private val BlockShape = ContinuousRoundedCornerShape(12.dp)
+private val LinkShape = RoundedCornerShape(6.dp)
 
 /**
  * One dynamic, rendered as a filled surface card (Flutter DynamicPanel):
@@ -99,14 +100,14 @@ private val BlockShape = ContinuousRoundedCornerShape(12.dp)
  * text, makes it selectable and drops the comment shortcut.
  */
 @Composable
-fun DynamicCard(
-    item: JsonObject,
+internal fun DynamicCard(
+    item: DynItem,
     modifier: Modifier = Modifier,
     detail: Boolean = false,
 ) {
     val nav = LocalNavigator.current
     val viewer = rememberImageViewerState()
-    val route = remember(item) { dynamicRoute(item) }
+    val route = item.route
     val handler = remember(nav, viewer) { CardUriHandler(nav, viewer) }
 
     CompositionLocalProvider(LocalUriHandler provides handler) {
@@ -132,7 +133,7 @@ fun DynamicCard(
                     blockColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     viewer = viewer,
                 )
-                if (item.dynType == "DYNAMIC_TYPE_FORWARD") {
+                if (item.kind == "DYNAMIC_TYPE_FORWARD") {
                     item.orig?.let { ForwardBlock(it, viewer) }
                 }
                 ActionRow(item, detail)
@@ -155,15 +156,15 @@ private class CardUriHandler(private val nav: Navigator, private val viewer: Ima
 // ── Author ──────────────────────────────────────────────────────────────────
 
 @Composable
-private fun AuthorRow(item: JsonObject) {
+private fun AuthorRow(item: DynItem) {
     val nav = LocalNavigator.current
-    val a = item.author
+    val a = item.json.author
     val mid = a.long("mid")
     val face = a.str("face")
     val name = a.str("name")
     val isPgc = a.str("type") == "AUTHOR_TYPE_PGC"
     val vip = a.obj("vip").int("status") > 0
-    val isTop = a.bool("is_top") || item.obj("modules").obj("module_tag").str("text") == "置顶"
+    val isTop = a.bool("is_top") || item.json.obj("modules").obj("module_tag").str("text") == "置顶"
     var showMore by remember { mutableStateOf(false) }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -182,9 +183,9 @@ private fun AuthorRow(item: JsonObject) {
                 overflow = TextOverflow.Ellipsis,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                val time = item.pubTimeText()
+                val time = item.timeText
                 if (time.isNotEmpty()) {
-                    Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 val action = a.str("pub_action")
                 if (action.isNotEmpty()) {
@@ -205,20 +206,20 @@ private fun AuthorRow(item: JsonObject) {
             Icon(YoinSymbols.MoreVertical, contentDescription = "更多", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    if (showMore) MoreSheet(item) { showMore = false }
+    if (showMore) MoreSheet(item.json) { showMore = false }
 }
 
 // ── Body ────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun DynamicBody(
-    item: JsonObject,
+    item: DynItem,
     nested: Boolean,
     detail: Boolean,
     blockColor: Color,
     viewer: ImageViewerState,
 ) {
-    val dyn = item.dynModule
+    val dyn = item.json.dynModule
     val topic = dyn.obj("topic")
     if (topic != null && topic.str("name").isNotEmpty()) {
         val nav = LocalNavigator.current
@@ -226,13 +227,16 @@ private fun DynamicBody(
             "#" + topic.str("name"),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .clickable(enabled = topic.str("jump_url").isNotEmpty()) { nav.openUrl(normalizeUrl(topic.str("jump_url"))) },
+            modifier = Modifier.overflowClickable(
+                horizontal = 8.dp,
+                vertical = 14.dp,
+                shape = LinkShape,
+                enabled = topic.str("jump_url").isNotEmpty(),
+            ) { nav.openUrl(normalizeUrl(topic.str("jump_url"))) },
         )
     }
 
-    val rich = rememberRichContent(item)
+    val rich = rememberRichContent(item.json)
     val textStyle = if (nested) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge
     if (detail && !nested) {
         androidx.compose.foundation.text.selection.SelectionContainer {
@@ -247,13 +251,13 @@ private fun DynamicBody(
         )
     }
 
-    val pics = remember(item) { item.pictures() }
+    val pics = item.pictures
     if (pics.isNotEmpty()) {
         PicGrid(pics, onOpen = { viewer.open(pics.map { it.url }, it) })
     }
 
-    MajorContent(item, blockColor)
-    AdditionalContent(item, blockColor)
+    MajorContent(item.json, blockColor)
+    AdditionalContent(item.json, blockColor)
 }
 
 @Composable
@@ -467,10 +471,10 @@ private fun AdditionalContent(item: JsonObject, blockColor: Color) {
 // ── Forwarded original ─────────────────────────────────────────────────────
 
 @Composable
-private fun ForwardBlock(orig: JsonObject, viewer: ImageViewerState) {
+private fun ForwardBlock(orig: DynItem, viewer: ImageViewerState) {
     val nav = LocalNavigator.current
-    val route = remember(orig) { dynamicRoute(orig) }
-    val a = orig.author
+    val route = orig.route
+    val a = orig.json.author
     val high = MaterialTheme.colorScheme.surfaceContainerHigh
     Column(
         Modifier
@@ -481,8 +485,8 @@ private fun ForwardBlock(orig: JsonObject, viewer: ImageViewerState) {
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (orig.dynType == "DYNAMIC_TYPE_NONE") {
-            QuietNotice(orig.major.obj("none").str("tips").ifEmpty { "源动态已被删除" })
+        if (orig.kind == "DYNAMIC_TYPE_NONE") {
+            QuietNotice(orig.json.major.obj("none").str("tips").ifEmpty { "源动态已被删除" })
             return@Column
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -497,12 +501,16 @@ private fun ForwardBlock(orig: JsonObject, viewer: ImageViewerState) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f, fill = false)
-                    .clip(RoundedCornerShape(6.dp))
-                    .clickable(enabled = !isPgc && mid > 0) { nav.push(Route.Member(mid, a.str("face"), name)) },
+                    .overflowClickable(
+                        horizontal = 8.dp,
+                        vertical = 14.dp,
+                        shape = LinkShape,
+                        enabled = !isPgc && mid > 0,
+                    ) { nav.push(Route.Member(mid, a.str("face"), name)) },
             )
-            val time = orig.pubTimeText()
+            val time = orig.timeText
             if (time.isNotEmpty()) {
-                Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         DynamicBody(
@@ -536,12 +544,11 @@ private fun VideoBlock(
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
             NetImage(cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 480.dp)
+            CoverScrim(Modifier.align(Alignment.BottomCenter))
             Row(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .clip(CoverShape)
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f))))
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -598,12 +605,11 @@ private fun LiveBlock(
                 CoverBadge(if (isLive) "直播中" else "直播结束")
             }
             if (area.isNotEmpty()) {
+                CoverScrim(Modifier.align(Alignment.BottomCenter))
                 Row(
                     Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .clip(CoverShape)
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f))))
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -616,6 +622,27 @@ private fun LiveBlock(
         Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
+
+/**
+ * Bottom scrim behind white labels on a cover: tall enough (56dp) that the
+ * label row sits on ~0.5 black even over white covers.
+ */
+@Composable
+private fun CoverScrim(modifier: Modifier = Modifier) {
+    Spacer(
+        modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(CoverShape)
+            .background(CoverScrimBrush),
+    )
+}
+
+private val CoverScrimBrush = Brush.verticalGradient(
+    0f to Color.Transparent,
+    0.4f to Color.Black.copy(alpha = 0.35f),
+    1f to Color.Black.copy(alpha = 0.7f),
+)
 
 @Composable
 private fun RowBlock(
@@ -680,13 +707,13 @@ private fun QuietNotice(text: String) {
 // ── Actions ─────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ActionRow(item: JsonObject, detail: Boolean) {
+private fun ActionRow(item: DynItem, detail: Boolean) {
     val nav = LocalNavigator.current
     val haptics = LocalHapticFeedback.current
     val toast = rememberToast()
     val scope = rememberCoroutineScope()
-    val stat = item.statModule ?: return
-    val id = item.dynId
+    val stat = item.json.statModule ?: return
+    val id = item.id
     if (id.isEmpty()) return
     val fallback = remember(item) { LikeState(stat.obj("like").bool("status"), stat.obj("like").long("count")) }
     val like = LikeCache.get(id, fallback)
@@ -857,20 +884,20 @@ internal fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
 
 /** Repost composer (Flutter ActionPanel.forwardHandler). */
 @Composable
-private fun ForwardSheet(item: JsonObject, onDismiss: () -> Unit) {
+private fun ForwardSheet(item: DynItem, onDismiss: () -> Unit) {
     val toast = rememberToast()
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var text by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
-    val preview = rememberRichContent(item)
-    val a = item.author
+    val preview = rememberRichContent(item.json)
+    val a = item.json.author
     val cover = remember(item) {
-        item.pictures().firstOrNull()?.url
-            ?: item.major.obj("archive")?.str("cover")
-            ?: item.orig?.pictures()?.firstOrNull()?.url
-            ?: item.orig?.major.obj("archive")?.str("cover")
+        item.pictures.firstOrNull()?.url
+            ?: item.json.major.obj("archive")?.str("cover")
+            ?: item.orig?.pictures?.firstOrNull()?.url
+            ?: item.orig?.json?.major.obj("archive")?.str("cover")
             ?: a.str("face")
     }
 
@@ -892,7 +919,7 @@ private fun ForwardSheet(item: JsonObject, onDismiss: () -> Unit) {
                     onClick = {
                         sending = true
                         scope.launch {
-                            runCatching { DynamicsApi.forward(item.dynId, text.trim()) }
+                            runCatching { DynamicsApi.forward(item.id, text.trim()) }
                                 .onSuccess {
                                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                     toast("已转发")

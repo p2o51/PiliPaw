@@ -1,12 +1,15 @@
 package com.gpo.pilipala.feature.dynamics
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -14,8 +17,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.offset
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.text.AnnotatedString
@@ -215,9 +225,16 @@ internal fun rememberRichContent(item: JsonObject): RichContent {
     }
 }
 
+/** Plain holder written from `onTextLayout` during measure (not snapshot state: no extra frame). */
+private class OverflowFlag {
+    var value = false
+}
+
 /**
  * Rich text with optional fold ("展开"/"收起") once it overflows [collapsedLines].
- * Size changes ride the spatial spring.
+ * The toggle is decided in the same measure pass as the text (the text's
+ * `onTextLayout` runs synchronously inside its measure), so a card never
+ * re-lays out a frame later to add it. Size changes ride the spatial spring.
  */
 @Composable
 internal fun RichTextView(
@@ -229,26 +246,69 @@ internal fun RichTextView(
 ) {
     if (content.isEmpty) return
     var expanded by rememberSaveable { mutableStateOf(false) }
-    var overflowing by remember { mutableStateOf(false) }
-    Column(modifier.animateContentSize(YoinMotion.defaultSpatialSpec())) {
-        Text(
-            content.text,
-            style = style,
-            color = MaterialTheme.colorScheme.onSurface,
-            inlineContent = content.inline,
-            maxLines = if (expanded) Int.MAX_VALUE else collapsedLines,
-            overflow = TextOverflow.Ellipsis,
-            onTextLayout = { if (!expanded) overflowing = it.hasVisualOverflow },
-        )
-        if (expandable && (overflowing || expanded)) {
+    val overflowing = remember { OverflowFlag() }
+    Layout(
+        content = {
             Text(
-                if (expanded) "收起" else "展开",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .clickable { expanded = !expanded }
-                    .padding(vertical = 6.dp),
+                content.text,
+                style = style,
+                color = MaterialTheme.colorScheme.onSurface,
+                inlineContent = content.inline,
+                maxLines = if (expanded) Int.MAX_VALUE else collapsedLines,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { if (!expanded) overflowing.value = it.hasVisualOverflow },
+                modifier = Modifier.animateContentSize(YoinMotion.defaultSpatialSpec()),
             )
+            if (expandable) {
+                Text(
+                    if (expanded) "收起" else "展开",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .overflowClickable(horizontal = 12.dp, vertical = 8.dp, shape = ToggleShape) { expanded = !expanded }
+                        .padding(vertical = 6.dp),
+                )
+            }
+        },
+        modifier = modifier,
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val text = measurables[0].measure(loose)
+        val toggle = if (measurables.size > 1 && (overflowing.value || expanded)) measurables[1].measure(loose) else null
+        val width = maxOf(text.width, toggle?.width ?: 0).coerceIn(constraints.minWidth, constraints.maxWidth)
+        val height = (text.height + (toggle?.height ?: 0)).coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, height) {
+            text.place(0, 0)
+            toggle?.place(0, text.height)
         }
     }
+}
+
+private val ToggleShape = RoundedCornerShape(6.dp)
+
+/**
+ * Clickable whose touch area overflows its layout bounds by [horizontal]/[vertical]
+ * on each side: a glyph-sized label gets a ≥48dp target without moving anything.
+ * The press ripple stays on the visual bounds, clipped to [shape].
+ */
+@Composable
+internal fun Modifier.overflowClickable(
+    horizontal: Dp,
+    vertical: Dp,
+    shape: Shape,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+): Modifier {
+    val source = remember { MutableInteractionSource() }
+    return this
+        .layout { measurable, constraints ->
+            val h = horizontal.roundToPx()
+            val v = vertical.roundToPx()
+            val p = measurable.measure(constraints.offset(horizontal = 2 * h, vertical = 2 * v))
+            layout((p.width - 2 * h).coerceAtLeast(0), (p.height - 2 * v).coerceAtLeast(0)) { p.place(-h, -v) }
+        }
+        .clickable(interactionSource = source, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+        .padding(horizontal = horizontal, vertical = vertical)
+        .clip(shape)
+        .indication(source, ripple())
 }
