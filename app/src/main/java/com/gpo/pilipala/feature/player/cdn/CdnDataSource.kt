@@ -28,6 +28,11 @@ class CdnDataSource(private val upstream: DataSource) : DataSource {
     private var position = 0L
     private var bytes = 0L
     private var lastReportAt = 0L
+    // Goodput counts only time spent waiting inside read(): ExoPlayer stops
+    // reading when its buffer is full, and that idle time is not the line's fault.
+    private var activeNanos = 0L
+    private var windowBytes = 0L
+    private val samples = ArrayDeque<LongArray>() // [bytes, activeNanos] per report
 
     override fun addTransferListener(transferListener: TransferListener) = upstream.addTransferListener(transferListener)
 
@@ -39,6 +44,9 @@ class CdnDataSource(private val upstream: DataSource) : DataSource {
         generation = CdnRouter.abortGeneration()
         position = dataSpec.position
         bytes = 0
+        activeNanos = 0
+        windowBytes = 0
+        samples.clear()
         openedAt = System.currentTimeMillis()
         lastReportAt = openedAt
         val spec = if (routed == original) dataSpec else dataSpec.buildUpon().setUri(Uri.parse(routed)).build()
@@ -56,6 +64,7 @@ class CdnDataSource(private val upstream: DataSource) : DataSource {
             generation = CdnRouter.abortGeneration()
             if (next != host) throw CdnSwitchException()
         }
+        val t0 = System.nanoTime()
         val n = try {
             upstream.read(buffer, offset, length)
         } catch (e: IOException) {
@@ -65,10 +74,27 @@ class CdnDataSource(private val upstream: DataSource) : DataSource {
         if (n > 0) {
             bytes += n
             if (isVideo) {
+                activeNanos += System.nanoTime() - t0
+                windowBytes += n
                 val now = System.currentTimeMillis()
                 if (now - lastReportAt >= 1_000) {
                     lastReportAt = now
-                    CdnRouter.onVideoProgress(original, host, position + bytes, bytes, now - openedAt)
+                    samples.addLast(longArrayOf(windowBytes, activeNanos))
+                    windowBytes = 0
+                    activeNanos = 0
+                    // Keep the most recent ~8 s of transfer or 4 MB.
+                    var b = 0L
+                    var t = 0L
+                    val keep = ArrayDeque<LongArray>()
+                    for (sample in samples.reversed()) {
+                        if (t >= 8_000_000_000L || b >= 4L * 1024 * 1024) break
+                        keep.addFirst(sample)
+                        b += sample[0]
+                        t += sample[1]
+                    }
+                    samples.clear()
+                    samples.addAll(keep)
+                    if (t > 0) CdnRouter.onVideoProgress(original, host, position + bytes, b, t / 1_000_000)
                 }
             }
         }

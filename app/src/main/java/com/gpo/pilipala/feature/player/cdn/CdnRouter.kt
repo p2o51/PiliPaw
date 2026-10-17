@@ -320,7 +320,7 @@ object CdnRouter {
     }
 
     /** Milliseconds to fetch [range] of [url]; null on failure. */
-    private suspend fun timeRange(url: String, range: LongRange): Long? = withTimeoutOrNull(6_000) {
+    private suspend fun timeRange(url: String, range: LongRange): Long? = kotlinx.coroutines.withContext(Dispatchers.IO) { withTimeoutOrNull(6_000) {
         runCatching {
             val req = Request.Builder().url(url)
                 .header("Range", "bytes=${range.first}-${range.last}")
@@ -342,7 +342,7 @@ object CdnRouter {
                 (System.nanoTime() - start) / 1_000_000
             }
         }.getOrNull()
-    }
+    } }
 
     // ── Manual speed test (settings page) ───────────────────────────────────
 
@@ -367,7 +367,7 @@ object CdnRouter {
         }
     }
 
-    private suspend fun timeBytes(url: String, from: Long, length: Long): Long? = withTimeoutOrNull(12_000) {
+    private suspend fun timeBytes(url: String, from: Long, length: Long): Long? = kotlinx.coroutines.withContext(Dispatchers.IO) { withTimeoutOrNull(12_000) {
         runCatching {
             val req = Request.Builder().url(url)
                 .header("Range", "bytes=$from-${from + length - 1}")
@@ -381,7 +381,7 @@ object CdnRouter {
                 (System.nanoTime() - t0) / 1_000_000
             }
         }.getOrNull()
-    }
+    } }
 
     // ── History (per host, 3-day half-life) ─────────────────────────────────
 
