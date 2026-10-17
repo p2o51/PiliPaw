@@ -32,6 +32,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -74,12 +75,14 @@ import okhttp3.Request
 internal object ArticleApi {
     private const val OPUS_FEATURES = "onlyfansVote,onlyfansAssetsV2,decorationCard,htmlNewStyle,ugcDelete,editable,opusPrivateVisible"
 
-    suspend fun opus(id: String): JsonObject =
+    // Responses are parsed on Dispatchers.Default (an opus body can be hundreds of KB), never on main.
+    suspend fun opus(id: String): JsonObject = withContext(Dispatchers.Default) {
         BiliClient.getData(
             "/x/polymer/web-dynamic/v1/opus/detail",
             mapOf("id" to id, "timezone_offset" to "-480", "features" to OPUS_FEATURES),
             wbi = true,
         ).asObj.obj("item") ?: throw BiliException(-1, "内容不存在")
+    }
 
     /** Modern articles live at /opus/{id}; the mobile read URL redirects there. */
     suspend fun resolveOpusId(cvid: Long): String? = withContext(Dispatchers.IO) {
@@ -95,12 +98,13 @@ internal object ArticleApi {
         }.getOrNull()
     }
 
-    suspend fun articleView(cvid: Long): JsonObject =
+    suspend fun articleView(cvid: Long): JsonObject = withContext(Dispatchers.Default) {
         BiliClient.getData(
             "/x/article/view",
             mapOf("id" to cvid, "gaia_source" to "main_web", "web_location" to "333.976"),
             wbi = true,
         ).asObj ?: throw BiliException(-1, "内容不存在")
+    }
 }
 
 // ── State ───────────────────────────────────────────────────────────────────
@@ -147,13 +151,17 @@ internal fun ArticleFrame(
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val threshold = with(LocalDensity.current) { 160.dp.toPx() }
     val title = (state as? ArticleState.Ready)?.doc?.header?.title?.ifEmpty { null } ?: fallbackTitle
-    val showTitle = scrollBehavior.state.contentOffset < -threshold
+    // derivedStateOf: only the threshold crossing invalidates, never each scroll delta.
+    // Read inside ArticleTopBar so the frame and body never recompose on scroll.
+    val showTitle = remember(scrollBehavior, threshold) {
+        derivedStateOf { scrollBehavior.state.contentOffset < -threshold }
+    }
     val fadeInSpec = YoinMotion.defaultEffectsSpec<Float>()
     val fadeOutSpec = YoinMotion.fastEffectsSpec<Float>()
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = { ArticleTopBar(title, showTitle, webUrl, scrollBehavior) },
+        topBar = { ArticleTopBar(title, { showTitle.value }, webUrl, scrollBehavior) },
         containerColor = MaterialTheme.colorScheme.surface,
     ) { padding ->
         AnimatedContent(
@@ -173,7 +181,7 @@ internal fun ArticleFrame(
 }
 
 @Composable
-private fun ArticleTopBar(title: String, showTitle: Boolean, webUrl: String, scrollBehavior: TopAppBarScrollBehavior) {
+private fun ArticleTopBar(title: String, showTitle: () -> Boolean, webUrl: String, scrollBehavior: TopAppBarScrollBehavior) {
     val nav = LocalNavigator.current
     val context = LocalContext.current
     val enter = YoinMotion.defaultEffectsSpec<Float>()
@@ -182,7 +190,7 @@ private fun ArticleTopBar(title: String, showTitle: Boolean, webUrl: String, scr
     TopAppBar(
         title = {
             AnimatedVisibility(
-                visible = showTitle,
+                visible = showTitle(),
                 enter = fadeIn(enter) + slideInVertically(slide) { it / 2 },
                 exit = fadeOut(exit),
             ) {

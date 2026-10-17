@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
@@ -49,18 +50,20 @@ import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
@@ -100,7 +103,6 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
 
 private val FILTERS = listOf("全部" to "all", "投稿" to "video", "番剧" to "pgc", "专栏" to "article")
 
@@ -114,7 +116,7 @@ internal class DynamicsViewModel : ViewModel() {
     private var baseline = ""
     private var loadedFor: Long = -1
 
-    val pager = Pager<JsonObject>(viewModelScope, dedupKey = { it.dynId.ifEmpty { it.hashCode() } }) { cursor ->
+    val pager = Pager<DynItem>(viewModelScope, dedupKey = { it.key }) { cursor ->
         val (page, base) = DynamicsApi.feed(type, cursor, baseline, host?.mid)
         if (cursor == null) baseline = base
         page
@@ -289,7 +291,7 @@ private fun DynamicsFeed(vm: DynamicsViewModel) {
                 }
             }
 
-            items(pager.items, key = { it.dynId.ifEmpty { it.hashCode().toString() } }) { item ->
+            items(pager.items, key = { it.key }, contentType = { it.kind }) { item ->
                 DynamicCard(item)
             }
 
@@ -303,6 +305,21 @@ private fun DynamicsFeed(vm: DynamicsViewModel) {
                 }
             }
         }
+
+        // Status-bar scrim: cards never scroll bare under the clock. It fades in
+        // once the feed leaves the top; alpha is read in the layer only.
+        val scrolled by remember(gridState) {
+            derivedStateOf { gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0 }
+        }
+        val scrimAlpha = animateFloatAsState(if (scrolled) 1f else 0f, YoinMotion.defaultEffectsSpec(), label = "statusScrim")
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .windowInsetsTopHeight(WindowInsets.statusBars)
+                .graphicsLayer { alpha = scrimAlpha.value }
+                .background(MaterialTheme.colorScheme.surface),
+        )
     }
 }
 
@@ -419,13 +436,25 @@ private fun UpChip(
     onLongClick: (() -> Unit)?,
 ) {
     val morph = remember { Morph(MaterialShapes.Circle, MaterialShapes.Cookie9Sided) }
-    val progress by animateFloatAsState(if (selected) 1f else 0f, YoinMotion.defaultSpatialSpec(), label = "upMorph")
-    val alpha by animateFloatAsState(if (dimmed) 0.45f else 1f, YoinMotion.defaultEffectsSpec(), label = "upAlpha")
-    val shape = remember(progress) { MorphShape(morph, progress) }
+    val cookie = remember(morph) { MorphShape(morph, 1f) }
+    val progress = animateFloatAsState(if (selected) 1f else 0f, YoinMotion.defaultSpatialSpec(), label = "upMorph")
+    val alpha = animateFloatAsState(if (dimmed) 0.45f else 1f, YoinMotion.defaultEffectsSpec(), label = "upAlpha")
+    // Animated values are read in layer blocks only: the chip never recomposes per
+    // frame. At rest an unselected avatar clips to a plain circle and the selected
+    // one to a cached cookie outline; a fresh morph path exists only mid-animation.
+    val avatarClip = Modifier.graphicsLayer {
+        val p = progress.value
+        shape = when (p) {
+            0f -> CircleShape
+            1f -> cookie
+            else -> MorphShape(morph, p)
+        }
+        clip = true
+    }
     Column(
         Modifier
             .width(60.dp)
-            .alpha(alpha)
+            .graphicsLayer { this.alpha = alpha.value }
             .clip(MaterialTheme.shapes.medium)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(vertical = 4.dp),
@@ -435,7 +464,7 @@ private fun UpChip(
         Box(Modifier.size(52.dp)) {
             if (face.isNullOrEmpty()) {
                 Box(
-                    Modifier.matchParentSize().clip(shape).background(
+                    Modifier.matchParentSize().then(avatarClip).background(
                         if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
                     ),
                     contentAlignment = Alignment.Center,
@@ -448,7 +477,7 @@ private fun UpChip(
                     )
                 }
             } else {
-                NetImage(face, Modifier.matchParentSize(), shape = shape, thumbWidth = 104.dp)
+                NetImage(face, Modifier.matchParentSize().then(avatarClip), shape = RectangleShape, thumbWidth = 104.dp)
             }
             if (hasUpdate) {
                 Box(
@@ -480,11 +509,11 @@ private fun UpChip(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LiveChip(live: LiveUser, dimmed: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
-    val alpha by animateFloatAsState(if (dimmed) 0.45f else 1f, YoinMotion.defaultEffectsSpec(), label = "liveAlpha")
+    val alpha = animateFloatAsState(if (dimmed) 0.45f else 1f, YoinMotion.defaultEffectsSpec(), label = "liveAlpha")
     Column(
         Modifier
             .width(60.dp)
-            .alpha(alpha)
+            .graphicsLayer { this.alpha = alpha.value }
             .clip(MaterialTheme.shapes.medium)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(vertical = 4.dp),

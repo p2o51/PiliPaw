@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.mutableStateMapOf
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.BiliJson
@@ -22,6 +23,8 @@ import com.gpo.pilipala.core.util.IdUtils
 import com.gpo.pilipala.navigation.LinkRouter
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Page
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -33,25 +36,29 @@ import kotlin.random.Random
 internal object DynamicsApi {
     private const val FEATURES = "itemOpusStyle"
 
-    /** Followed feed. [type] = all | video | pgc | article. Returns the page + the update baseline. */
-    suspend fun feed(type: String, offset: String?, baseline: String, hostMid: Long?): Pair<Page<JsonObject>, String> {
-        val params = mutableMapOf<String, Any?>(
-            "type" to type,
-            "offset" to (offset ?: ""),
-            "features" to FEATURES,
-            "timezone_offset" to "-480",
-        )
-        if (hostMid != null) {
-            params["host_mid"] = hostMid
-            params.remove("timezone_offset")
+    /**
+     * Followed feed. [type] = all | video | pgc | article. Returns the page + the update baseline.
+     * Response parsing and item mapping run on [Dispatchers.Default], never on the main thread.
+     */
+    suspend fun feed(type: String, offset: String?, baseline: String, hostMid: Long?): Pair<Page<DynItem>, String> =
+        withContext(Dispatchers.Default) {
+            val params = mutableMapOf<String, Any?>(
+                "type" to type,
+                "offset" to (offset ?: ""),
+                "features" to FEATURES,
+                "timezone_offset" to "-480",
+            )
+            if (hostMid != null) {
+                params["host_mid"] = hostMid
+                params.remove("timezone_offset")
+            }
+            if (offset != null && baseline.isNotEmpty()) params["update_baseline"] = baseline
+            val data = BiliClient.getData("/x/polymer/web-dynamic/v1/feed/all", params).asObj
+            parsePage(data) to data.str("update_baseline")
         }
-        if (offset != null && baseline.isNotEmpty()) params["update_baseline"] = baseline
-        val data = BiliClient.getData("/x/polymer/web-dynamic/v1/feed/all", params).asObj
-        return parsePage(data) to data.str("update_baseline")
-    }
 
     /** A user's own dynamics (member page). */
-    suspend fun space(mid: Long, offset: String?): Page<JsonObject> {
+    suspend fun space(mid: Long, offset: String?): Page<DynItem> = withContext(Dispatchers.Default) {
         val data = BiliClient.getData(
             "/x/polymer/web-dynamic/v1/feed/space",
             mapOf(
@@ -62,18 +69,19 @@ internal object DynamicsApi {
             ),
             wbi = true,
         ).asObj
-        return parsePage(data)
+        parsePage(data)
     }
 
-    suspend fun detail(id: String): JsonObject {
+    suspend fun detail(id: String): DynItem = withContext(Dispatchers.Default) {
         val data = BiliClient.getData(
             "/x/polymer/web-dynamic/v1/detail",
             mapOf("id" to id, "timezone_offset" to "-480", "features" to FEATURES),
         ).asObj
-        return data.obj("item") ?: throw com.gpo.pilipala.core.net.BiliException(-1, "动态不存在")
+        val item = data.obj("item") ?: throw com.gpo.pilipala.core.net.BiliException(-1, "动态不存在")
+        item.toDynItem()
     }
 
-    suspend fun portal(): Portal {
+    suspend fun portal(): Portal = withContext(Dispatchers.Default) {
         val data = BiliClient.getData("/x/polymer/web-dynamic/v1/portal").asObj
         val lives = data.obj("live_users").arr("items").objects().map {
             LiveUser(
@@ -91,7 +99,7 @@ internal object DynamicsApi {
             UpUser(mid = it.long("mid"), name = it.str("uname"), face = it.str("face"), hasUpdate = it.bool("has_update"))
         }
         val me = data.obj("my_info")
-        return Portal(
+        Portal(
             myMid = me.long("mid"),
             myName = me.str("name"),
             myFace = me.str("face"),
@@ -182,8 +190,10 @@ internal object DynamicsApi {
         )
     }
 
-    private fun parsePage(data: JsonObject?): Page<JsonObject> {
-        val items = data.arr("items").objects().filter { it.str("id_str").isNotEmpty() || it.has("modules") }
+    private fun parsePage(data: JsonObject?): Page<DynItem> {
+        val items = data.arr("items").objects()
+            .filter { it.str("id_str").isNotEmpty() || it.has("modules") }
+            .map { it.toDynItem() }
         val offset = data.str("offset")
         return Page(items, hasMore = data.bool("has_more") && offset.isNotEmpty(), nextCursor = offset)
     }
@@ -198,6 +208,41 @@ internal data class Portal(
     val lives: List<LiveUser>,
     val ups: List<UpUser>,
 )
+
+// ── UI model ────────────────────────────────────────────────────────────────
+
+/**
+ * One dynamic, resolved off the main thread when its page loads: the raw JSON the
+ * card still renders from, plus everything that used to be derived during
+ * composition (key, kind, time text, pictures, tap route, the forwarded original).
+ */
+@Immutable
+internal class DynItem(
+    val json: JsonObject,
+    val id: String,
+    /** Lazy-list / dedup key: the id, or a content hash computed once when the API omits it. */
+    val key: String,
+    /** `DYNAMIC_TYPE_*`; also the lazy-list content type. */
+    val kind: String,
+    val timeText: String,
+    val pictures: List<DynPic>,
+    val route: Route?,
+    val orig: DynItem?,
+)
+
+internal fun JsonObject.toDynItem(): DynItem {
+    val id = dynId
+    return DynItem(
+        json = this,
+        id = id,
+        key = id.ifEmpty { "h${hashCode()}" },
+        kind = dynType,
+        timeText = pubTimeText(),
+        pictures = pictures(),
+        route = dynamicRoute(this),
+        orig = orig?.toDynItem(),
+    )
+}
 
 // ── Item accessors ──────────────────────────────────────────────────────────
 
@@ -282,13 +327,16 @@ internal fun dynamicRoute(item: JsonObject): Route? {
     }
 }
 
+private val ReadIdRegex = Regex("""/read/(?:cv|mobile/?\?id=)(\d+)""")
+private val OpusIdRegex = Regex("""/opus/(\d+)""")
+
 internal fun articleRoute(major: JsonObject?): Route? {
     val opus = major.obj("opus")
     val article = major.obj("article")
     val url = opus.str("jump_url").ifEmpty { article.str("jump_url") }
     val title = opus.str("title").ifEmpty { article.str("title") }
-    Regex("""/read/(?:cv|mobile/?\?id=)(\d+)""").find(url)?.groupValues?.get(1)?.toLongOrNull()?.let { return Route.Read(it, title) }
-    Regex("""/opus/(\d+)""").find(url)?.groupValues?.get(1)?.let { return Route.Opus(it, title) }
+    ReadIdRegex.find(url)?.groupValues?.get(1)?.toLongOrNull()?.let { return Route.Read(it, title) }
+    OpusIdRegex.find(url)?.groupValues?.get(1)?.let { return Route.Opus(it, title) }
     article.long("id").takeIf { it > 0 }?.let { return Route.Read(it, title) }
     return if (url.isNotEmpty()) LinkRouter.route(normalizeUrl(url), title) else null
 }

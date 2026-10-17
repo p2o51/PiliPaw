@@ -22,7 +22,7 @@ fun MemberDynamicsScreen(route: Route.MemberDynamics) {
     val vm = memberDynamicsViewModel(route.mid)
     val name = route.name.ifEmpty {
         // The member's own posts carry their name in the author module.
-        vm.pager.items.firstOrNull { it.author.str("mid") == route.mid.toString() }?.author.str("name")
+        vm.pager.items.firstOrNull { it.json.author.str("mid") == route.mid.toString() }?.json?.author.str("name")
     }
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     Scaffold(
