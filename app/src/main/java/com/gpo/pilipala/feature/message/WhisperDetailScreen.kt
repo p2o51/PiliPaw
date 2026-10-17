@@ -1,11 +1,616 @@
 package com.gpo.pilipala.feature.message
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gpo.pilipala.core.account.Account
+import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.core.net.BiliJson
+import com.gpo.pilipala.core.net.arr
+import com.gpo.pilipala.core.net.asArr
+import com.gpo.pilipala.core.net.asString
+import com.gpo.pilipala.core.net.double
+import com.gpo.pilipala.core.net.int
+import com.gpo.pilipala.core.net.long
+import com.gpo.pilipala.core.net.objects
+import com.gpo.pilipala.core.net.str
+import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.core.util.IdUtils
+import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
-import com.gpo.pilipala.ui.components.PlaceholderScreen
+import com.gpo.pilipala.ui.components.Avatar
+import com.gpo.pilipala.ui.components.BackButton
+import com.gpo.pilipala.ui.components.ErrorState
+import com.gpo.pilipala.ui.components.LoadMoreEffect
+import com.gpo.pilipala.ui.components.LoadingFooter
+import com.gpo.pilipala.ui.components.LoadingState
+import com.gpo.pilipala.ui.components.NetImage
+import com.gpo.pilipala.ui.components.readingWidth
+import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
+import com.gpo.yoin.symbols.YoinSymbols
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 
-// TODO(feature-agent): replace this placeholder. Keep the signature — AppNavHost calls it.
 @Composable
 fun WhisperDetailScreen(route: Route.WhisperDetail) {
-    PlaceholderScreen("私信")
+    val nav = LocalNavigator.current
+    val user by Account.user.collectAsState()
+    val loggedIn = user != null || BiliClient.isLoggedIn
+    val vm = viewModel(key = "whisper-${route.talkerId}") { WhisperDetailViewModel(route.talkerId) }
+    val scope = rememberCoroutineScope()
+    val toast = rememberToast()
+    var menu by remember { mutableStateOf(false) }
+    var confirmRemove by remember { mutableStateOf(false) }
+    var viewer by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(loggedIn) { if (loggedIn) vm.ensureLoaded(needPeer = route.name.isBlank() || route.face.isBlank()) }
+    val peerName = route.name.ifBlank { vm.peer?.name.orEmpty() }
+    val peerFace = route.face.ifBlank { vm.peer?.face.orEmpty() }
+    @Suppress("NAME_SHADOWING")
+    val route = route.copy(name = peerName, face = peerFace)
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentWindowInsets = WindowInsets(0),
+        topBar = {
+            TopAppBar(
+                navigationIcon = { BackButton() },
+                title = {
+                    Row(
+                        Modifier
+                            .clip(CircleShape)
+                            .clickable { nav.push(Route.Member(route.talkerId, route.face, route.name)) }
+                            .padding(end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Spacer(Modifier.width(4.dp))
+                        Avatar(route.face, 34.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Text(route.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                },
+                actions = {
+                    Box {
+                        IconButton(onClick = { menu = true }, shapes = IconButtonDefaults.shapes()) {
+                            Icon(YoinSymbols.MoreVertical, contentDescription = "更多")
+                        }
+                        DropdownMenu(
+                            expanded = menu,
+                            onDismissRequest = { menu = false },
+                            shape = ContinuousRoundedCornerShape(16.dp),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("个人空间") },
+                                leadingIcon = { Icon(YoinSymbols.Person, null) },
+                                onClick = {
+                                    menu = false
+                                    nav.push(Route.Member(route.talkerId, route.face, route.name))
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("删除会话") },
+                                leadingIcon = { Icon(YoinSymbols.Delete, null) },
+                                onClick = {
+                                    menu = false
+                                    confirmRemove = true
+                                },
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                windowInsets = TopAppBarDefaults.windowInsets,
+            )
+        },
+    ) { padding ->
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(top = padding.calculateTopPadding())
+                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+                .readingWidth(760.dp),
+        ) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    !loggedIn -> LoginPrompt()
+                    vm.loading && vm.messages.isEmpty() -> LoadingState()
+                    vm.error != null && vm.messages.isEmpty() -> ErrorState(vm.error!!, onRetry = vm::load)
+                    else -> MessageList(vm, route) { viewer = it }
+                }
+            }
+            if (loggedIn) {
+                InputBar(vm) { err -> toast(err) }
+            }
+        }
+    }
+
+    if (confirmRemove) {
+        AlertDialog(
+            onDismissRequest = { confirmRemove = false },
+            title = { Text("删除会话") },
+            text = { Text("清空会话内容并移除会话") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemove = false
+                    scope.launch {
+                        val err = vm.removeSession()
+                        if (err == null) {
+                            toast("已删除")
+                            nav.pop()
+                        } else {
+                            toast(err)
+                        }
+                    }
+                }) { Text("删除") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("取消") } },
+        )
+    }
+
+    viewer?.let { url ->
+        Dialog(
+            onDismissRequest = { viewer = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black).clickable { viewer = null },
+                contentAlignment = Alignment.Center,
+            ) {
+                NetImage(
+                    url,
+                    Modifier.fillMaxSize(),
+                    shape = RectangleShape,
+                    thumbWidth = null,
+                    contentScale = ContentScale.Fit,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageList(vm: WhisperDetailViewModel, route: Route.WhisperDetail, onImage: (String) -> Unit) {
+    val listState = rememberLazyListState()
+    LoadMoreEffect(listState, threshold = 4) { vm.loadOlder() }
+    val newest = vm.messages.firstOrNull()?.key
+    LaunchedEffect(newest) {
+        if (newest != null && listState.firstVisibleItemIndex <= 2) listState.animateScrollToItem(0)
+    }
+    val visible = vm.messages.filter { it.type != 5 }
+    if (visible.isEmpty() && !vm.loading) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("暂无消息", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    LazyColumn(
+        state = listState,
+        reverseLayout = true,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        visible.forEachIndexed { i, m ->
+            item(key = m.key) {
+                ChatItem(m, vm.emotes, route, onImage, Modifier.animateItem())
+            }
+            val older = visible.getOrNull(i + 1)
+            if (older == null || m.timestamp - older.timestamp > 300) {
+                item(key = "t-${m.key}") {
+                    Text(
+                        chatTime(m.timestamp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                }
+            }
+        }
+        if (vm.loadingMore) item(key = "more") { LoadingFooter() }
+    }
+}
+
+// ── Chat items ──────────────────────────────────────────────────────────────
+
+/** Today → HH:mm, yesterday → 昨天 HH:mm, this year → MM-dd HH:mm, else full date. */
+private fun chatTime(ts: Long): String {
+    if (ts <= 0) return ""
+    val cal = java.util.Calendar.getInstance().apply { timeInMillis = ts * 1000 }
+    val now = java.util.Calendar.getInstance()
+    val sameYear = cal.get(java.util.Calendar.YEAR) == now.get(java.util.Calendar.YEAR)
+    val dayDiff = now.get(java.util.Calendar.DAY_OF_YEAR) - cal.get(java.util.Calendar.DAY_OF_YEAR)
+    return when {
+        sameYear && dayDiff == 0 -> Fmt.date(ts, "HH:mm")
+        sameYear && dayDiff == 1 -> "昨天 " + Fmt.date(ts, "HH:mm")
+        sameYear -> Fmt.date(ts, "MM-dd HH:mm")
+        else -> Fmt.date(ts, "yyyy-MM-dd HH:mm")
+    }
+}
+
+private val SystemTypes = setOf(10, 13, 16, 18)
+
+@Composable
+private fun ChatItem(
+    m: WhisperMsg,
+    emotes: Map<String, String>,
+    route: Route.WhisperDetail,
+    onImage: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (m.type in SystemTypes) {
+        SystemItem(m, modifier)
+        return
+    }
+    val nav = LocalNavigator.current
+    val mine = m.senderUid == BiliClient.mid
+    val container = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+    val onContainer = if (mine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val shape = if (mine) {
+        ContinuousRoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp)
+    } else {
+        ContinuousRoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp)
+    }
+    val bare = m.type == 2 || m.type == 6 // images sit without a bubble
+    Row(
+        modifier.fillMaxWidth(),
+        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        if (!mine) {
+            Avatar(route.face, 32.dp) { nav.push(Route.Member(route.talkerId, route.face, route.name)) }
+            Spacer(Modifier.width(8.dp))
+        }
+        Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
+            Box(
+                Modifier
+                    .widthIn(max = 300.dp)
+                    .then(if (bare) Modifier else Modifier.clip(shape).background(container).padding(horizontal = 14.dp, vertical = 10.dp)),
+            ) {
+                MessageBody(m, emotes, onContainer, onImage)
+            }
+            if (m.status == 1) {
+                Text(
+                    "已撤回",
+                    modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageBody(m: WhisperMsg, emotes: Map<String, String>, color: Color, onImage: (String) -> Unit) {
+    val nav = LocalNavigator.current
+    val c = m.content
+    when (m.type) {
+        1 -> EmojiText(c.str("content"), emotes, color)
+        2 -> {
+            val url = c.str("url")
+            val w = c.double("width").takeIf { it > 0 } ?: 1.0
+            val h = c.double("height").takeIf { it > 0 } ?: 1.0
+            NetImage(
+                url,
+                Modifier.width(200.dp).aspectRatio((w / h).toFloat().coerceIn(0.4f, 2.5f)).clickable { onImage(url) },
+                shape = ContinuousRoundedCornerShape(16.dp),
+                thumbWidth = 400.dp,
+            )
+        }
+        6 -> NetImage(c.str("url"), Modifier.size(96.dp), shape = ContinuousRoundedCornerShape(12.dp), thumbWidth = 192.dp, contentScale = ContentScale.Fit)
+        7 -> ShareCard(
+            cover = c.str("thumb"),
+            title = c.str("title"),
+            sub = c.str("author"),
+            color = color,
+        ) {
+            val bvid = c.str("bvid")
+            val url = c.str("url")
+            when {
+                c.int("source") == 5 && bvid.isNotEmpty() -> nav.push(Route.Video(bvid, cover = c.str("thumb"), title = c.str("title")))
+                url.isNotEmpty() -> nav.openUrl(url)
+                bvid.isNotEmpty() -> nav.push(Route.Video(bvid))
+            }
+        }
+        11 -> ShareCard(
+            cover = c.str("cover"),
+            title = c.str("title"),
+            sub = c.long("times").takeIf { it > 0 }?.let { Fmt.duration(it) }.orEmpty(),
+            color = color,
+        ) {
+            val bvid = c.str("bvid").ifEmpty { c.long("rid").takeIf { it > 0 }?.let { IdUtils.av2bv(it) }.orEmpty() }
+            if (bvid.isNotEmpty()) nav.push(Route.Video(bvid, cover = c.str("cover"), title = c.str("title")))
+        }
+        12 -> ShareCard(
+            cover = c?.get("image_urls")?.asArr?.firstOrNull().asString(),
+            title = c.str("title"),
+            sub = c.str("summary"),
+            color = color,
+        ) {
+            val cv = c.long("rid")
+            if (cv > 0) nav.push(Route.Read(cv, c.str("title")))
+        }
+        14 -> ShareCard(
+            cover = c.str("cover").ifEmpty { c.str("thumb") },
+            title = c.str("title"),
+            sub = c.str("sub_title").ifEmpty { c.str("desc") },
+            color = color,
+        ) {
+            val url = c.str("url").ifEmpty { c.str("jump_url") }
+            if (url.isNotEmpty()) nav.openUrl(url)
+        }
+        else -> Text(
+            c.str("content").ifEmpty { c.str("title") }.ifEmpty { "[不支持的消息类型]" },
+            style = MaterialTheme.typography.bodyMedium,
+            color = color,
+        )
+    }
+}
+
+@Composable
+private fun EmojiText(text: String, emotes: Map<String, String>, color: Color) {
+    val re = remember { Regex("""\[[^\[\]]+]""") }
+    val used = remember(text, emotes) { re.findAll(text).map { it.value }.filter { it in emotes }.toSet() }
+    val annotated = remember(text, used) {
+        buildAnnotatedString {
+            if (used.isEmpty()) {
+                append(text)
+            } else {
+                var last = 0
+                re.findAll(text).forEach { m ->
+                    append(text.substring(last, m.range.first))
+                    if (m.value in used) appendInlineContent(m.value, m.value) else append(m.value)
+                    last = m.range.last + 1
+                }
+                append(text.substring(last))
+            }
+        }
+    }
+    val inline = remember(used, emotes) {
+        used.associateWith { key ->
+            InlineTextContent(Placeholder(22.sp, 22.sp, PlaceholderVerticalAlign.TextCenter)) {
+                NetImage(emotes[key], Modifier.fillMaxSize(), shape = RectangleShape, thumbWidth = 48.dp, contentScale = ContentScale.Fit)
+            }
+        }
+    }
+    SelectionContainer {
+        Text(annotated, inlineContent = inline, style = MaterialTheme.typography.bodyLarge, color = color)
+    }
+}
+
+@Composable
+private fun ShareCard(cover: String, title: String, sub: String, color: Color, onClick: () -> Unit) {
+    Column(Modifier.width(240.dp).clip(ContinuousRoundedCornerShape(12.dp)).clickable(onClick = onClick)) {
+        if (cover.isNotEmpty()) {
+            NetImage(cover, Modifier.fillMaxWidth().aspectRatio(16f / 9f), shape = ContinuousRoundedCornerShape(12.dp), thumbWidth = 480.dp)
+            Spacer(Modifier.size(8.dp))
+        }
+        Text(title, style = MaterialTheme.typography.titleSmall, color = color, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (sub.isNotEmpty()) {
+            Text(
+                sub,
+                style = MaterialTheme.typography.labelMedium,
+                color = color.copy(alpha = 0.7f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SystemItem(m: WhisperMsg, modifier: Modifier = Modifier) {
+    val nav = LocalNavigator.current
+    val c = m.content
+    when (m.type) {
+        18 -> {
+            // content.content is a JSON array of {text}
+            val lines = runCatching {
+                BiliJson.parseToJsonElement(c.str("content")).asArr?.mapNotNull { (it as? JsonObject)?.str("text") }
+            }.getOrNull().orEmpty()
+            Text(
+                lines.joinToString("\n").ifEmpty { c.str("content") },
+                modifier = modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        }
+        13 -> {
+            val link = c.str("jump_url")
+            NetImage(
+                c.str("pic_url"),
+                modifier
+                    .widthIn(max = 320.dp)
+                    .fillMaxWidth()
+                    .aspectRatio(320f / 150f)
+                    .then(if (link.isNotEmpty()) Modifier.clickable { nav.openUrl(link) } else Modifier),
+                shape = ContinuousRoundedCornerShape(16.dp),
+                thumbWidth = 640.dp,
+            )
+        }
+        16 -> Column(
+            modifier
+                .widthIn(max = 340.dp)
+                .clip(ContinuousRoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                c.str("main_title"),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            c.arr("sub_cards").objects().forEach { card ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(ContinuousRoundedCornerShape(12.dp))
+                        .clickable { card.str("jump_url").takeIf { it.isNotEmpty() }?.let(nav::openUrl) },
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    NetImage(card.str("cover_url"), Modifier.width(112.dp).aspectRatio(16f / 9f), shape = ContinuousRoundedCornerShape(10.dp), thumbWidth = 224.dp)
+                    Column(Modifier.weight(1f)) {
+                        Text(card.str("field1"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(card.str("field2"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f), maxLines = 1)
+                        Text(card.str("field3"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f), maxLines = 1)
+                    }
+                }
+            }
+        }
+        else -> { // 10 notify_msg
+            val (text, link) = stripLinkMarkup(c.str("text"))
+            val jump = link ?: c.str("jump_uri").ifEmpty { c.str("jump_url") }
+            Column(
+                modifier
+                    .widthIn(max = 340.dp)
+                    .clip(ContinuousRoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .then(if (jump.isNotEmpty()) Modifier.clickable { nav.openUrl(jump) } else Modifier)
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    c.str("title"),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Text(
+                    Fmt.relativeTime(m.timestamp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                )
+                SelectionContainer {
+                    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+            }
+        }
+    }
+}
+
+// ── Input ───────────────────────────────────────────────────────────────────
+
+@Composable
+private fun InputBar(vm: WhisperDetailViewModel, onError: (String) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    var text by rememberSaveable { mutableStateOf("") }
+    val send: () -> Unit = {
+        val msg = text.trim()
+        if (msg.isNotEmpty() && !vm.sending) {
+            scope.launch {
+                val err = vm.send(msg)
+                if (err == null) {
+                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                    text = ""
+                } else {
+                    onError(err)
+                }
+            }
+        }
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TextField(
+            value = text,
+            onValueChange = { text = it },
+            modifier = Modifier.weight(1f),
+            placeholder = { Text("发消息") },
+            maxLines = 5,
+            shape = ContinuousRoundedCornerShape(26.dp),
+            textStyle = MaterialTheme.typography.bodyLarge,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                disabledIndicatorColor = Color.Transparent,
+            ),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        )
+        FilledIconButton(
+            onClick = send,
+            enabled = text.isNotBlank() && !vm.sending,
+            shapes = IconButtonDefaults.shapes(),
+            modifier = Modifier.size(56.dp),
+        ) {
+            Icon(YoinSymbols.Send, contentDescription = "发送")
+        }
+    }
 }
