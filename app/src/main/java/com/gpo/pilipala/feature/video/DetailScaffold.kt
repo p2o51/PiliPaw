@@ -48,6 +48,7 @@ import androidx.core.view.WindowCompat
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.ui.components.ExpressivePageBackground
 import com.gpo.pilipala.ui.components.LocalSnackbarHost
 import com.gpo.pilipala.ui.theme.LocalPiliDark
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
@@ -93,7 +94,7 @@ internal fun DetailScaffold(
     StatusBarIcons(light = fullscreen || !twoPane || dark)
 
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+    ExpressivePageBackground(Modifier.fillMaxSize(), belowPlayer = !twoPane, animated = !fullscreen) {
         when {
             fullscreen -> Box(Modifier.fillMaxSize().background(Color.Black)) {
                 player(Modifier.fillMaxSize())
@@ -149,7 +150,7 @@ internal fun DetailScaffold(
                         player(Modifier.fillMaxSize())
                     }
                 }
-                DetailTabRow(compactTabs, compactPagerState, MaterialTheme.colorScheme.surface)
+                DetailTabRow(compactTabs, compactPagerState, Color.Transparent)
                 HorizontalPager(
                     state = compactPagerState,
                     modifier = Modifier.weight(1f),

@@ -3,9 +3,11 @@ package com.gpo.pilipala.feature.settings
 import android.os.Build
 import android.webkit.CookieManager
 import android.webkit.WebStorage
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,10 +15,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -37,7 +43,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -73,6 +82,7 @@ import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.theme.ThemeSettings
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.yoin.symbols.PiliSymbols
@@ -116,10 +126,14 @@ internal fun SettingsPageContent(page: String, showBack: Boolean) {
 private fun ColumnScope.StyleBody() {
     val mode by AppSettings.themeMode.state.collectAsState()
     val dynamic by AppSettings.dynamicColor.state.collectAsState()
+    val style by ThemeSettings.colorStyle.state.collectAsState()
     val seed by AppSettings.seedColor.state.collectAsState()
+    val accent by ThemeSettings.accentSeed.state.collectAsState()
     val cover by AppSettings.coverColor.state.collectAsState()
     val homeTab by AppSettings.homeDefaultTab.state.collectAsState()
-    val dynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    // Wallpaper colours exist from 8.1; the system's own dynamic scheme from 12.
+    val dynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1
+    val systemStyleSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val dynamicOn = dynamic && dynamicSupported
 
     SettingsGroup("主题") {
@@ -137,11 +151,26 @@ private fun ColumnScope.StyleBody() {
                 SettingsSwitchItem(
                     title = "动态取色",
                     icon = PiliSymbols.Palette,
-                    summary = if (dynamicSupported) "跟随系统壁纸" else "需要 Android 12",
+                    summary = if (dynamicSupported) "跟随系统壁纸" else "需要 Android 8.1",
                     checked = dynamicOn,
                     enabled = dynamicSupported,
                     onCheckedChange = { AppSettings.set(AppSettings.dynamicColor, it) },
                 )
+                AnimatedVisibility(
+                    visible = dynamicOn && systemStyleSupported,
+                    enter = expandVertically(YoinMotion.defaultSpatialSpec(), expandFrom = Alignment.Top) +
+                        YoinMotion.fadeIn(YoinMotionRole.Standard),
+                    exit = shrinkVertically(YoinMotion.defaultSpatialSpec(), shrinkTowards = Alignment.Top) +
+                        YoinMotion.fadeOut(YoinMotionRole.Standard),
+                ) {
+                    SettingsToggleItem(
+                        title = "配色风格",
+                        icon = YoinSymbols.Sparkle,
+                        choices = SettingsChoices.colorStyle,
+                        selected = style,
+                        onSelect = { AppSettings.set(ThemeSettings.colorStyle, it) },
+                    )
+                }
                 AnimatedVisibility(
                     visible = !dynamicOn,
                     enter = expandVertically(YoinMotion.defaultSpatialSpec(), expandFrom = Alignment.Top) +
@@ -149,7 +178,12 @@ private fun ColumnScope.StyleBody() {
                     exit = shrinkVertically(YoinMotion.defaultSpatialSpec(), shrinkTowards = Alignment.Top) +
                         YoinMotion.fadeOut(YoinMotionRole.Standard),
                 ) {
-                    SeedPalette(selected = seed, onSelect = { AppSettings.set(AppSettings.seedColor, it) })
+                    SeedPicker(
+                        primary = seed,
+                        accent = accent,
+                        onPrimary = { AppSettings.set(AppSettings.seedColor, it) },
+                        onAccent = { AppSettings.set(ThemeSettings.accentSeed, it) },
+                    )
                 }
             }
         }
@@ -157,7 +191,7 @@ private fun ColumnScope.StyleBody() {
             SettingsSwitchItem(
                 title = "封面取色",
                 icon = PiliSymbols.Image,
-                summary = "视频页跟随封面配色",
+                summary = "详情页跟随封面配色",
                 checked = cover,
                 onCheckedChange = { AppSettings.set(AppSettings.coverColor, it) },
             )
@@ -176,39 +210,132 @@ private fun ColumnScope.StyleBody() {
     }
 }
 
-/** Seed swatches clipped to MaterialShapes; the selected one morphs circle → cookie and turns. */
+/**
+ * The two seeds with dynamic colour off: curated 主色 + 强调色 pairs first,
+ * then each seed on its own row. Swatches are clipped to MaterialShapes; the
+ * selected one morphs circle → cookie and turns.
+ */
 @Composable
-private fun SeedPalette(selected: Int, onSelect: (Int) -> Unit) {
+private fun SeedPicker(
+    primary: Int,
+    accent: Int,
+    onPrimary: (Int) -> Unit,
+    onAccent: (Int) -> Unit,
+) {
     val haptics = LocalHapticFeedback.current
-    val name = SettingsChoices.seeds.firstOrNull { it.first == selected }?.second ?: "自定义"
+    val pair = SettingsChoices.seedPairs.firstOrNull { it.primary == primary && it.accent == accent }
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-            name,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = SettingsRowTextInset),
-        )
+        SeedRowLabel("搭配", pair?.label ?: "自定义")
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            itemsIndexed(SettingsChoices.seeds, key = { _, it -> it.first }) { _, (argb, label) ->
-                SeedSwatch(
-                    color = Color(argb),
-                    label = label,
-                    selected = argb == selected,
+            items(SettingsChoices.seedPairs, key = { it.label }) { choice ->
+                PairSwatch(
+                    primary = Color(choice.primary),
+                    accent = Color(choice.accent),
+                    label = choice.label,
+                    selected = choice == pair,
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        onSelect(argb)
+                        onPrimary(choice.primary)
+                        onAccent(choice.accent)
                     },
                 )
             }
+        }
+        Spacer(Modifier.height(2.dp))
+        SeedRowLabel("主色", seedName(primary))
+        SeedRow(selected = primary) {
+            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+            onPrimary(it)
+        }
+        Spacer(Modifier.height(2.dp))
+        SeedRowLabel("强调色", seedName(accent))
+        SeedRow(selected = accent) {
+            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+            onAccent(it)
+        }
+    }
+}
+
+/** "主色" over its current value, as two texts (no joiner). */
+@Composable
+private fun SeedRowLabel(title: String, value: String) {
+    Row(
+        Modifier.padding(start = SettingsRowTextInset, end = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AnimatedContent(
+            targetState = value,
+            transitionSpec = { YoinMotion.fadeIn(YoinMotionRole.Standard) togetherWith YoinMotion.fadeOut(YoinMotionRole.Standard) },
+            label = "seedName",
+        ) { name ->
+            Text(name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun SeedRow(selected: Int, onSelect: (Int) -> Unit) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        itemsIndexed(SettingsChoices.seeds, key = { _, it -> it.first }) { _, (argb, label) ->
+            SeedSwatch(
+                color = Color(argb),
+                label = label,
+                selected = argb == selected,
+                onClick = { onSelect(argb) },
+            )
         }
     }
 }
 
 @Composable
 private fun SeedSwatch(color: Color, label: String, selected: Boolean, onClick: () -> Unit) {
+    MorphSwatch(
+        label = label,
+        selected = selected,
+        checkTint = if (color.luminance() > 0.5f) Color.Black else Color.White,
+        onClick = onClick,
+        paint = { drawRect(color) },
+    )
+}
+
+/** A pair: 主色 on the upper-left half, 强调色 on the lower-right, split on the diagonal. */
+@Composable
+private fun PairSwatch(primary: Color, accent: Color, label: String, selected: Boolean, onClick: () -> Unit) {
+    val luminance = (primary.luminance() + accent.luminance()) / 2f
+    MorphSwatch(
+        label = label,
+        selected = selected,
+        checkTint = if (luminance > 0.5f) Color.Black else Color.White,
+        onClick = onClick,
+        paint = {
+            drawRect(primary)
+            val path = Path().apply {
+                moveTo(size.width, 0f)
+                lineTo(size.width, size.height)
+                lineTo(0f, size.height)
+                close()
+            }
+            drawPath(path, accent)
+        },
+    )
+}
+
+@Composable
+private fun MorphSwatch(
+    label: String,
+    selected: Boolean,
+    checkTint: Color,
+    onClick: () -> Unit,
+    paint: DrawScope.() -> Unit,
+) {
     val progress by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
         animationSpec = YoinMotion.defaultSpatialSpec(role = YoinMotionRole.Expressive),
@@ -216,13 +343,12 @@ private fun SeedSwatch(color: Color, label: String, selected: Boolean, onClick: 
     )
     val morph = remember { Morph(MaterialShapes.Circle, MaterialShapes.Cookie9Sided) }
     val shape = remember(progress) { MorphShape(morph, progress) }
-    val onColor = if (color.luminance() > 0.5f) Color.Black else Color.White
     Box(
         modifier = Modifier
             .size(48.dp)
             .graphicsLayer { rotationZ = progress * 40f }
             .clip(shape)
-            .background(color)
+            .drawBehind(paint)
             .clickable(onClick = onClick)
             .semantics {
                 role = Role.RadioButton
@@ -234,7 +360,7 @@ private fun SeedSwatch(color: Color, label: String, selected: Boolean, onClick: 
         Icon(
             YoinSymbols.Check,
             contentDescription = null,
-            tint = onColor,
+            tint = checkTint,
             modifier = Modifier
                 .size(22.dp)
                 .graphicsLayer {

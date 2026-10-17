@@ -230,28 +230,31 @@ fun DurationChip(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** Small filled tag (color block, never an outline — Yoin). */
+/**
+ * Small filled tag on a cover (color block, never an outline — Yoin). Tertiary,
+ * so the theme's accent seed shows up across feeds.
+ */
 @Composable
 fun CoverBadge(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         modifier = modifier
             .clip(ContinuousRoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.primary)
+            .background(MaterialTheme.colorScheme.tertiary)
             .padding(horizontal = 6.dp, vertical = 2.dp),
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onPrimary,
+        color = MaterialTheme.colorScheme.onTertiary,
     )
 }
 
-/** Inline tag next to text (UP / 置顶 / 热评…). */
+/** Inline tag next to text (UP / 置顶 / 热评…), on the accent's container by default. */
 @Composable
 fun Tag(
     text: String,
     modifier: Modifier = Modifier,
-    container: Color = MaterialTheme.colorScheme.secondaryContainer,
-    content: Color = MaterialTheme.colorScheme.onSecondaryContainer,
+    container: Color = MaterialTheme.colorScheme.tertiaryContainer,
+    content: Color = MaterialTheme.colorScheme.onTertiaryContainer,
 ) {
     Text(
         text,

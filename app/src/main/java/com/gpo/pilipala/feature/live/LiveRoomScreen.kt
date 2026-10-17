@@ -49,7 +49,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -88,6 +87,7 @@ import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.ErrorState
+import com.gpo.pilipala.ui.components.ExpressivePageBackground
 import com.gpo.pilipala.ui.components.PiliTopBar
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.Tag
@@ -147,13 +147,17 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
     }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.resumeFromBackground() }
 
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+    ExpressivePageBackground(
+        Modifier.fillMaxSize(),
+        belowPlayer = wc != WidthClass.Expanded,
+        animated = !pip && !fullscreen,
+    ) {
         if (vm.info == null && vm.infoError != null) {
             Column(Modifier.fillMaxSize()) {
                 PiliTopBar(route.title.ifEmpty { "直播间" })
                 ErrorState(vm.infoError!!, onRetry = vm::refresh)
             }
-            return@Surface
+            return@ExpressivePageBackground
         }
         val onBack: () -> Unit = { if (fullscreen) fullscreen = false else nav.pop() }
         val toggleFs: () -> Unit = { fullscreen = !fullscreen }
