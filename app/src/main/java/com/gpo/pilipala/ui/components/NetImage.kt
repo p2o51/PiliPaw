@@ -20,7 +20,10 @@ import com.gpo.pilipala.ui.theme.YoinArtworkShapes
 
 /**
  * Network image with Yoin's rules: no border, a flat surface placeholder,
- * and the CDN asked for a size close to the slot ([thumbWidth]).
+ * and the CDN asked for a size close to the slot ([thumbWidth]). Pass
+ * [thumbHeight] too when the slot crops (long pictures in a clamped slot):
+ * the CDN then crops to that box, so a 1080×9000 picture never arrives —
+ * or decodes — whole.
  */
 @Composable
 fun NetImage(
@@ -30,10 +33,11 @@ fun NetImage(
     shape: Shape = YoinArtworkShapes.Cover,
     thumbWidth: Dp? = 320.dp,
     contentScale: ContentScale = ContentScale.Crop,
+    thumbHeight: Dp? = null,
 ) {
     val density = LocalDensity.current
     val model = if (thumbWidth != null) {
-        Images.thumb(url, with(density) { thumbWidth.roundToPx() })
+        with(density) { Images.thumb(url, thumbWidth.roundToPx(), thumbHeight?.roundToPx()) }
     } else {
         Images.normalize(url)
     }

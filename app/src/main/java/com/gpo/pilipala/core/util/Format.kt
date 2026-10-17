@@ -1,9 +1,14 @@
 package com.gpo.pilipala.core.util
 
 import java.text.SimpleDateFormat
-import java.util.Calendar
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
+import java.util.concurrent.ConcurrentHashMap
 
 /** Display formatting shared by every screen. */
 object Fmt {
@@ -42,25 +47,59 @@ object Fmt {
     /** Unix seconds → relative Chinese time (刚刚 / 5分钟前 / 昨天 / 03-12 / 2023-03-12). */
     fun relativeTime(unixSeconds: Long): String {
         if (unixSeconds <= 0) return ""
-        val now = System.currentTimeMillis()
-        val t = unixSeconds * 1000
-        val diff = (now - t) / 1000
-        val cal = Calendar.getInstance().apply { timeInMillis = t }
-        val nowCal = Calendar.getInstance()
+        val diff = System.currentTimeMillis() / 1000 - unixSeconds
         return when {
             diff < 60 -> "刚刚"
             diff < 3600 -> "${diff / 60}分钟前"
-            diff < 86400 && cal.get(Calendar.DAY_OF_YEAR) == nowCal.get(Calendar.DAY_OF_YEAR) -> "${diff / 3600}小时前"
-            diff < 2 * 86400 -> "昨天"
-            cal.get(Calendar.YEAR) == nowCal.get(Calendar.YEAR) -> SimpleDateFormat("MM-dd", Locale.CHINA).format(Date(t))
-            else -> SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date(t))
+            diff < 2 * 86400 -> {
+                val zone = zone()
+                val day = localDate(unixSeconds, zone)
+                if (diff < 86400 && day == LocalDate.now(zone)) "${diff / 3600}小时前" else "昨天"
+            }
+            else -> {
+                val zone = zone()
+                val t = Instant.ofEpochSecond(unixSeconds).atZone(zone)
+                (if (t.year == LocalDate.now(zone).year) MonthDayFormat else YearMonthDayFormat).format(t)
+            }
         }
     }
 
-    fun date(unixSeconds: Long, pattern: String = "yyyy-MM-dd"): String =
-        if (unixSeconds <= 0) "" else SimpleDateFormat(pattern, Locale.CHINA).format(Date(unixSeconds * 1000))
+    fun date(unixSeconds: Long, pattern: String = "yyyy-MM-dd"): String {
+        if (unixSeconds <= 0) return ""
+        val t = Instant.ofEpochSecond(unixSeconds).atZone(zone())
+        val formatter = formatters.getOrPut(pattern) {
+            runCatching { DateTimeFormatter.ofPattern(pattern, Locale.CHINA) }.getOrNull() ?: return legacyDate(unixSeconds, pattern)
+        }
+        return formatter.format(t)
+    }
+
+    /** A pattern java.time does not take (none in use today): the old formatter. */
+    private fun legacyDate(unixSeconds: Long, pattern: String): String =
+        SimpleDateFormat(pattern, Locale.CHINA).format(Date(unixSeconds * 1000))
 
     /** Strip `<em class="keyword">` highlight tags from search results. */
-    fun stripTags(s: String): String = s.replace(Regex("<[^>]+>"), "")
-        .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'")
+    fun stripTags(s: String): String {
+        if (s.indexOf('<') < 0 && s.indexOf('&') < 0) return s
+        return s.replace(TagRegex, "")
+            .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'")
+    }
+
+    // Formatting runs in list item composition and in page mapping: compile
+    // the regex and build the (thread-safe, immutable) formatters once.
+    private val TagRegex = Regex("<[^>]+>")
+    private val MonthDayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd", Locale.CHINA)
+    private val YearMonthDayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.CHINA)
+    private val formatters = ConcurrentHashMap<String, DateTimeFormatter>()
+
+    // The cached ZoneId follows a system time zone change (read per call; only the id is compared).
+    @Volatile private var cachedZone: Pair<String, ZoneId>? = null
+
+    private fun zone(): ZoneId {
+        val id = TimeZone.getDefault().id
+        cachedZone?.let { (cachedId, zone) -> if (cachedId == id) return zone }
+        return ZoneId.of(id).also { cachedZone = id to it }
+    }
+
+    private fun localDate(unixSeconds: Long, zone: ZoneId): LocalDate =
+        Instant.ofEpochSecond(unixSeconds).atZone(zone).toLocalDate()
 }
