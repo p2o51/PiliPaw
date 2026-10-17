@@ -1,0 +1,183 @@
+package com.gpo.pilipala.feature.reply
+
+import androidx.compose.runtime.Immutable
+import com.gpo.pilipala.core.net.arr
+import com.gpo.pilipala.core.net.asLong
+import com.gpo.pilipala.core.net.bool
+import com.gpo.pilipala.core.net.int
+import com.gpo.pilipala.core.net.long
+import com.gpo.pilipala.core.net.obj
+import com.gpo.pilipala.core.net.objects
+import com.gpo.pilipala.core.net.str
+import kotlinx.serialization.json.JsonObject
+
+@Immutable
+internal data class ReplyMember(
+    val mid: Long,
+    val name: String,
+    val face: String,
+    val level: Int,
+    val vip: Boolean,
+    /** 0 = personal verified, 1 = organisation, -1 = none. */
+    val officialType: Int,
+)
+
+@Immutable
+internal data class ReplyPicture(val src: String, val width: Int, val height: Int)
+
+@Immutable
+internal data class ReplyEmote(val url: String, val size: Int)
+
+@Immutable
+internal data class ReplyJump(
+    val title: String,
+    val appUrl: String,
+    val pcUrl: String,
+    val prefixIcon: String,
+)
+
+@Immutable
+internal data class ReplyContent(
+    val message: String,
+    val emotes: Map<String, ReplyEmote> = emptyMap(),
+    val atNameToMid: Map<String, Long> = emptyMap(),
+    val jumpUrls: Map<String, ReplyJump> = emptyMap(),
+    val topics: Set<String> = emptySet(),
+    val pictures: List<ReplyPicture> = emptyList(),
+    val voteTitle: String = "",
+    val voteUrl: String = "",
+    val noteUrl: String = "",
+) {
+    /** Pure text (no @, vote, pictures) — safe to clamp in lists. */
+    val isPlainText: Boolean get() = atNameToMid.isEmpty() && voteTitle.isEmpty() && pictures.isEmpty()
+}
+
+@Immutable
+internal data class Reply(
+    val rpid: Long,
+    val oid: Long,
+    val type: Int,
+    val root: Long,
+    val parent: Long,
+    val member: ReplyMember,
+    val content: ReplyContent,
+    /** Unix seconds. */
+    val ctime: Long,
+    val like: Long,
+    val liked: Boolean,
+    val rcount: Int,
+    val replies: List<Reply>,
+    val isUp: Boolean,
+    val isTop: Boolean,
+    val upLiked: Boolean,
+    val hot: Boolean,
+    val location: String,
+    val entryText: String,
+    val upReplied: Boolean,
+    val invisible: Boolean,
+)
+
+@Immutable
+internal data class Emote(val text: String, val url: String, val size: Int)
+
+@Immutable
+internal data class EmotePackage(
+    val id: Long,
+    val title: String,
+    val icon: String,
+    /** 4 = kaomoji (text). */
+    val type: Int,
+    val emotes: List<Emote>,
+)
+
+private fun String.unescapeHtml(): String = replace("&amp;", "&")
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace("&quot;", "\"")
+    .replace("&#34;", "\"")
+    .replace("&#39;", "'")
+    .replace("&apos;", "'")
+    .replace("&nbsp;", " ")
+
+internal fun parseContent(c: JsonObject?): ReplyContent {
+    val emotes = c.obj("emote")?.mapNotNull { (k, v) ->
+        val o = v as? JsonObject ?: return@mapNotNull null
+        k to ReplyEmote(o.str("url"), o.obj("meta").int("size", 1).coerceIn(1, 3))
+    }?.toMap().orEmpty()
+    val ats = c.obj("at_name_to_mid")?.mapValues { it.value.asLong() }.orEmpty()
+    val jumps = c.obj("jump_url")?.mapNotNull { (k, v) ->
+        val o = v as? JsonObject ?: return@mapNotNull null
+        k to ReplyJump(
+            title = o.str("title").ifEmpty { k },
+            appUrl = o.str("app_url_schema"),
+            pcUrl = o.str("pc_url"),
+            prefixIcon = o.str("prefix_icon"),
+        )
+    }?.toMap().orEmpty()
+    val topics = c.obj("topics_meta")?.keys.orEmpty()
+    val pictures = c.arr("pictures").objects().map {
+        ReplyPicture(it.str("img_src"), it.int("img_width"), it.int("img_height"))
+    }.filter { it.src.isNotEmpty() }
+    val vote = c.obj("vote")
+    return ReplyContent(
+        message = c.str("message").unescapeHtml(),
+        emotes = emotes,
+        atNameToMid = ats,
+        jumpUrls = jumps,
+        topics = topics,
+        pictures = pictures,
+        voteTitle = vote.str("title"),
+        voteUrl = vote.str("url"),
+        noteUrl = c.obj("rich_text").obj("note").str("click_url"),
+    )
+}
+
+internal fun parseReply(o: JsonObject, upperMid: Long, forceTop: Boolean = false): Reply {
+    val m = o.obj("member")
+    val ctrl = o.obj("reply_control")
+    val mid = m.long("mid").takeIf { it != 0L } ?: o.long("mid")
+    val labels = o.arr("card_label").objects().map { it.str("text_content") }
+    return Reply(
+        rpid = o.long("rpid"),
+        oid = o.long("oid"),
+        type = o.int("type", 1),
+        root = o.long("root"),
+        parent = o.long("parent"),
+        member = ReplyMember(
+            mid = mid,
+            name = m.str("uname"),
+            face = m.str("avatar"),
+            level = m.obj("level_info").int("current_level"),
+            vip = m.obj("vip").int("vipStatus") > 0,
+            officialType = m.obj("official_verify").int("type", -1),
+        ),
+        content = parseContent(o.obj("content")),
+        ctime = o.long("ctime"),
+        like = o.long("like"),
+        liked = o.int("action") == 1,
+        rcount = o.int("rcount"),
+        replies = o.arr("replies").objects().map { parseReply(it, upperMid) },
+        isUp = upperMid != 0L && mid == upperMid,
+        isTop = forceTop || ctrl.bool("is_up_top") || labels.any { it.contains("置顶") },
+        upLiked = o.obj("up_action").bool("like"),
+        hot = labels.any { it.contains("热评") },
+        location = ctrl.str("location").substringAfter('：').substringAfter(':').trim(),
+        entryText = ctrl.str("sub_reply_entry_text"),
+        upReplied = ctrl.bool("up_reply"),
+        invisible = o.bool("invisible"),
+    )
+}
+
+internal fun parseEmotePackages(data: JsonObject?): List<EmotePackage> =
+    data.arr("packages").objects().map { p ->
+        val type = p.int("type")
+        EmotePackage(
+            id = p.long("id"),
+            title = p.str("text"),
+            icon = p.str("url"),
+            type = type,
+            emotes = p.arr("emote").objects().map {
+                Emote(it.str("text"), it.str("url"), it.obj("meta").int("size", 1).coerceIn(1, 2))
+            },
+        )
+    }.filter { it.emotes.isNotEmpty() }
