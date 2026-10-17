@@ -173,7 +173,7 @@ internal class MessagesViewModel : ViewModel() {
             val user = users[id]
             Session(
                 talkerId = id,
-                name = user?.name?.ifEmpty { null } ?: s.str("group_name").ifEmpty { id.toString() },
+                name = user?.name?.ifEmpty { null } ?: s.str("group_name").ifEmpty { if (id >= 844424930000000L) "系统消息" else id.toString() },
                 face = user?.face?.ifEmpty { null } ?: s.str("group_cover"),
                 preview = msgPreview(last.int("msg_type"), parseMsgContent(last.str("content")), last.int("msg_status")),
                 time = last.long("timestamp"),

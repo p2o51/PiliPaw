@@ -227,3 +227,62 @@ internal fun FavSheet(actions: ArchiveActions, onDismiss: () -> Unit) {
         }
     }
 }
+
+/**
+ * 三连 spends coins, which cannot be undone — so the long press only opens this
+ * sheet; the request goes out from the confirm button.
+ */
+@Composable
+internal fun TripleSheet(
+    liked: Boolean,
+    coined: Int,
+    favored: Boolean,
+    coinsLeft: Double?,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+            Text("三连", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(20.dp))
+            Column(
+                Modifier.fillMaxWidth().clip(YoinContainerShapes.Card).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            ) {
+                TripleRow(PiliSymbols.ThumbUp, "点赞", if (liked) "已赞" else null)
+                TripleRow(PiliSymbols.Coin, "投 2 枚硬币", when {
+                    coined > 0 -> "已投 $coined 枚"
+                    coinsLeft != null -> "余额 ${if (coinsLeft % 1.0 == 0.0) coinsLeft.toLong().toString() else coinsLeft.toString()}"
+                    else -> null
+                })
+                TripleRow(com.gpo.yoin.symbols.YoinSymbols.Star, "收藏到默认收藏夹", if (favored) "已收藏" else null)
+            }
+            Spacer(Modifier.height(20.dp))
+            Button(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                    onConfirm()
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shapes = ButtonDefaults.shapes(),
+            ) {
+                Text("三连", style = MaterialTheme.typography.titleSmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TripleRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, state: String?) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.size(12.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        if (state != null) {
+            Text(state, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}

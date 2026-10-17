@@ -53,7 +53,7 @@ import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.flow.merge
 
-private enum class VideoSheet { Coin, Fav, Pages, Season }
+private enum class VideoSheet { Coin, Fav, Pages, Season, Triple }
 
 @Composable
 fun VideoDetailScreen(route: Route.Video) {
@@ -142,6 +142,17 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
             },
         )
         VideoSheet.Fav -> FavSheet(a, onDismiss = { sheet = null })
+        VideoSheet.Triple -> TripleSheet(
+            liked = a.liked,
+            coined = a.coined,
+            favored = a.favored,
+            coinsLeft = com.gpo.pilipala.core.account.Account.user.value?.coins,
+            onDismiss = { sheet = null },
+            onConfirm = {
+                a.triple()
+                sheet = null
+            },
+        )
         VideoSheet.Pages -> if (d != null) {
             EpisodeListSheet(
                 title = "分P",
@@ -298,7 +309,7 @@ private fun VideoActions(
                 icon = PiliSymbols.ThumbUp,
                 checkedIcon = PiliSymbols.ThumbUpFilled,
                 checked = a.liked,
-                onLongClick = { gate { a.triple() } },
+                onLongClick = { gate { onSheet(VideoSheet.Triple) } },
                 onClick = { gate { a.toggleLike() } },
             ),
             ActionSpec(

@@ -54,7 +54,7 @@ import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.flow.merge
 
-private enum class BangumiSheet { Coin, Fav, Episodes }
+private enum class BangumiSheet { Coin, Fav, Episodes, Triple }
 
 @Composable
 fun BangumiDetailScreen(route: Route.Bangumi) {
@@ -145,6 +145,17 @@ private fun BangumiDetailContent(vm: BangumiDetailViewModel) {
             },
         )
         BangumiSheet.Fav -> FavSheet(a, onDismiss = { sheet = null })
+        BangumiSheet.Triple -> com.gpo.pilipala.feature.video.TripleSheet(
+            liked = a.liked,
+            coined = a.coined,
+            favored = a.favored,
+            coinsLeft = com.gpo.pilipala.core.account.Account.user.value?.coins,
+            onDismiss = { sheet = null },
+            onConfirm = {
+                a.triple()
+                sheet = null
+            },
+        )
         BangumiSheet.Episodes -> if (d != null) {
             EpisodeGridSheet(
                 title = "选集",
@@ -267,7 +278,7 @@ private fun BangumiActions(
                 icon = PiliSymbols.ThumbUp,
                 checkedIcon = PiliSymbols.ThumbUpFilled,
                 checked = a.liked,
-                onLongClick = { gate { a.triple() } },
+                onLongClick = { gate { onSheet(BangumiSheet.Triple) } },
                 onClick = { gate { a.toggleLike() } },
             ),
             ActionSpec(

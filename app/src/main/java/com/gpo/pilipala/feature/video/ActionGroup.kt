@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.ui.theme.YoinMotion
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 
 /** One slot of the connected action group. [toggle] = false for plain actions (分享). */
@@ -85,14 +86,29 @@ private fun ActionToggle(item: ActionSpec, shapes: ToggleButtonShapes, modifier:
     val longPressMs = LocalViewConfiguration.current.longPressTimeoutMillis
     val onLong by rememberUpdatedState(item.onLongClick)
     LaunchedEffect(interaction) {
-        interaction.interactions.collectLatest { i ->
-            if (i is PressInteraction.Press) {
-                consumedByLongPress = false
-                val cb = onLong ?: return@collectLatest
-                delay(longPressMs)
-                consumedByLongPress = true
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                cb()
+        // Explicit press bookkeeping: the long-press timer only survives while the
+        // finger is still down (Release / Cancel kill it), so a slow or delayed tap
+        // can never fire the long action.
+        var timer: kotlinx.coroutines.Job? = null
+        interaction.interactions.collect { i ->
+            when (i) {
+                is PressInteraction.Press -> {
+                    timer?.cancel()
+                    consumedByLongPress = false
+                    val cb = onLong
+                    if (cb != null) {
+                        timer = launch {
+                            delay(longPressMs)
+                            consumedByLongPress = true
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            cb()
+                        }
+                    }
+                }
+                is PressInteraction.Release, is PressInteraction.Cancel -> {
+                    timer?.cancel()
+                    timer = null
+                }
             }
         }
     }
