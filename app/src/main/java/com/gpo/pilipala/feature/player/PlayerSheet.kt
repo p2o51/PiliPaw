@@ -67,7 +67,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
 
-internal enum class SheetPage { Main, Quality, Audio, Codec, Speed, Danmaku, Sleep, Subtitle }
+internal enum class SheetPage { Main, Quality, Audio, Codec, Speed, Danmaku, Sleep, Subtitle, DanmakuBlock }
 
 private val Speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f)
 private val SleepOptions = listOf(0, 15, 30, 45, 60, 90)
@@ -97,7 +97,7 @@ internal fun PlayerSheet(
         AnimatedContent(
             targetState = page,
             transitionSpec = {
-                val forward = targetState != SheetPage.Main
+                val forward = targetState.ordinal > initialState.ordinal
                 (
                     fadeIn(motion.defaultEffectsSpec()) +
                         slideInHorizontally(motion.defaultSpatialSpec()) { w -> if (forward) w / 6 else -w / 6 }
@@ -123,11 +123,16 @@ internal fun PlayerSheet(
                         SheetPage.Danmaku -> "弹幕设置"
                         SheetPage.Sleep -> "定时关闭"
                         SheetPage.Subtitle -> "字幕"
+                        SheetPage.DanmakuBlock -> "屏蔽词"
                     },
-                    onBack = if (p != SheetPage.Main && start == SheetPage.Main) {
-                        { page = SheetPage.Main }
-                    } else {
-                        null
+                    onBack = when {
+                        p == SheetPage.DanmakuBlock -> {
+                            { page = SheetPage.Danmaku }
+                        }
+                        p != SheetPage.Main && start == SheetPage.Main -> {
+                            { page = SheetPage.Main }
+                        }
+                        else -> null
                     },
                 )
                 when (p) {
@@ -136,9 +141,10 @@ internal fun PlayerSheet(
                     SheetPage.Audio -> AudioPage(ctrl, close)
                     SheetPage.Codec -> CodecPage(ctrl, close)
                     SheetPage.Speed -> SpeedPage(ctrl)
-                    SheetPage.Danmaku -> DanmakuPage()
+                    SheetPage.Danmaku -> DanmakuPage(onOpenBlock = { page = SheetPage.DanmakuBlock })
                     SheetPage.Sleep -> SleepPage(ctrl, close)
                     SheetPage.Subtitle -> SubtitlePage(ctrl, close)
+                    SheetPage.DanmakuBlock -> DanmakuBlockRulesEditor()
                 }
             }
         }
@@ -448,7 +454,7 @@ private fun SpeedPage(ctrl: PiliPlayerController) {
 }
 
 @Composable
-private fun DanmakuPage() {
+private fun DanmakuPage(onOpenBlock: () -> Unit) {
     val haptics = LocalHapticFeedback.current
     val hideScroll by AppSettings.danmakuHideScroll.state.collectAsState()
     val hideTop by AppSettings.danmakuHideTop.state.collectAsState()
@@ -457,6 +463,10 @@ private fun DanmakuPage() {
     val opacity by AppSettings.danmakuOpacity.state.collectAsState()
     val fontScale by AppSettings.danmakuFontScale.state.collectAsState()
     val speed by AppSettings.danmakuSpeed.state.collectAsState()
+    val blockLevel by DanmakuBlockLevel.state.collectAsState()
+    val merge by DanmakuMergeDuplicates.state.collectAsState()
+    val rulesRaw by DanmakuBlockRules.state.collectAsState()
+    val ruleCount = remember(rulesRaw) { DanmakuRules.parse(rulesRaw).size }
 
     Text(
         "显示类型",
@@ -534,6 +544,22 @@ private fun DanmakuPage() {
         display = { "${String.format(Locale.US, "%.1f", it)}x" },
         onChange = { AppSettings.set(AppSettings.danmakuSpeed, (it * 10).roundToInt() / 10f) },
     )
+
+    SectionLabel("屏蔽")
+    SegmentedGroup(
+        listOf(
+            RowSpec(YoinSymbols.VisibilityOff, "屏蔽词", value = if (ruleCount > 0) "$ruleCount 条" else null) { onOpenBlock() },
+            RowSpec(YoinSymbols.Copy, "合并重复弹幕", switch = merge) { AppSettings.set(DanmakuMergeDuplicates, !merge) },
+        ),
+    )
+    SliderSetting(
+        label = "屏蔽等级",
+        value = blockLevel.toFloat(),
+        range = 0f..10f,
+        steps = 9,
+        display = { danmakuLevelLabel(it.roundToInt()) },
+        onChange = { AppSettings.set(DanmakuBlockLevel, it.roundToInt().coerceIn(0, 10)) },
+    )
 }
 
 @Composable
@@ -590,12 +616,12 @@ private fun SleepPage(ctrl: PiliPlayerController, close: () -> Unit) {
 private fun SubtitlePage(ctrl: PiliPlayerController, close: () -> Unit) {
     val rows = buildList {
         add(RowSpec(icon = null, title = "关闭", selected = ctrl.subtitleIndex < 0) {
-            ctrl.selectSubtitle(-1)
+            chooseSubtitle(ctrl, -1)
             close()
         })
         ctrl.subtitles.forEachIndexed { i, s ->
             add(RowSpec(icon = null, title = s.label, selected = ctrl.subtitleIndex == i) {
-                ctrl.selectSubtitle(i)
+                chooseSubtitle(ctrl, i)
                 close()
             })
         }

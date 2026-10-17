@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,6 +28,7 @@ import com.gpo.pilipala.core.net.double
 import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
+import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinShapeTokens
 
@@ -42,7 +44,8 @@ internal object SubtitleApi {
         }
         val data = BiliClient.getData("/x/player/wbi/v2", params, wbi = true).asObj
         return data.obj("subtitle").arr("subtitles").objects().mapNotNull { s ->
-            val url = s.str("subtitle_url")
+            // AI tracks sometimes only carry subtitle_url_v2; tracks without either need login.
+            val url = s.str("subtitle_url").ifBlank { s.str("subtitle_url_v2") }
             if (url.isBlank()) null else SubtitleTrack(s.str("lan"), s.str("lan_doc").ifEmpty { s.str("lan") }, url)
         }
     }
@@ -75,7 +78,26 @@ internal object SubtitleApi {
     }
 }
 
-/** Bottom-centred subtitle line on a scrim pill; lifts above the controls when they show. */
+/** Language code of the last subtitle the viewer picked; "" = off (the default). */
+internal val SubtitlePreferredLan = AppSettings.register("subtitle_lan", "")
+
+/** Picks a track (or -1 = off) and remembers the choice for the next video. */
+internal fun chooseSubtitle(ctrl: PiliPlayerController, index: Int) {
+    ctrl.selectSubtitle(index)
+    AppSettings.set(SubtitlePreferredLan, ctrl.subtitles.getOrNull(index)?.lan.orEmpty())
+}
+
+/** Exact language first, then the same language with / without the AI prefix (zh-CN ↔ ai-zh). */
+private fun preferredIndex(tracks: List<SubtitleTrack>, lan: String): Int {
+    if (lan.isEmpty() || tracks.isEmpty()) return -1
+    val exact = tracks.indexOfFirst { it.lan == lan }
+    if (exact >= 0) return exact
+    fun base(l: String) = l.removePrefix("ai-").substringBefore('-').lowercase()
+    val want = base(lan)
+    return tracks.indexOfFirst { base(it.lan) == want }
+}
+
+/** Bottom-centred subtitle line on a scrim plate; lifts above the controls when they show. */
 @Composable
 internal fun SubtitleOverlay(
     ctrl: PiliPlayerController,
@@ -83,11 +105,19 @@ internal fun SubtitleOverlay(
     big: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    // Restore the remembered language when a video's tracks arrive (default off).
+    val tracks = ctrl.subtitles
+    LaunchedEffect(tracks) {
+        if (tracks.isEmpty() || ctrl.subtitleIndex >= 0) return@LaunchedEffect
+        val idx = preferredIndex(tracks, SubtitlePreferredLan.value)
+        if (idx >= 0) ctrl.selectSubtitle(idx)
+    }
+
     val lines = ctrl.subtitleLines
     if (lines.isEmpty()) return
-    val line = SubtitleApi.lineAt(lines, ctrl.positionMs)?.text
+    val line = SubtitleApi.lineAt(lines, ctrl.positionMs)?.text?.trim()
     val lift by animateDpAsState(
-        targetValue = if (controlsVisible) (if (big) 112.dp else 64.dp) else 16.dp,
+        targetValue = if (controlsVisible) (if (big) 120.dp else 60.dp) else (if (big) 28.dp else 12.dp),
         animationSpec = YoinMotion.defaultSpatialSpec(),
         label = "subtitleLift",
     )
@@ -107,10 +137,10 @@ internal fun SubtitleOverlay(
                     color = Color.White,
                     textAlign = TextAlign.Center,
                     modifier = Modifier
-                        .widthIn(max = 720.dp)
-                        .padding(horizontal = 24.dp)
-                        .background(Color.Black.copy(alpha = 0.55f), YoinShapeTokens.Small)
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                        .widthIn(max = if (big) 960.dp else 640.dp)
+                        .padding(horizontal = if (big) 48.dp else 24.dp)
+                        .background(Color.Black.copy(alpha = 0.58f), if (big) YoinShapeTokens.Medium else YoinShapeTokens.Small)
+                        .padding(horizontal = if (big) 14.dp else 10.dp, vertical = if (big) 6.dp else 3.dp),
                 )
             }
         }

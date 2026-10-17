@@ -63,6 +63,12 @@ import com.gpo.pilipala.feature.home.RcmdMinDuration
 import com.gpo.pilipala.feature.home.RcmdMinLikeRatio
 import com.gpo.pilipala.feature.live.LiveDefaultQn
 import com.gpo.pilipala.feature.live.LiveQnNames
+import com.gpo.pilipala.feature.player.DanmakuBlockLevel
+import com.gpo.pilipala.feature.player.DanmakuBlockRules
+import com.gpo.pilipala.feature.player.DanmakuBlockRulesSheet
+import com.gpo.pilipala.feature.player.DanmakuMergeDuplicates
+import com.gpo.pilipala.feature.player.DanmakuRules
+import com.gpo.pilipala.feature.player.danmakuLevelLabel
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.friendlyMessage
@@ -320,6 +326,11 @@ private fun ColumnScope.DanmakuBody() {
     val hideTop by AppSettings.danmakuHideTop.state.collectAsState()
     val hideBottom by AppSettings.danmakuHideBottom.state.collectAsState()
     val hideScroll by AppSettings.danmakuHideScroll.state.collectAsState()
+    val blockLevel by DanmakuBlockLevel.state.collectAsState()
+    val merge by DanmakuMergeDuplicates.state.collectAsState()
+    val rulesRaw by DanmakuBlockRules.state.collectAsState()
+    val ruleCount = remember(rulesRaw) { DanmakuRules.parse(rulesRaw).size }
+    var rulesOpen by remember { mutableStateOf(false) }
 
     DanmakuPreview(
         enabled = enabled,
@@ -385,8 +396,35 @@ private fun ColumnScope.DanmakuBody() {
                 enabled = enabled,
             )
         }
+        item {
+            SettingsSwitchItem("合并重复弹幕", merge, { AppSettings.set(DanmakuMergeDuplicates, it) }, icon = YoinSymbols.Copy, enabled = enabled)
+        }
     }
     SettingsGroup("屏蔽") {
+        item {
+            SettingsItem(
+                title = "屏蔽词",
+                icon = YoinSymbols.VisibilityOff,
+                enabled = enabled,
+                onClick = { rulesOpen = true },
+                trailing = {
+                    ValueLabel(if (ruleCount > 0) "$ruleCount 条" else "无")
+                    Icon(YoinSymbols.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                },
+            )
+        }
+        item {
+            SettingsSliderItem(
+                title = "屏蔽等级",
+                value = blockLevel.toFloat(),
+                onValueChange = { AppSettings.set(DanmakuBlockLevel, it.roundToInt().coerceIn(0, 10)) },
+                valueRange = 0f..10f,
+                steps = 9,
+                label = { danmakuLevelLabel(it.roundToInt()) },
+                icon = YoinSymbols.Filter,
+                enabled = enabled,
+            )
+        }
         item {
             SettingsSwitchItem("顶部弹幕", hideTop, { AppSettings.set(AppSettings.danmakuHideTop, it) }, icon = PiliSymbols.DanmakuTop, enabled = enabled)
         }
@@ -396,6 +434,9 @@ private fun ColumnScope.DanmakuBody() {
         item {
             SettingsSwitchItem("滚动弹幕", hideScroll, { AppSettings.set(AppSettings.danmakuHideScroll, it) }, icon = PiliSymbols.DanmakuScroll, enabled = enabled)
         }
+    }
+    if (rulesOpen) {
+        DanmakuBlockRulesSheet(onDismiss = { rulesOpen = false })
     }
 }
 
