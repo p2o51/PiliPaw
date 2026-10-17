@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.yoin.symbols.PiliSymbols
@@ -69,7 +70,8 @@ private val CoverShape = ContinuousRoundedCornerShape(12.dp)
 private fun VideoItem.route(): Route = target ?: Route.Video(bvid = bvid, aid = aid, cid = cid, cover = cover, title = title, progress = progress.coerceAtLeast(0))
 
 /**
- * Grid card (home feeds). Cover 16:10, title two lines, owner as the quiet
+ * Grid card (home feeds). The page it opens grows out of it (container
+ * transform, [pageSharedSource]). Cover 16:10, title two lines, owner as the quiet
  * second line. Stats sit on the cover's bottom scrim as icon + number pairs —
  * no "·" chains (Yoin copy rule).
  */
@@ -84,6 +86,7 @@ fun VideoCardV(
     val nav = LocalNavigator.current
     Column(
         modifier = modifier
+            .pageSharedSource(item.route())
             .clip(YoinContainerShapes.Card)
             .combinedClickable(onLongClick = onLongClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) }),
     ) {
@@ -130,6 +133,7 @@ fun VideoCardH(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .pageSharedSource(item.route())
             .clip(YoinContainerShapes.ListRow)
             .combinedClickable(onLongClick = onLongClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) })
             .padding(horizontal = 16.dp, vertical = 8.dp),
