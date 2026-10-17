@@ -63,6 +63,7 @@ import com.gpo.pilipala.ui.theme.YoinShapeTokens
 import com.gpo.pilipala.ui.theme.withTabularFigures
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -303,6 +304,7 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
     val autoNext by AppSettings.autoPlayNext.state.collectAsState()
     val background by AppSettings.backgroundPlay.state.collectAsState()
     val t = ctrl.target
+    val cdn by com.gpo.pilipala.feature.player.cdn.CdnRouter.status.collectAsState()
 
     val playback = buildList {
         add(RowSpec(PiliSymbols.Hd, "画质", value = Qualities.videoShort(ctrl.currentQn).takeIf { pi != null }) { onOpen(SheetPage.Quality) })
@@ -313,6 +315,16 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
             add(RowSpec(YoinSymbols.Memory, "解码格式", value = Qualities.codecName(ctrl.currentCodec)) { onOpen(SheetPage.Codec) })
         }
         add(RowSpec(YoinSymbols.Speed, "播放速度", value = speedLabel(ctrl.speed)) { onOpen(SheetPage.Speed) })
+        if (cdn.host.isNotEmpty()) {
+            add(RowSpec(YoinSymbols.Storage, "线路", value = cdnLabel(cdn)) {
+                scope.launch {
+                    com.gpo.pilipala.feature.player.cdn.CdnRouter.testNow(null)
+                    kotlinx.coroutines.delay(150)
+                    val done = com.gpo.pilipala.feature.player.cdn.CdnRouter.status.first { !it.racing }
+                    if (done.note.isNotEmpty()) toast(done.note)
+                }
+            })
+        }
         if (ctrl.subtitles.isNotEmpty()) {
             add(
                 RowSpec(
@@ -627,4 +639,14 @@ private fun SubtitlePage(ctrl: PiliPlayerController, close: () -> Unit) {
         }
     }
     SegmentedGroup(rows)
+}
+
+/** "腾讯云（海外） 12 Mbps" — the line the video is read from, and its measured speed. */
+private fun cdnLabel(st: com.gpo.pilipala.feature.player.cdn.CdnRouter.Status): String {
+    if (st.racing) return "测试中"
+    val (region, vendor) = com.gpo.pilipala.feature.player.cdn.CdnHosts.describe(st.host)
+    val name = if (region.isEmpty()) vendor else "$vendor（$region）"
+    if (st.goodputBps <= 0) return name
+    val mbps = st.goodputBps / 1e6
+    return name + " " + String.format(java.util.Locale.US, if (mbps >= 10) "%.0f Mbps" else "%.1f Mbps", mbps)
 }

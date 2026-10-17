@@ -169,7 +169,10 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     private val dataSourceFactory by lazy {
         OkHttpDataSource.Factory(BiliClient.http).setDefaultRequestProperties(BiliClient.mediaHeaders())
     }
-    private val progressiveFactory by lazy { ProgressiveMediaSource.Factory(dataSourceFactory) }
+    // Overseas line routing (feature/player/cdn): every media open goes through CdnRouter.
+    private val progressiveFactory by lazy {
+        ProgressiveMediaSource.Factory(com.gpo.pilipala.feature.player.cdn.CdnDataSource.Factory(dataSourceFactory))
+    }
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
@@ -605,6 +608,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     }
 
     override fun release() {
+        com.gpo.pilipala.feature.player.cdn.CdnRouter.endSession()
         target?.let { t ->
             ResumeMemory.put(t.cid, positionMs)
             heartbeat(if (ended) -1 else positionMs / 1000, force = true)
@@ -832,13 +836,21 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
             currentQn = v.id
             currentCodec = v.codecId
             if (v.width > 0 && v.height > 0 && !firstFrameRendered) videoAspect = v.width.toFloat() / v.height
-            val vUrl = v.urls[urlAttempt % v.urls.size]
+            val vUrls = com.gpo.pilipala.feature.player.cdn.CdnRouter.orderUrls(v.urls)
+            val vUrl = vUrls[urlAttempt % vUrls.size]
             val videoSource = progressiveFactory.createMediaSource(metadataItem(vUrl))
             val a = StreamPicker.playableAudios(pi).firstOrNull { it.id == currentAudio }
                 ?: StreamPicker.audio(pi, AppSettings.defaultAudioQuality.value)
-                ?: return videoSource
+            com.gpo.pilipala.feature.player.cdn.CdnRouter.beginSession(
+                videoUrls = if (audioOnly) a?.urls.orEmpty() else v.urls,
+                audioUrls = if (audioOnly) emptyList() else a?.urls.orEmpty(),
+                requiredBps = if (audioOnly) (a?.bandwidth ?: 0) else v.bandwidth,
+                bufferedAheadMs = { (bufferedMs - positionMs).coerceAtLeast(0) },
+            )
+            if (a == null) return videoSource
             currentAudio = a.id
-            val aUrl = a.urls[urlAttempt % a.urls.size]
+            val aUrls = com.gpo.pilipala.feature.player.cdn.CdnRouter.orderUrls(a.urls)
+            val aUrl = aUrls[urlAttempt % aUrls.size]
             // 仅听声音: the audio stream alone (nothing to download or decode for the picture).
             if (audioOnly) return progressiveFactory.createMediaSource(metadataItem(aUrl))
             val audioSource = progressiveFactory.createMediaSource(MediaItem.fromUri(aUrl))
