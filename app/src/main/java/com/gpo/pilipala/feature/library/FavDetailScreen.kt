@@ -1,18 +1,23 @@
 package com.gpo.pilipala.feature.library
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -22,12 +27,16 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SplitButtonDefaults
+import androidx.compose.material3.SplitButtonLayout
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -60,6 +69,9 @@ import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
+import com.gpo.pilipala.feature.player.PlayQueues
+import com.gpo.pilipala.feature.player.QueueItem
+import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.LoadMoreEffect
@@ -73,8 +85,13 @@ import com.gpo.pilipala.ui.theme.CoverTheme
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 internal data class FavInfo(
     val title: String = "",
@@ -147,6 +164,137 @@ internal class FavDetailViewModel(val mediaId: Long) : ViewModel() {
         pager.update { l -> l.filterNot { it.id == m.id && it.type == m.type } }
         info = info.copy(mediaCount = (info.mediaCount - 1).coerceAtLeast(0))
     }
+
+    /** Building the play queue (every page of the folder is fetched first). */
+    var queueLoading by mutableStateOf(false)
+        private set
+
+    private fun pageParams(pn: Int) = mapOf(
+        "media_id" to mediaId, "pn" to pn, "ps" to QueuePageSize, "keyword" to keyword,
+        "order" to order, "type" to 0, "tid" to 0, "platform" to "web",
+    )
+
+    private class QueuePage(val items: List<QueueItem>, val hasMore: Boolean, val total: Int)
+
+    private suspend fun queuePage(pn: Int): QueuePage {
+        val data = BiliClient.getData("/x/v3/fav/resource/list", pageParams(pn)).asObj
+        return QueuePage(
+            items = data.arr("medias").objects().mapNotNull { it.toQueueItem() },
+            hasMore = data.bool("has_more"),
+            total = data.obj("info").int("media_count"),
+        )
+    }
+
+    /** Every playable video in the folder, in the current order (and search), pages fetched in parallel. */
+    private suspend fun allQueueItems(): List<QueueItem> = coroutineScope {
+        val first = queuePage(1)
+        if (!first.hasMore) return@coroutineScope first.items
+        if (keyword.isNotEmpty()) {
+            // Search results: their count is unknown — walk the pages.
+            val all = first.items.toMutableList()
+            var pn = 2
+            while (pn <= QueueMaxPages) {
+                val page = queuePage(pn)
+                all += page.items
+                if (!page.hasMore) break
+                pn++
+            }
+            return@coroutineScope all
+        }
+        val total = first.total.takeIf { it > 0 } ?: info.mediaCount
+        val pages = ((total + QueuePageSize - 1) / QueuePageSize).coerceIn(2, QueueMaxPages)
+        val gate = Semaphore(4)
+        val rest = (2..pages).map { pn ->
+            async { gate.withPermit { runCatching { queuePage(pn).items }.getOrDefault(emptyList()) } }
+        }.awaitAll()
+        first.items + rest.flatten()
+    }
+
+    /** Builds the folder's queue (shuffled list for 随机播放) and opens its first video (or [from]). */
+    suspend fun buildQueue(shuffle: Boolean, from: String? = null): Route.Video? {
+        if (queueLoading) return null
+        queueLoading = true
+        try {
+            val items = allQueueItems().let { if (shuffle) it.shuffled() else it }
+            val start = from?.let { b -> items.indexOfFirst { it.bvid == b } }?.coerceAtLeast(0) ?: 0
+            val title = info.title.ifEmpty { "收藏夹" }
+            return PlayQueues.create(title, items, start)?.let { PlayQueues.route(it) }
+                ?: throw IllegalStateException("没有可播放的视频")
+        } finally {
+            queueLoading = false
+        }
+    }
+}
+
+private const val QueuePageSize = 20
+private const val QueueMaxPages = 100
+
+/** A fav entry as a queue item; null for anything that is not a playable UGC video (失效, 番剧, 音频…). */
+private fun JsonObject.toQueueItem(): QueueItem? {
+    if (int("type", 2) != 2) return null
+    if (int("attr") and 1 == 1) return null
+    if (obj("ogv").long("season_id") > 0 || str("link").contains("/bangumi/")) return null
+    val bvid = str("bvid").ifEmpty { str("bv_id") }
+    if (bvid.isEmpty()) return null
+    return QueueItem(
+        bvid = bvid,
+        aid = long("id"),
+        cid = obj("ugc").long("first_cid"),
+        title = str("title"),
+        cover = str("cover"),
+        owner = obj("upper").str("name"),
+        duration = long("duration"),
+    )
+}
+
+/**
+ * 播放全部 + 随机播放 as one M3 split button (Yoin's Play split): the folder / list plays
+ * as a queue. 随机播放 shuffles the list itself; the play mode stays 列表循环.
+ */
+@Composable
+internal fun QueuePlayButtons(
+    loading: Boolean,
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = LocalHapticFeedback.current
+    SplitButtonLayout(
+        leadingButton = {
+            SplitButtonDefaults.LeadingButton(
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                    onPlay()
+                },
+                enabled = !loading,
+            ) {
+                val effects = YoinMotion.defaultEffectsSpec<Float>()
+                AnimatedContent(loading, transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) }, label = "playAll") { l ->
+                    if (l) {
+                        LoadingIndicator(Modifier.size(SplitButtonDefaults.LeadingIconSize))
+                    } else {
+                        Icon(YoinSymbols.PlayFilled, contentDescription = null, modifier = Modifier.size(SplitButtonDefaults.LeadingIconSize))
+                    }
+                }
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("播放全部", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            }
+        },
+        trailingButton = {
+            SplitButtonDefaults.TrailingButton(
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                    onShuffle()
+                },
+                enabled = !loading,
+            ) {
+                Icon(YoinSymbols.Shuffle, contentDescription = null, modifier = Modifier.size(SplitButtonDefaults.LeadingIconSize))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("随机播放", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            }
+        },
+        modifier = modifier,
+    )
 }
 
 private val FavOrders = listOf("mtime" to "最近收藏", "view" to "最多播放", "pubtime" to "最新投稿")
@@ -172,6 +320,15 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
     val isOwner = vm.info.upperMid != 0L && vm.info.upperMid == BiliClient.mid
     val gridState = rememberLazyGridState()
     LoadMoreEffect(gridState) { vm.pager.loadMore() }
+    val nav = LocalNavigator.current
+    // The folder as a playlist: 播放全部 / 随机播放 / 从这里播放.
+    val startQueue: (Boolean, String?) -> Unit = { shuffle, from ->
+        scope.launch {
+            runCatching { vm.buildQueue(shuffle, from) }
+                .onSuccess { r -> r?.let(nav::push) }
+                .onFailure { toast(it.friendlyMessage()) }
+        }
+    }
 
     LaunchedEffect(query) {
         delay(400)
@@ -233,6 +390,15 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
                             FavInfoHeader(vm.info)
                         }
                     }
+                    item(key = "__play", span = { GridItemSpan(maxLineSpan) }) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            QueuePlayButtons(
+                                loading = vm.queueLoading,
+                                onPlay = { startQueue(false, null) },
+                                onShuffle = { startQueue(true, null) },
+                            )
+                        }
+                    }
                     items(vm.pager.items, key = { "${it.id}:${it.type}" }) { m ->
                         VideoCardH(
                             m.video,
@@ -254,6 +420,9 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
             title = m.video.title,
             cover = m.video.cover,
             actions = buildList {
+                if (m.type == 2 && m.video.target == null && m.video.bvid.isNotEmpty()) {
+                    add(SheetAction("从这里播放", YoinSymbols.Playlist) { startQueue(false, m.video.bvid) })
+                }
                 if (isOwner) {
                     add(
                         SheetAction("取消收藏", YoinSymbols.Delete, destructive = true) {
