@@ -1,0 +1,12 @@
+.gradle/
+build/
+/app/build/
+/yoin-symbols/build/
+local.properties.bak
+.idea/
+*.iml
+.DS_Store
+/flutter-src/
+/.claude/worktrees/
+captures/
+.kotlin/
