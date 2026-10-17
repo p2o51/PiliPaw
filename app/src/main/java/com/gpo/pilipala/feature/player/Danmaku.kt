@@ -8,10 +8,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -26,6 +29,9 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.core.net.BiliException
+import com.gpo.pilipala.core.net.asObj
+import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.settings.AppSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
@@ -33,24 +39,105 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.util.zip.Inflater
 
-/** One `<d p="time,mode,size,color,...">text</d>` entry. */
+/**
+ * One danmaku. Built from a protobuf `DanmakuElem` (seg.so), an XML `<d p="…">` entry
+ * (list.so fallback) or a line the user just sent ([mine]).
+ */
 internal class DanmakuItem(
     val timeMs: Long,
     val mode: Int,
     val size: Int,
     val color: Int,
     val text: String,
-)
+    /** bilibili's 屏蔽等级 weight, 1..11 (XML danmaku carry none → 10). */
+    val weight: Int = 10,
+    val id: Long = 0L,
+    val midHash: String = "",
+    val pool: Int = 0,
+    val mine: Boolean = false,
+) {
+    fun withText(newText: String) = DanmakuItem(timeMs, mode, size, color, newText, weight, id, midHash, pool, mine)
+}
+
+/** Danmaku modes as sent to /x/v2/dm/post. */
+internal object DanmakuMode {
+    const val SCROLL = 1
+    const val BOTTOM = 4
+    const val TOP = 5
+}
 
 internal object DanmakuApi {
+    /** seg.so serves 6-minute segments, 1-based. */
+    const val SEGMENT_MS = 6 * 60 * 1000L
+
     private val entry = Regex("""<d p="([^"]*)">([^<]*)</d>""")
 
-    suspend fun fetch(cid: Long): List<DanmakuItem> = withContext(Dispatchers.IO) {
+    /**
+     * Called by the controller on every load. Danmaku are now loaded lazily, segment by
+     * segment, by [DanmakuLayer] from the playback position (so a resume at 40:00 never
+     * downloads the first 40 minutes); this only primes the per-cid feed.
+     */
+    @Suppress("RedundantSuspendModifier")
+    suspend fun fetch(cid: Long): List<DanmakuItem> {
+        DanmakuFeeds.get(cid)
+        return emptyList()
+    }
+
+    /** One protobuf segment (`index` is 0-based; the API's segment_index is 1-based). */
+    suspend fun fetchSegment(cid: Long, index: Int): List<DanmakuItem> = withContext(Dispatchers.IO) {
+        // seg.so answers -352 (risk control) without the buvid3 device cookie.
+        BiliClient.ensureBuvid()
+        val bytes = BiliClient.getBytes(
+            "https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=$cid&segment_index=${index + 1}",
+            BiliClient.mediaHeaders(),
+        )
+        if (bytes.isNotEmpty() && bytes[0] == '{'.code.toByte()) {
+            // A JSON envelope instead of protobuf: an error (-352, -404 …).
+            val root = BiliClient.parseEnvelope(bytes.toString(Charsets.UTF_8))
+            throw BiliException(root.long("code", -1).toInt(), "danmaku segment ${index + 1}")
+        }
+        if (bytes.isNotEmpty() && bytes[0] == '<'.code.toByte()) {
+            // An HTML error page (412 risk control and friends).
+            throw BiliException(-412, "danmaku segment ${index + 1}")
+        }
+        DanmakuProto.decodeSegment(bytes)
+    }
+
+    /** Whole-video XML list (list.so). Truncated on long videos; only a fallback now. */
+    suspend fun fetchXml(cid: Long): List<DanmakuItem> = withContext(Dispatchers.IO) {
         val bytes = BiliClient.getBytes(
             "https://api.bilibili.com/x/v1/dm/list.so?oid=$cid",
             BiliClient.mediaHeaders(),
         )
         parse(inflate(bytes))
+    }
+
+    /**
+     * POST /x/v2/dm/post. Returns the new dmid. `rnd` (µs timestamp) keeps the
+     * cooldown at 5s instead of 90s.
+     */
+    suspend fun send(
+        target: PlayTarget,
+        text: String,
+        progressMs: Long,
+        color: Int,
+        mode: Int,
+    ): Long {
+        val form = buildMap<String, Any?> {
+            put("type", 1)
+            put("oid", target.cid)
+            put("msg", text)
+            if (target.aid > 0) put("aid", target.aid)
+            if (target.bvid.isNotBlank()) put("bvid", target.bvid)
+            put("progress", progressMs.coerceAtLeast(0L))
+            put("color", color and 0xFFFFFF)
+            put("fontsize", 25)
+            put("pool", 0)
+            put("mode", mode)
+            put("rnd", System.currentTimeMillis() * 1000)
+        }
+        val data = BiliClient.postData("/x/v2/dm/post", form).asObj
+        return data.long("dmid")
     }
 
     /** list.so answers raw deflate (`Content-Encoding: deflate`), which OkHttp leaves alone. */
@@ -86,6 +173,10 @@ internal object DanmakuApi {
                 size = p[2].toIntOrNull() ?: 25,
                 color = (p[3].toLongOrNull() ?: 0xFFFFFF).toInt(),
                 text = text,
+                pool = p.getOrNull(5)?.toIntOrNull() ?: 0,
+                midHash = p.getOrNull(6).orEmpty(),
+                id = p.getOrNull(7)?.toLongOrNull() ?: 0L,
+                weight = p.getOrNull(8)?.toIntOrNull() ?: 10,
             )
         }
         list.sortBy { it.timeMs }
@@ -99,6 +190,125 @@ internal object DanmakuApi {
     }
 }
 
+/**
+ * Minimal protobuf reader for `DmSegMobileReply { repeated DanmakuElem elems = 1; … }`
+ * (lib/models/danmaku/dm.proto). Only varint and length-delimited fields are read;
+ * everything else is skipped by wire type.
+ */
+internal object DanmakuProto {
+    private class Reader(val buf: ByteArray, var pos: Int, val end: Int) {
+        fun more() = pos < end
+
+        fun varint(): Long {
+            var result = 0L
+            var shift = 0
+            while (shift < 64) {
+                if (pos >= end) throw IllegalStateException("truncated varint")
+                val b = buf[pos++].toInt()
+                result = result or ((b and 0x7F).toLong() shl shift)
+                if (b and 0x80 == 0) return result
+                shift += 7
+            }
+            throw IllegalStateException("malformed varint")
+        }
+
+        fun length(): Int {
+            val n = varint().toInt()
+            if (n < 0 || pos + n > end) throw IllegalStateException("bad length")
+            return n
+        }
+
+        fun string(): String {
+            val n = length()
+            val s = String(buf, pos, n, Charsets.UTF_8)
+            pos += n
+            return s
+        }
+
+        fun skip(wireType: Int) {
+            when (wireType) {
+                0 -> varint()
+                1 -> pos += 8
+                2 -> {
+                    // Read the length first: `pos += length()` would add it to the pre-varint pos.
+                    val n = length()
+                    pos += n
+                }
+                5 -> pos += 4
+                else -> throw IllegalStateException("wire type $wireType")
+            }
+        }
+    }
+
+    fun decodeSegment(bytes: ByteArray): List<DanmakuItem> {
+        val r = Reader(bytes, 0, bytes.size)
+        val out = ArrayList<DanmakuItem>(2048)
+        while (r.more()) {
+            val tag = r.varint().toInt()
+            val field = tag ushr 3
+            val wire = tag and 7
+            if (field == 1 && wire == 2) {
+                val len = r.length()
+                val start = r.pos
+                runCatching { decodeElem(bytes, start, start + len) }.getOrNull()?.let(out::add)
+                r.pos = start + len
+            } else {
+                r.skip(wire)
+            }
+        }
+        out.sortBy { it.timeMs }
+        return out
+    }
+
+    private fun decodeElem(bytes: ByteArray, from: Int, to: Int): DanmakuItem? {
+        val r = Reader(bytes, from, to)
+        var id = 0L
+        var progress = 0L
+        var mode = 1
+        var fontSize = 25
+        var color = 0xFFFFFF
+        var midHash = ""
+        var content = ""
+        var weight = 0
+        var pool = 0
+        var idStr = ""
+        while (r.more()) {
+            val tag = r.varint().toInt()
+            val field = tag ushr 3
+            val wire = tag and 7
+            when {
+                field == 1 && wire == 0 -> id = r.varint()
+                field == 2 && wire == 0 -> progress = r.varint().toInt().toLong()
+                field == 3 && wire == 0 -> mode = r.varint().toInt()
+                field == 4 && wire == 0 -> fontSize = r.varint().toInt()
+                field == 5 && wire == 0 -> color = r.varint().toInt()
+                field == 6 && wire == 2 -> midHash = r.string()
+                field == 7 && wire == 2 -> content = r.string()
+                field == 9 && wire == 0 -> weight = r.varint().toInt()
+                field == 11 && wire == 0 -> pool = r.varint().toInt()
+                field == 12 && wire == 2 -> idStr = r.string()
+                // ctime(8), attr(13) and the rest are not needed for drawing.
+                else -> r.skip(wire)
+            }
+        }
+        // 7 positioned / 8 code / 9 BAS danmaku need a script engine.
+        if (mode == 7 || mode == 8 || mode == 9) return null
+        val text = content.trim()
+        if (text.isEmpty()) return null
+        return DanmakuItem(
+            timeMs = progress.coerceAtLeast(0L),
+            mode = mode,
+            size = fontSize,
+            color = color,
+            text = text,
+            weight = weight,
+            id = if (id != 0L) id else idStr.toLongOrNull() ?: 0L,
+            midHash = midHash,
+            pool = pool,
+        )
+    }
+}
+
 internal data class DanmakuConfig(
     val opacity: Float,
     val fontScale: Float,
@@ -108,6 +318,8 @@ internal data class DanmakuConfig(
     val hideBottom: Boolean,
     val hideScroll: Boolean,
     val big: Boolean,
+    /** Plate behind the viewer's own danmaku (a colour block, not an outline). */
+    val mineColor: Color,
 )
 
 /**
@@ -128,7 +340,9 @@ internal class DanmakuEngine {
     private var items: List<DanmakuItem> = emptyList()
     private var cursor = 0
     private val active = ArrayList<Active>(128)
+    private val pendingInject = ArrayList<DanmakuItem>(2)
     private var lastPos = -1L
+    private var catchUpUntil = -1L
     private var generation = -1
     private var scrollLanes = arrayOfNulls<Active>(0)
     private var topLanes = arrayOfNulls<Active>(0)
@@ -137,11 +351,24 @@ internal class DanmakuEngine {
     private var lastHeight = 0f
     private var lastLineKey = 0f
 
+    /**
+     * A new list (a segment arrived, filters changed): keep what is on screen and
+     * re-walk the last ~1.2s so items that landed just behind the clock still show.
+     */
     fun setItems(list: List<DanmakuItem>) {
-        if (list !== items) {
-            items = list
-            reset(lastPos.coerceAtLeast(0))
+        if (list === items) return
+        items = list
+        if (lastPos < 0) {
+            cursor = 0
+            return
         }
+        catchUpUntil = lastPos
+        cursor = lowerBound(lastPos - 1200)
+    }
+
+    /** Show a just-sent danmaku now, wherever the clock is. */
+    fun inject(item: DanmakuItem) {
+        pendingInject += item
     }
 
     private fun reset(pos: Long) {
@@ -150,6 +377,7 @@ internal class DanmakuEngine {
         topLanes.fill(null)
         bottomLanes.fill(null)
         cursor = lowerBound(pos - 150)
+        catchUpUntil = -1L
         lastPos = pos
     }
 
@@ -161,6 +389,14 @@ internal class DanmakuEngine {
             if (items[mid].timeMs < ms) lo = mid + 1 else hi = mid
         }
         return lo
+    }
+
+    private fun isOnScreen(item: DanmakuItem): Boolean {
+        for (a in active) {
+            if (a.item === item) return true
+            if (item.id != 0L && a.item.id == item.id) return true
+        }
+        return false
     }
 
     fun drawFrame(
@@ -203,17 +439,16 @@ internal class DanmakuEngine {
         val fixedDur = 4000L
         val gap = with(density) { 24.dp.toPx() }
 
-        // Spawn.
-        while (cursor < items.size && items[cursor].timeMs <= pos) {
-            val it = items[cursor++]
-            if (pos - it.timeMs > 1200) continue
+        fun spawn(it: DanmakuItem, force: Boolean) {
             val kind = when (it.mode) {
-                4 -> 2
-                5 -> 1
+                DanmakuMode.BOTTOM -> 2
+                DanmakuMode.TOP -> 1
                 else -> 0
             }
-            if ((kind == 0 && cfg.hideScroll) || (kind == 1 && cfg.hideTop) || (kind == 2 && cfg.hideBottom)) continue
-            if (active.size > 220) continue
+            if (!force) {
+                if ((kind == 0 && cfg.hideScroll) || (kind == 1 && cfg.hideTop) || (kind == 2 && cfg.hideBottom)) return
+                if (active.size > 220) return
+            }
             val scale = when {
                 it.size <= 18 -> 0.82f
                 it.size >= 36 -> 1.3f
@@ -245,6 +480,7 @@ internal class DanmakuEngine {
                             break
                         }
                     }
+                    if (lane < 0 && force && scrollLanes.isNotEmpty()) lane = 0
                     if (lane >= 0) {
                         val a = Active(it, layout, tw, pos, lane, 0)
                         scrollLanes[lane] = a
@@ -261,6 +497,7 @@ internal class DanmakuEngine {
                             break
                         }
                     }
+                    if (lane < 0 && force && lanes.isNotEmpty()) lane = 0
                     if (lane >= 0) {
                         val a = Active(it, layout, tw, pos, lane, kind)
                         lanes[lane] = a
@@ -270,8 +507,22 @@ internal class DanmakuEngine {
             }
         }
 
+        // Just-sent lines first, then the timeline.
+        if (pendingInject.isNotEmpty()) {
+            for (it in pendingInject) spawn(it, force = true)
+            pendingInject.clear()
+        }
+        while (cursor < items.size && items[cursor].timeMs <= pos) {
+            val it = items[cursor++]
+            if (pos - it.timeMs > 1200) continue
+            if (it.timeMs <= catchUpUntil && isOnScreen(it)) continue
+            spawn(it, force = false)
+        }
+
         // Expire + draw.
         val outline = Stroke(width = with(density) { 1.6.dp.toPx() }, join = StrokeJoin.Round)
+        val platePadX = with(density) { 6.dp.toPx() }
+        val platePadY = with(density) { 1.dp.toPx() }
         val iter = active.iterator()
         while (iter.hasNext()) {
             val a = iter.next()
@@ -300,6 +551,16 @@ internal class DanmakuEngine {
             if (x > w || x + a.width < 0f) continue
             val color = Color(a.item.color or 0xFF000000.toInt())
             val topLeft = Offset(x, y)
+            if (a.item.mine) {
+                val ph = a.layout.size.height + platePadY * 2
+                drawRoundRect(
+                    color = cfg.mineColor,
+                    topLeft = Offset(x - platePadX, y - platePadY),
+                    size = Size(a.width + platePadX * 2, ph),
+                    cornerRadius = CornerRadius(ph / 2f),
+                    alpha = cfg.opacity * 0.55f,
+                )
+            }
             drawText(
                 textLayoutResult = a.layout,
                 color = Color.Black,
@@ -321,6 +582,8 @@ internal class DanmakuEngine {
 /**
  * Canvas overlay synced to the player clock. Only the draw phase runs per
  * frame (no recomposition); frames are requested only while playing.
+ * Segments are fetched around the playback position (see [DanmakuFeed]) and
+ * run through the block rules / level / merge filters off the main thread.
  */
 @Composable
 internal fun DanmakuLayer(
@@ -337,9 +600,23 @@ internal fun DanmakuLayer(
     val hideTop by AppSettings.danmakuHideTop.state.collectAsState()
     val hideBottom by AppSettings.danmakuHideBottom.state.collectAsState()
     val hideScroll by AppSettings.danmakuHideScroll.state.collectAsState()
-    val cfg = DanmakuConfig(opacity, fontScale, area, speed, hideTop, hideBottom, hideScroll, big)
+    val mineColor = MaterialTheme.colorScheme.primary
+    val cfg = DanmakuConfig(opacity, fontScale, area, speed, hideTop, hideBottom, hideScroll, big, mineColor)
 
-    val engine = remember { DanmakuEngine() }
+    val cid = ctrl.target?.cid ?: 0L
+    val feed = remember(cid) { if (cid > 0) DanmakuFeeds.get(cid) else null }
+    DanmakuSegmentLoader(ctrl, feed)
+
+    val spec = rememberDanmakuFilterSpec()
+    val raw = feed?.items ?: emptyList()
+    val shown by produceState(initialValue = emptyList<DanmakuItem>(), raw, spec) {
+        value = if (spec.isNoop) raw else withContext(Dispatchers.Default) { DanmakuFilter.apply(raw, spec) }
+    }
+
+    val engine = remember(cid) { DanmakuEngine() }
+    LaunchedEffect(feed, engine) {
+        feed?.sent?.collect { engine.inject(it) }
+    }
     val measurer = rememberTextMeasurer(cacheSize = 64)
     val baseStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium)
     val frame = remember { mutableLongStateOf(0L) }
@@ -349,7 +626,7 @@ internal fun DanmakuLayer(
             while (isActive) withFrameNanos { frame.longValue = it }
         }
     }
-    val items = ctrl.danmaku
+    val items = shown
     Canvas(modifier.fillMaxSize()) {
         frame.longValue
         engine.setItems(items)

@@ -119,6 +119,8 @@ internal fun PlayerOverlay(
     var locked by remember { mutableStateOf(false) }
     var poke by remember { mutableIntStateOf(0) }
     var sheet by remember { mutableStateOf<SheetPage?>(null) }
+    var composing by remember { mutableStateOf(false) }
+    val canSend = rememberCanSendDanmaku(ctrl.target)
     val feedback = remember { GestureFeedback() }
     val volume = remember { VolumeControl(context) }
     val danmakuOn by AppSettings.danmakuEnabled.state.collectAsState()
@@ -126,8 +128,8 @@ internal fun PlayerOverlay(
 
     val chromeVisible = visible && !locked
     LaunchedEffect(chromeVisible) { onControlsVisibleChange(chromeVisible) }
-    LaunchedEffect(visible, locked, ctrl.isPlaying, poke, sheet, feedback.seekTargetMs) {
-        if (visible && ctrl.isPlaying && sheet == null && feedback.seekTargetMs == null) {
+    LaunchedEffect(visible, locked, ctrl.isPlaying, poke, sheet, composing, feedback.seekTargetMs) {
+        if (visible && ctrl.isPlaying && sheet == null && !composing && feedback.seekTargetMs == null) {
             delay(if (locked) 1800 else 3800)
             visible = false
         }
@@ -281,6 +283,11 @@ internal fun PlayerOverlay(
                         poke++
                     },
                     onPip = onPip,
+                    onSend = if (canSend && !fullscreen) {
+                        { composing = true }
+                    } else {
+                        null
+                    },
                     onMore = { sheet = SheetPage.Main },
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -294,6 +301,11 @@ internal fun PlayerOverlay(
                     onPoke = { poke++ },
                     onQuality = { sheet = SheetPage.Quality },
                     onSpeed = { sheet = SheetPage.Speed },
+                    onSend = if (canSend) {
+                        { composing = true }
+                    } else {
+                        null
+                    },
                     onFullscreen = {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                         onFullscreenChange(!fullscreen)
@@ -383,6 +395,11 @@ internal fun PlayerOverlay(
             PlayerSheet(ctrl = ctrl, start = start, onDismiss = { sheet = null })
         }
     }
+    if (composing) {
+        MaterialTheme(colorScheme = sheetScheme) {
+            DanmakuComposerSheet(ctrl = ctrl, onDismiss = { composing = false })
+        }
+    }
 }
 
 @Composable
@@ -394,6 +411,7 @@ private fun TopBar(
     onBack: () -> Unit,
     onDanmaku: () -> Unit,
     onPip: () -> Unit,
+    onSend: (() -> Unit)?,
     onMore: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -416,6 +434,15 @@ private fun TopBar(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        AnimatedVisibility(
+            visible = onSend != null,
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + scaleIn(YoinMotion.fastSpatialSpec(), initialScale = 0.6f),
+            exit = fadeOut(YoinMotion.fastEffectsSpec()) + scaleOut(YoinMotion.fastSpatialSpec(), targetScale = 0.6f),
+        ) {
+            IconButton(onClick = { onSend?.invoke() }, shapes = IconButtonDefaults.shapes()) {
+                Icon(YoinSymbols.Edit, contentDescription = "发弹幕")
+            }
+        }
         IconButton(onClick = onDanmaku, shapes = IconButtonDefaults.shapes()) {
             val motion = MaterialTheme.motionScheme
             AnimatedContent(
@@ -452,6 +479,7 @@ private fun BottomBar(
     onPoke: () -> Unit,
     onQuality: () -> Unit,
     onSpeed: () -> Unit,
+    onSend: (() -> Unit)?,
     onFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -505,6 +533,10 @@ private fun BottomBar(
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 playButton()
+                if (onSend != null) {
+                    Spacer(Modifier.width(4.dp))
+                    DanmakuSendPill(onClick = onSend)
+                }
                 Spacer(Modifier.weight(1f))
                 PillButton(text = if (ctrl.speed == 1f) "倍速" else speedLabel(ctrl.speed), onClick = onSpeed)
                 qualityButton()
