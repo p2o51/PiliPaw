@@ -1,5 +1,8 @@
 package com.gpo.pilipala.feature.message
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,12 +13,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,10 +38,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -68,11 +75,17 @@ import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.PiliLargeTopBar
 import com.gpo.pilipala.ui.components.RefreshBox
+import com.gpo.pilipala.ui.components.WidthClass
 import com.gpo.pilipala.ui.components.readingWidth
+import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
+import com.gpo.pilipala.ui.theme.YoinMotion
+import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.yoin.symbols.PiliSymbols
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Immutable
 internal data class Unread(val reply: Int = 0, val at: Int = 0, val like: Int = 0, val system: Int = 0)
@@ -126,6 +139,10 @@ internal class MessagesViewModel : ViewModel() {
         sessions.update { list -> list.map { if (it.talkerId == talkerId) it.copy(unread = 0) else it } }
     }
 
+    fun dropSession(talkerId: Long) {
+        sessions.update { list -> list.filterNot { it.talkerId == talkerId } }
+    }
+
     private fun loadUnread() {
         viewModelScope.launch {
             val feed = async {
@@ -154,7 +171,7 @@ internal class MessagesViewModel : ViewModel() {
         }
     }
 
-    private suspend fun loadSessions(cursor: String?): Page<Session> {
+    private suspend fun loadSessions(cursor: String?): Page<Session> = withContext(Dispatchers.Default) {
         val params = mutableMapOf<String, Any?>(
             "session_type" to 1,
             "group_fold" to 1,
@@ -183,7 +200,7 @@ internal class MessagesViewModel : ViewModel() {
             )
         }
         val hasMore = data.int("has_more") == 1 && list.isNotEmpty()
-        return Page(list, hasMore, list.lastOrNull()?.sessionTs?.toString())
+        Page(list, hasMore, list.lastOrNull()?.sessionTs?.toString())
     }
 }
 
@@ -202,12 +219,71 @@ private val Notices = listOf(
     NoticeEntry("system", "系统通知", PiliSymbols.Bell, { MaterialTheme.colorScheme.surfaceContainerHighest }, { MaterialTheme.colorScheme.onSurface }),
 )
 
+/**
+ * Messages home. Compact/Medium: one list, a session pushes its chat. Expanded: list-detail,
+ * sessions on the left and the open chat on the right, swapping in place.
+ */
 @Composable
 fun MessagesScreen() {
     val nav = LocalNavigator.current
     val user by Account.user.collectAsState()
     val loggedIn = user != null || BiliClient.isLoggedIn
     val vm = viewModel { MessagesViewModel() }
+    val twoPane = loggedIn && widthClass() == WidthClass.Expanded
+    var openTalker by rememberSaveable { mutableStateOf<Long?>(null) }
+
+    if (!twoPane) {
+        MessagesList(vm, loggedIn, selected = null) { s ->
+            vm.markSessionRead(s.talkerId)
+            nav.push(Route.WhisperDetail(s.talkerId, s.name, s.face))
+        }
+        return
+    }
+
+    Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        Box(Modifier.width(400.dp).fillMaxHeight()) {
+            MessagesList(vm, loggedIn, selected = openTalker) { s ->
+                vm.markSessionRead(s.talkerId)
+                openTalker = s.talkerId
+            }
+        }
+        val pane = MaterialTheme.colorScheme.surfaceContainerLow
+        Box(Modifier.weight(1f).fillMaxHeight().background(pane)) {
+            AnimatedContent(
+                targetState = openTalker,
+                transitionSpec = {
+                    (YoinMotion.fadeIn(YoinMotionRole.Standard) + YoinMotion.slideInVertically(YoinMotionRole.Standard) { it / 16 }) togetherWith
+                        YoinMotion.fadeOut(YoinMotionRole.Standard)
+                },
+                label = "whisperPane",
+            ) { talker ->
+                if (talker == null) {
+                    EmptyState("私信", Modifier.statusBarsPadding(), icon = PiliSymbols.Mail)
+                } else {
+                    val s = vm.sessions.items.firstOrNull { it.talkerId == talker }
+                    WhisperConversation(
+                        route = Route.WhisperDetail(talker, s?.name.orEmpty(), s?.face.orEmpty()),
+                        showBack = false,
+                        onRemoved = {
+                            vm.dropSession(talker)
+                            openTalker = null
+                        },
+                        containerColor = pane,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessagesList(
+    vm: MessagesViewModel,
+    loggedIn: Boolean,
+    selected: Long?,
+    onOpen: (Session) -> Unit,
+) {
+    val nav = LocalNavigator.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
     val pager = vm.sessions
@@ -281,10 +357,7 @@ fun MessagesScreen() {
                     }
                 }
                 items(pager.items, key = { it.talkerId }) { s ->
-                    SessionRow(s, Modifier.animateItem()) {
-                        vm.markSessionRead(s.talkerId)
-                        nav.push(Route.WhisperDetail(s.talkerId, s.name, s.face))
-                    }
+                    SessionRow(s, selected = s.talkerId == selected, modifier = Modifier.animateItem()) { onOpen(s) }
                 }
                 if (pager.isLoadingMore) item(key = "more") { LoadingFooter() }
             }
@@ -320,12 +393,19 @@ private fun NoticeTile(entry: NoticeEntry, count: Int, modifier: Modifier, onCli
 }
 
 @Composable
-private fun SessionRow(s: Session, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun SessionRow(s: Session, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    // The open chat's row (two-pane only) detaches into a secondary-container block.
+    val rowColor by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0f),
+        YoinMotion.defaultEffectsSpec(),
+        label = "sessionRow",
+    )
     Row(
         modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp)
             .clip(YoinContainerShapes.ListRow)
+            .drawBehind { drawRect(rowColor) }
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -348,7 +428,7 @@ private fun SessionRow(s: Session, modifier: Modifier = Modifier, onClick: () ->
                 Text(
                     Fmt.relativeTime(s.time),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {

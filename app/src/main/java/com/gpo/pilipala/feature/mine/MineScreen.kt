@@ -151,12 +151,14 @@ fun MineScreen() {
     val bottom = LocalBottomBarInset.current +
         WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp
 
+    // The status-bar inset sits outside the scroll (which clips), so content never
+    // scrolls under the clock and battery icons.
     Column(
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
-            .verticalScroll(rememberScrollState())
             .statusBarsPadding()
+            .verticalScroll(rememberScrollState())
             .padding(bottom = bottom),
     ) {
         MineTopRow()

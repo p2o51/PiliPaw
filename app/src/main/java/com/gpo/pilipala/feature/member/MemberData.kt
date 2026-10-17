@@ -17,8 +17,9 @@ import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.VideoItem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlin.random.Random
 
@@ -105,7 +106,10 @@ internal object MemberRepo {
 
     // ── Profile ───────────────────────────────────────────────────────────
 
-    suspend fun profile(mid: Long): MemberProfile = coroutineScope {
+    // Every loader below maps JSON on Dispatchers.Default; the network itself suspends in
+    // BiliClient. Only the final state assignment in the ViewModel touches main.
+
+    suspend fun profile(mid: Long): MemberProfile = withContext(Dispatchers.Default) {
         val cardD = async { BiliClient.getData("/x/web-interface/card", mapOf("mid" to mid, "photo" to true)).asObj }
         val accD = async {
             runCatching {
@@ -174,7 +178,10 @@ internal object MemberRepo {
      * The web endpoint (wbi + dm params) is risk-controlled (-352 / 412) on many
      * networks; on that we switch to the app-signed space/archive/cursor feed.
      */
-    suspend fun archive(mid: Long, cursor: String?, order: ArchiveOrder, ps: Int = 30): ArchivePage {
+    suspend fun archive(mid: Long, cursor: String?, order: ArchiveOrder, ps: Int = 30): ArchivePage =
+        withContext(Dispatchers.Default) { loadArchive(mid, cursor, order, ps) }
+
+    private suspend fun loadArchive(mid: Long, cursor: String?, order: ArchiveOrder, ps: Int): ArchivePage {
         if (cursor?.startsWith("app:") == true) return appArchive(mid, cursor.removePrefix("app:"), order)
         val pn = cursor?.toIntOrNull() ?: 1
         val params = mapOf(
@@ -253,7 +260,7 @@ internal object MemberRepo {
 
     // ── Seasons & series ──────────────────────────────────────────────────
 
-    suspend fun collections(mid: Long, page: Int, size: Int = 10): Page<MemberCollection> {
+    suspend fun collections(mid: Long, page: Int, size: Int = 10): Page<MemberCollection> = withContext(Dispatchers.Default) {
         val root = BiliClient.getData(
             "/x/polymer/web-space/seasons_series_list",
             mapOf("mid" to mid, "page_num" to page, "page_size" to size),
@@ -262,7 +269,7 @@ internal object MemberRepo {
         val series = root.arr("series_list").objects().map { it.collection(1) }
         val total = root.obj("page").int("total")
         val items = seasons + series
-        return Page(items, items.isNotEmpty() && page * size < total, (page + 1).toString())
+        Page(items, items.isNotEmpty() && page * size < total, (page + 1).toString())
     }
 
     private fun JsonObject.collection(category: Int): MemberCollection {
@@ -290,17 +297,17 @@ internal object MemberRepo {
 
     class SeasonPage(val page: Page<VideoItem>, val total: Int)
 
-    suspend fun seasonArchives(mid: Long, seasonId: Long, pn: Int, reverse: Boolean, ps: Int = 30): SeasonPage {
+    suspend fun seasonArchives(mid: Long, seasonId: Long, pn: Int, reverse: Boolean, ps: Int = 30): SeasonPage = withContext(Dispatchers.Default) {
         val root = BiliClient.getData(
             "/x/polymer/web-space/seasons_archives_list",
             mapOf("mid" to mid, "season_id" to seasonId, "sort_reverse" to reverse, "page_num" to pn, "page_size" to ps),
         ).asObj
         val list = root.arr("archives").objects().map { it.seasonArchive() }
         val total = root.obj("page").int("total")
-        return SeasonPage(Page(list, list.isNotEmpty() && pn * ps < total, (pn + 1).toString()), total)
+        SeasonPage(Page(list, list.isNotEmpty() && pn * ps < total, (pn + 1).toString()), total)
     }
 
-    suspend fun seriesArchives(mid: Long, seriesId: Long, pn: Int, reverse: Boolean, ps: Int = 30): SeasonPage {
+    suspend fun seriesArchives(mid: Long, seriesId: Long, pn: Int, reverse: Boolean, ps: Int = 30): SeasonPage = withContext(Dispatchers.Default) {
         val root = BiliClient.getData(
             "/x/series/archives",
             mapOf(
@@ -314,27 +321,27 @@ internal object MemberRepo {
         ).asObj
         val list = root.arr("archives").objects().map { it.seasonArchive() }
         val total = root.obj("page").int("total")
-        return SeasonPage(Page(list, list.isNotEmpty() && pn * ps < total, (pn + 1).toString()), total)
+        SeasonPage(Page(list, list.isNotEmpty() && pn * ps < total, (pn + 1).toString()), total)
     }
 
     // ── Coin / like ───────────────────────────────────────────────────────
 
-    suspend fun coinVideos(mid: Long): List<VideoItem> {
+    suspend fun coinVideos(mid: Long): List<VideoItem> = withContext(Dispatchers.Default) {
         val data = BiliClient.getData(
             "/x/space/coin/video",
             mapOf("vmid" to mid, "gaia_source" to "main_web", "web_location" to "333.999"),
         )
         val list = data.asArr?.objects() ?: data.asObj.arr("list").objects()
-        return list.map { it.ownedVideo() }
+        list.map { it.ownedVideo() }
     }
 
-    suspend fun likeVideos(mid: Long): List<VideoItem> {
+    suspend fun likeVideos(mid: Long): List<VideoItem> = withContext(Dispatchers.Default) {
         val data = BiliClient.getData(
             "/x/space/like/video",
             mapOf("vmid" to mid, "gaia_source" to "main_web", "web_location" to "333.999"),
         )
         val list = data.asObj?.arr("list")?.objects() ?: data.asArr?.objects().orEmpty()
-        return list.map { it.ownedVideo() }
+        list.map { it.ownedVideo() }
     }
 
     private fun JsonObject.ownedVideo(): VideoItem {
@@ -358,7 +365,7 @@ internal object MemberRepo {
 
     // ── Articles ──────────────────────────────────────────────────────────
 
-    suspend fun articles(mid: Long, pn: Int, ps: Int = 30): Page<MemberArticle> {
+    suspend fun articles(mid: Long, pn: Int, ps: Int = 30): Page<MemberArticle> = withContext(Dispatchers.Default) {
         val root = BiliClient.getData(
             "/x/space/wbi/article",
             mapOf("mid" to mid, "pn" to pn, "ps" to ps, "sort" to "publish_time", "platform" to "web", "web_location" to 1550101),
@@ -379,7 +386,7 @@ internal object MemberRepo {
             )
         }
         val count = root.int("count")
-        return Page(list, list.isNotEmpty() && pn * ps < count, (pn + 1).toString())
+        Page(list, list.isNotEmpty() && pn * ps < count, (pn + 1).toString())
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

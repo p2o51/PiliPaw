@@ -3,8 +3,12 @@ package com.gpo.pilipala.feature.member
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.AnimationState
+import androidx.compose.animation.core.DecayAnimationSpec
+import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -88,6 +92,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -122,7 +127,9 @@ import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 // ── ViewModel ───────────────────────────────────────────────────────────────
@@ -230,10 +237,25 @@ private class CollapsingState {
 
     val fraction: Float get() = if (maxCollapse <= 0f) 0f else (-offset / maxCollapse).coerceIn(0f, 1f)
 
+    /** The running header fling, cancelled when a new drag starts. Plain field on purpose. */
+    var fling: Job? = null
+
     fun consume(delta: Float): Float {
         val old = offset
         offset = (offset + delta).coerceIn(-maxCollapse, 0f)
         return offset - old
+    }
+
+    /** Continues a header drag with the platform decay until the header stops or hits an end. */
+    suspend fun flingBy(velocity: Float, decay: DecayAnimationSpec<Float>) {
+        if (abs(velocity) < 1f) return
+        var last = 0f
+        AnimationState(initialValue = 0f, initialVelocity = velocity).animateDecay(decay) {
+            val delta = value - last
+            last = value
+            val used = consume(delta)
+            if (abs(delta - used) > 0.5f) cancelAnimation()
+        }
     }
 
     val connection = object : NestedScrollConnection {
@@ -298,6 +320,13 @@ fun MemberScreen(route: Route.Member) {
 
     val pagerState = rememberPagerState(initialPage = 1) { Tabs.size }
     val collapsing = remember { CollapsingState() }
+    val decay = rememberSplineBasedDecay<Float>()
+    // Wide mode: the left header column scrolls on its own; the overlay bar fills as it does.
+    val wideScroll = rememberScrollState()
+    val barFillDistance = with(LocalDensity.current) { 88.dp.toPx() }
+    val barFill: () -> Float = {
+        if (wide) (wideScroll.value / barFillDistance).coerceIn(0f, 1f) else collapsing.fraction
+    }
     var showMenu by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Int?>(null) }
 
@@ -405,7 +434,7 @@ fun MemberScreen(route: Route.Member) {
                     Modifier
                         .width(380.dp)
                         .fillMaxHeight()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(wideScroll)
                         .padding(bottom = navBottom + 16.dp),
                 ) { header() }
                 Column(
@@ -427,6 +456,11 @@ fun MemberScreen(route: Route.Member) {
                         Modifier.draggable(
                             state = rememberDraggableState { collapsing.consume(it) },
                             orientation = Orientation.Vertical,
+                            onDragStarted = { collapsing.fling?.cancel() },
+                            onDragStopped = { velocity ->
+                                collapsing.fling = coroutineContext[Job]
+                                collapsing.flingBy(velocity, decay)
+                            },
                         ),
                     ) { header() }
                 },
@@ -436,12 +470,13 @@ fun MemberScreen(route: Route.Member) {
             )
         }
 
-        // Overlay bar: transparent over the backdrop, fills with surface as the header collapses.
+        // Overlay bar: transparent over the backdrop, fills with surface as the header collapses
+        // (or, in wide mode, as the header column scrolls under it).
         val surface = MaterialTheme.colorScheme.surface
         Row(
             Modifier
                 .fillMaxWidth()
-                .drawBehind { if (!wide) drawRect(surface.copy(alpha = collapsing.fraction)) }
+                .drawBehind { drawRect(surface.copy(alpha = barFill())) }
                 .padding(top = statusTop)
                 .height(barHeight)
                 .padding(horizontal = 4.dp),
@@ -452,7 +487,7 @@ fun MemberScreen(route: Route.Member) {
             Row(
                 Modifier
                     .weight(1f)
-                    .graphicsLayer { alpha = if (wide) 0f else collapsing.fraction },
+                    .graphicsLayer { alpha = barFill() },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Avatar(profile?.face ?: vm.initFace, 32.dp)
@@ -576,18 +611,23 @@ private fun MemberHeader(
                 .padding(horizontal = 16.dp),
         ) {
             Row(verticalAlignment = Alignment.Bottom) {
+                val live = profile?.takeIf { it.liveOn && it.liveRoomId > 0 }
+                val openLive: () -> Unit = {
+                    live?.let { nav.push(Route.LiveRoom(it.liveRoomId, it.liveCover, it.liveTitle)) }
+                }
                 Box {
+                    // While live, the whole 96dp avatar opens the room too: the badge alone is
+                    // an ~18dp-tall target.
                     NetImage(
                         profile?.face ?: vm.initFace,
-                        Modifier.size(avatarSize),
+                        Modifier
+                            .size(avatarSize)
+                            .then(if (live != null) Modifier.clip(cookie).clickable(onClick = openLive) else Modifier),
                         shape = cookie,
                         thumbWidth = avatarSize * 2,
                     )
-                    if (profile?.liveOn == true && profile.liveRoomId > 0) {
-                        LiveBadge(
-                            Modifier.align(Alignment.BottomCenter),
-                            onClick = { nav.push(Route.LiveRoom(profile.liveRoomId, profile.liveCover, profile.liveTitle)) },
-                        )
+                    if (live != null) {
+                        LiveBadge(Modifier.align(Alignment.BottomCenter), onClick = openLive)
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -627,7 +667,7 @@ private fun MemberHeader(
             Text(
                 "UID ${vm.mid}",
                 style = MaterialTheme.typography.labelMedium,
-                color = scheme.outline,
+                color = scheme.onSurfaceVariant,
                 modifier = Modifier
                     .padding(top = 2.dp)
                     .clip(CircleShape)

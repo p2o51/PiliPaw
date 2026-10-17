@@ -1,7 +1,10 @@
 package com.gpo.pilipala.feature.message
 
+import android.content.ClipData
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,7 +29,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.appendInlineContent
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -43,8 +45,10 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,7 +61,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
@@ -68,12 +75,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
-import com.gpo.pilipala.core.net.BiliJson
 import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asArr
 import com.gpo.pilipala.core.net.asString
@@ -84,6 +88,7 @@ import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.core.util.IdUtils
+import com.gpo.pilipala.feature.dynamics.ImageViewerDialog
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
@@ -98,31 +103,58 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
 
 @Composable
 fun WhisperDetailScreen(route: Route.WhisperDetail) {
+    val nav = LocalNavigator.current
+    WhisperConversation(route, showBack = true, onRemoved = { nav.pop() })
+}
+
+/**
+ * The chat itself: a pushed page on Compact/Medium, the detail pane of [MessagesScreen]
+ * on Expanded. Polling only runs while it is on screen.
+ */
+@Composable
+internal fun WhisperConversation(
+    route: Route.WhisperDetail,
+    showBack: Boolean,
+    onRemoved: () -> Unit,
+    containerColor: Color = MaterialTheme.colorScheme.surface,
+) {
     val nav = LocalNavigator.current
     val user by Account.user.collectAsState()
     val loggedIn = user != null || BiliClient.isLoggedIn
     val vm = viewModel(key = "whisper-${route.talkerId}") { WhisperDetailViewModel(route.talkerId) }
     val scope = rememberCoroutineScope()
     val toast = rememberToast()
+    val clipboard = LocalClipboard.current
+    val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf(false) }
     var viewer by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(loggedIn) { if (loggedIn) vm.ensureLoaded(needPeer = route.name.isBlank() || route.face.isBlank()) }
+    DisposableEffect(vm) {
+        vm.setActive(true)
+        onDispose { vm.setActive(false) }
+    }
+    val copy: (String) -> Unit = remember(clipboard, haptics, toast, scope) {
+        { text ->
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("message", text))) }
+            toast("已复制")
+        }
+    }
     val peerName = route.name.ifBlank { vm.peer?.name.orEmpty() }
     val peerFace = route.face.ifBlank { vm.peer?.face.orEmpty() }
     @Suppress("NAME_SHADOWING")
     val route = route.copy(name = peerName, face = peerFace)
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = containerColor,
         contentWindowInsets = WindowInsets(0),
         topBar = {
             TopAppBar(
-                navigationIcon = { BackButton() },
+                navigationIcon = { if (showBack) BackButton() },
                 title = {
                     Row(
                         Modifier
@@ -167,7 +199,7 @@ fun WhisperDetailScreen(route: Route.WhisperDetail) {
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = containerColor),
                 windowInsets = TopAppBarDefaults.windowInsets,
             )
         },
@@ -184,7 +216,7 @@ fun WhisperDetailScreen(route: Route.WhisperDetail) {
                     !loggedIn -> LoginPrompt()
                     vm.loading && vm.messages.isEmpty() -> LoadingState()
                     vm.error != null && vm.messages.isEmpty() -> ErrorState(vm.error!!, onRetry = vm::load)
-                    else -> MessageList(vm, route) { viewer = it }
+                    else -> MessageList(vm, route, onImage = { viewer = it }, onCopy = copy)
                 }
             }
             if (loggedIn) {
@@ -205,7 +237,7 @@ fun WhisperDetailScreen(route: Route.WhisperDetail) {
                         val err = vm.removeSession()
                         if (err == null) {
                             toast("已删除")
-                            nav.pop()
+                            onRemoved()
                         } else {
                             toast(err)
                         }
@@ -216,36 +248,27 @@ fun WhisperDetailScreen(route: Route.WhisperDetail) {
         )
     }
 
+    // Edge-to-edge viewer with pinch zoom, save and share (shared with dynamics).
     viewer?.let { url ->
-        Dialog(
-            onDismissRequest = { viewer = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-        ) {
-            Box(
-                Modifier.fillMaxSize().background(Color.Black).clickable { viewer = null },
-                contentAlignment = Alignment.Center,
-            ) {
-                NetImage(
-                    url,
-                    Modifier.fillMaxSize(),
-                    shape = RectangleShape,
-                    thumbWidth = null,
-                    contentScale = ContentScale.Fit,
-                )
-            }
-        }
+        ImageViewerDialog(urls = listOf(url), initial = 0, onDismiss = { viewer = null })
     }
 }
 
 @Composable
-private fun MessageList(vm: WhisperDetailViewModel, route: Route.WhisperDetail, onImage: (String) -> Unit) {
+private fun MessageList(
+    vm: WhisperDetailViewModel,
+    route: Route.WhisperDetail,
+    onImage: (String) -> Unit,
+    onCopy: (String) -> Unit,
+) {
     val listState = rememberLazyListState()
     LoadMoreEffect(listState, threshold = 4) { vm.loadOlder() }
     val newest = vm.messages.firstOrNull()?.key
     LaunchedEffect(newest) {
         if (newest != null && listState.firstVisibleItemIndex <= 2) listState.animateScrollToItem(0)
     }
-    val visible = vm.messages.filter { it.type != 5 }
+    // Recomputed only when the message list changes, not on every recomposition.
+    val visible by remember(vm) { derivedStateOf { vm.messages.filter { it.type != 5 } } }
     if (visible.isEmpty() && !vm.loading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("暂无消息", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -260,7 +283,7 @@ private fun MessageList(vm: WhisperDetailViewModel, route: Route.WhisperDetail, 
     ) {
         visible.forEachIndexed { i, m ->
             item(key = m.key) {
-                ChatItem(m, vm.emotes, route, onImage, Modifier.animateItem())
+                ChatItem(m, vm.emotes, route, onImage, onCopy, Modifier.animateItem())
             }
             val older = visible.getOrNull(i + 1)
             if (older == null || m.timestamp - older.timestamp > 300) {
@@ -270,7 +293,7 @@ private fun MessageList(vm: WhisperDetailViewModel, route: Route.WhisperDetail, 
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -304,10 +327,11 @@ private fun ChatItem(
     emotes: Map<String, String>,
     route: Route.WhisperDetail,
     onImage: (String) -> Unit,
+    onCopy: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (m.type in SystemTypes) {
-        SystemItem(m, modifier)
+        SystemItem(m, onCopy, modifier)
         return
     }
     val nav = LocalNavigator.current
@@ -320,6 +344,8 @@ private fun ChatItem(
         ContinuousRoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp)
     }
     val bare = m.type == 2 || m.type == 6 // images sit without a bubble
+    // Text bubbles copy on long press (one gesture detector instead of a SelectionContainer per bubble).
+    val copyText = if (m.type == 1) m.content.str("content") else ""
     Row(
         modifier.fillMaxWidth(),
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
@@ -333,7 +359,12 @@ private fun ChatItem(
             Box(
                 Modifier
                     .widthIn(max = 300.dp)
-                    .then(if (bare) Modifier else Modifier.clip(shape).background(container).padding(horizontal = 14.dp, vertical = 10.dp)),
+                    .then(if (bare) Modifier else Modifier.clip(shape).background(container))
+                    .then(
+                        if (copyText.isEmpty()) Modifier
+                        else Modifier.pointerInput(copyText) { detectTapGestures(onLongPress = { onCopy(copyText) }) },
+                    )
+                    .then(if (bare) Modifier else Modifier.padding(horizontal = 14.dp, vertical = 10.dp)),
             ) {
                 MessageBody(m, emotes, onContainer, onImage)
             }
@@ -342,7 +373,7 @@ private fun ChatItem(
                     "已撤回",
                     modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -442,9 +473,7 @@ private fun EmojiText(text: String, emotes: Map<String, String>, color: Color) {
             }
         }
     }
-    SelectionContainer {
-        Text(annotated, inlineContent = inline, style = MaterialTheme.typography.bodyLarge, color = color)
-    }
+    Text(annotated, inlineContent = inline, style = MaterialTheme.typography.bodyLarge, color = color)
 }
 
 @Composable
@@ -469,21 +498,18 @@ private fun ShareCard(cover: String, title: String, sub: String, color: Color, o
 }
 
 @Composable
-private fun SystemItem(m: WhisperMsg, modifier: Modifier = Modifier) {
+private fun SystemItem(m: WhisperMsg, onCopy: (String) -> Unit, modifier: Modifier = Modifier) {
     val nav = LocalNavigator.current
     val c = m.content
     when (m.type) {
         18 -> {
-            // content.content is a JSON array of {text}
-            val lines = runCatching {
-                BiliJson.parseToJsonElement(c.str("content")).asArr?.mapNotNull { (it as? JsonObject)?.str("text") }
-            }.getOrNull().orEmpty()
+            // content.content is a JSON array of {text}; parsed once in the ViewModel.
             Text(
-                lines.joinToString("\n").ifEmpty { c.str("content") },
+                m.systemText.ifEmpty { c.str("content") },
                 modifier = modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         13 -> {
@@ -538,7 +564,13 @@ private fun SystemItem(m: WhisperMsg, modifier: Modifier = Modifier) {
                     .widthIn(max = 340.dp)
                     .clip(ContinuousRoundedCornerShape(20.dp))
                     .background(MaterialTheme.colorScheme.secondaryContainer)
-                    .then(if (jump.isNotEmpty()) Modifier.clickable { nav.openUrl(jump) } else Modifier)
+                    .then(
+                        if (jump.isNotEmpty()) {
+                            Modifier.combinedClickable(onClick = { nav.openUrl(jump) }, onLongClick = { onCopy(text) })
+                        } else {
+                            Modifier.pointerInput(text) { detectTapGestures(onLongPress = { onCopy(text) }) }
+                        },
+                    )
                     .padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -553,9 +585,7 @@ private fun SystemItem(m: WhisperMsg, modifier: Modifier = Modifier) {
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
                 )
-                SelectionContainer {
-                    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                }
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
             }
         }
     }

@@ -9,17 +9,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.BiliHosts
+import com.gpo.pilipala.core.net.BiliJson
 import com.gpo.pilipala.core.net.arr
+import com.gpo.pilipala.core.net.asArr
 import com.gpo.pilipala.core.net.asObj
 import com.gpo.pilipala.core.net.int
 import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.ui.components.friendlyMessage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -36,7 +40,16 @@ internal data class WhisperMsg(
     /** Unix seconds. */
     val timestamp: Long,
     val status: Int,
+    /** Type 18 system lines, parsed once here instead of on every composition. */
+    val systemText: String = "",
 )
+
+/** Type 18 content.content is a JSON array of {text}. */
+private fun systemLines(content: JsonObject?): String = runCatching {
+    BiliJson.parseToJsonElement(content.str("content")).asArr
+        ?.mapNotNull { (it as? JsonObject)?.str("text") }
+        ?.joinToString("\n")
+}.getOrNull().orEmpty()
 
 internal class WhisperDetailViewModel(val talkerId: Long) : ViewModel() {
     /** Newest first (the list is reverse-laid-out). */
@@ -59,6 +72,8 @@ internal class WhisperDetailViewModel(val talkerId: Long) : ViewModel() {
     private var pollJob: Job? = null
     private val devId: String = genDevId()
     private var started = false
+    /** True while the conversation is on screen; polling only runs then. */
+    private var active = false
 
     /** Talker name/avatar when the route didn't carry them (e.g. opened from a profile). */
     var peer by mutableStateOf<MsgUser?>(null)
@@ -85,7 +100,7 @@ internal class WhisperDetailViewModel(val talkerId: Long) : ViewModel() {
                     minSeqno = page.min
                     maxSeqno = page.max
                     ack()
-                    startPolling()
+                    if (active) startPolling()
                 }
                 .onFailure { error = it.friendlyMessage() }
             loading = false
@@ -107,11 +122,25 @@ internal class WhisperDetailViewModel(val talkerId: Long) : ViewModel() {
         }
     }
 
-    private fun startPolling() {
+    /** Called by the UI as the conversation enters / leaves the screen. */
+    fun setActive(value: Boolean) {
+        active = value
+        if (!value) {
+            pollJob?.cancel()
+            pollJob = null
+        } else if (maxSeqno > 0) {
+            // Back on screen: catch up right away, then keep polling.
+            startPolling(immediate = true)
+        }
+    }
+
+    private fun startPolling(immediate: Boolean = false) {
         if (pollJob?.isActive == true) return
         pollJob = viewModelScope.launch {
+            var wait = !immediate
             while (isActive) {
-                delay(6_000)
+                if (wait) delay(6_000)
+                wait = true
                 if (maxSeqno <= 0) continue
                 runCatching { fetch(beginSeqno = maxSeqno) }.onSuccess { page ->
                     val known = messages.mapTo(HashSet()) { it.key }
@@ -126,7 +155,13 @@ internal class WhisperDetailViewModel(val talkerId: Long) : ViewModel() {
         }
     }
 
-    private class MsgPage(val list: List<WhisperMsg>, val hasMore: Boolean, val min: Long, val max: Long)
+    private class MsgPage(
+        val list: List<WhisperMsg>,
+        val hasMore: Boolean,
+        val min: Long,
+        val max: Long,
+        val emotes: Map<String, String>,
+    )
 
     private suspend fun fetch(endSeqno: Long? = null, beginSeqno: Long? = null): MsgPage {
         val params = mutableMapOf<String, Any?>(
@@ -139,23 +174,29 @@ internal class WhisperDetailViewModel(val talkerId: Long) : ViewModel() {
         )
         if (endSeqno != null) params["end_seqno"] = endSeqno
         if (beginSeqno != null) params["begin_seqno"] = beginSeqno
-        val data = BiliClient.getData("${BiliHosts.VC}/svr_sync/v1/svr_sync/fetch_session_msgs", params, wbi = true).asObj
-        val e = data.arr("e_infos").objects().associate { it.str("text") to it.str("url") }
-        if (e.isNotEmpty()) emotes = emotes + e
-        val list = data.arr("messages").objects()
-            .map { m ->
-                WhisperMsg(
-                    key = m.str("msg_key").ifEmpty { "s${m.long("msg_seqno")}" },
-                    seqno = m.long("msg_seqno"),
-                    senderUid = m.long("sender_uid"),
-                    type = m.int("msg_type"),
-                    content = parseMsgContent(m.str("content")),
-                    timestamp = m.long("timestamp"),
-                    status = m.int("msg_status"),
-                )
-            }
-            .sortedByDescending { it.seqno }
-        return MsgPage(list, data.int("has_more") == 1, data.long("min_seqno"), data.long("max_seqno"))
+        val page = withContext(Dispatchers.Default) {
+            val data = BiliClient.getData("${BiliHosts.VC}/svr_sync/v1/svr_sync/fetch_session_msgs", params, wbi = true).asObj
+            val e = data.arr("e_infos").objects().associate { it.str("text") to it.str("url") }
+            val list = data.arr("messages").objects()
+                .map { m ->
+                    val type = m.int("msg_type")
+                    val content = parseMsgContent(m.str("content"))
+                    WhisperMsg(
+                        key = m.str("msg_key").ifEmpty { "s${m.long("msg_seqno")}" },
+                        seqno = m.long("msg_seqno"),
+                        senderUid = m.long("sender_uid"),
+                        type = type,
+                        content = content,
+                        timestamp = m.long("timestamp"),
+                        status = m.int("msg_status"),
+                        systemText = if (type == 18) systemLines(content) else "",
+                    )
+                }
+                .sortedByDescending { it.seqno }
+            MsgPage(list, data.int("has_more") == 1, data.long("min_seqno"), data.long("max_seqno"), e)
+        }
+        if (page.emotes.isNotEmpty()) emotes = emotes + page.emotes
+        return page
     }
 
     private fun ack() {

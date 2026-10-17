@@ -250,7 +250,7 @@ internal fun ArticleRow(article: MemberArticle, modifier: Modifier = Modifier) {
                 Text(
                     Fmt.relativeTime(article.publishTime),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
