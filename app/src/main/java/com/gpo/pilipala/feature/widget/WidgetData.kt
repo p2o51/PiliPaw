@@ -17,7 +17,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** Everything one widget update draws, loaded before the composition starts. */
+/** Everything one widget update draws: loaded before the composition starts, again whenever WidgetStore.version moves. */
 internal class WatchData(
     val resume: ContinueEntry?,
     val resumeCover: Bitmap?,
@@ -55,7 +55,8 @@ internal object WidgetData {
             later = later,
             laterCount = maxOf(cache?.count ?: 0, cache?.items?.size ?: 0),
             laterThumbs = thumbs,
-            loggedIn = cache != null,
+            // From the account, not the list: a failed or offline fetch with no cache is still signed in.
+            loggedIn = WidgetStore.currentMid() > 0L,
         )
     }
 

@@ -34,12 +34,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +51,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
@@ -85,8 +88,8 @@ internal fun LivePlayerView(
     modifier: Modifier = Modifier,
     pip: Boolean = false,
     onPip: (() -> Unit)? = null,
-    /** Where the picture's frame sits in the window (null while it is turned by hand), for the PiP hint. */
-    onPictureBounds: ((Rect?) -> Unit)? = null,
+    /** Where the picture's frame sits in the window, asked for by the PiP hint at the moment of the tap. */
+    pictureBounds: PictureBounds? = null,
 ) {
     val info = vm.info
     // On its way into PiP (or there): only the clean picture, no chrome or danmaku.
@@ -128,6 +131,13 @@ internal fun LivePlayerView(
     val surfaceType = if (turned || turning) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
     // Window insets describe the unturned window; the turned frame has no bars to avoid.
     val chromeInsets = fullscreen && !turned
+    // The PiP hint reads the frame when 小窗 is tapped, not on layout: the spring back from a
+    // turn moves only the draw layer, so no layout pass reports the frame once it settles.
+    val turnedNow by rememberUpdatedState(turned)
+    val isTurned = remember { { turnedNow || turnAngle.value != 0f } }
+    if (pictureBounds != null) {
+        DisposableEffect(pictureBounds) { onDispose { pictureBounds.unbind(isTurned) } }
+    }
 
     Box(
         modifier
@@ -141,10 +151,8 @@ internal fun LivePlayerView(
             Modifier
                 .fillMaxSize()
                 .then(
-                    if (onPictureBounds != null) {
-                        Modifier.onGloballyPositioned { c ->
-                            if (!pip) onPictureBounds(if (turned || turnAngle.value != 0f) null else c.boundsInWindow())
-                        }
+                    if (pictureBounds != null && !pip) {
+                        Modifier.onGloballyPositioned { c -> pictureBounds.bind(c, isTurned) }
                     } else {
                         Modifier
                     },
@@ -276,6 +284,35 @@ internal fun LivePlayerView(
                 }
             }
         }
+    }
+}
+
+/**
+ * Where the live picture's frame sits in the window, read at the moment 小窗 is tapped for
+ * the PiP hint. Bound by whichever [LivePlayerView] (inline, side by side, fullscreen) is shown.
+ */
+internal class PictureBounds {
+    private var coords: LayoutCoordinates? = null
+    private var turned: () -> Boolean = NotTurned
+
+    /** The frame in window coordinates; null while it is turned by hand (or springing back) or not laid out. */
+    fun current(): Rect? = coords?.takeIf { it.isAttached && !turned() }?.boundsInWindow()
+
+    internal fun bind(coords: LayoutCoordinates, turned: () -> Boolean) {
+        this.coords = coords
+        this.turned = turned
+    }
+
+    /** Only the view that bound it lets go (the next one may already have taken over). */
+    internal fun unbind(turned: () -> Boolean) {
+        if (this.turned === turned) {
+            coords = null
+            this.turned = NotTurned
+        }
+    }
+
+    private companion object {
+        val NotTurned: () -> Boolean = { false }
     }
 }
 

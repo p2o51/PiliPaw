@@ -28,6 +28,7 @@ import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.feature.player.PipSignals
 import com.gpo.pilipala.feature.video.AppShortcuts
 import com.gpo.pilipala.feature.player.PlaybackService
+import com.gpo.pilipala.feature.widget.WatchWidget
 import com.gpo.pilipala.navigation.AppNavHost
 import com.gpo.pilipala.navigation.LinkRouter
 import com.gpo.pilipala.navigation.Navigator
@@ -35,6 +36,9 @@ import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.LocalSnackbarHost
 import com.gpo.pilipala.ui.theme.PiliTheme
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -55,6 +59,12 @@ class MainActivity : ComponentActivity() {
             runCatching { Account.refresh() }
         }
         AppShortcuts.publishFixed(this)
+        lifecycleScope.launch {
+            // Signed in, out or into another account: a placed widget swaps its 稍后再看 at once.
+            Account.user.map { it?.mid }.distinctUntilChanged().drop(1).collect {
+                WatchWidget.refresh(applicationContext)
+            }
+        }
         handleIntent(intent)
         setContent {
             PiliTheme {
@@ -113,12 +123,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        val data = intent?.dataString ?: return
+        // The launcher, the live notification and the widget's open-the-app tap just bring the
+        // app forward. Glance stamps a data-less intent with a glance-action: URI, which is no link.
+        if (intent == null || intent.action == Intent.ACTION_MAIN) return
+        if (intent.data?.scheme == GlanceActionScheme) return
+        val data = intent.dataString ?: return
         AppShortcuts.route(this, intent)?.let { route ->
             deepLinks.trySend(DeepLink(route, resume = false, shortcut = true))
             return
         }
         val resume = intent.getBooleanExtra(PlaybackService.EXTRA_RESUME, false)
         deepLinks.trySend(DeepLink(LinkRouter.route(data), resume))
+    }
+
+    private companion object {
+        const val GlanceActionScheme = "glance-action"
     }
 }

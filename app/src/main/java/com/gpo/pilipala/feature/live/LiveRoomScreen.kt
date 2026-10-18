@@ -126,8 +126,8 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
     val wc = widthClass()
     val activity = LocalActivity.current
     val pip = rememberIsInPip()
-    // Where the picture sits in the window (reported by LivePlayerView), for the PiP flight.
-    val pipBox = remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    // Where the picture sits in the window (bound by LivePlayerView, read at the tap), for the PiP flight.
+    val pictureBounds = remember { PictureBounds() }
     val rich = rememberRichHaptics()
     val pipScope = rememberCoroutineScope()
     val onPip: (() -> Unit)? = activity?.takeIf { pipSupported(it) }?.let { act ->
@@ -144,7 +144,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
                 val ok = com.gpo.pilipala.feature.player.enterPip(
                     act,
                     aspect,
-                    hint = pipBox.value?.let { pipHintRect(it, aspect) },
+                    hint = pictureBounds.current()?.let { pipHintRect(it, aspect) },
                     title = vm.info?.title?.ifBlank { null } ?: route.title.ifBlank { null },
                     subtitle = vm.info?.anchorName?.ifBlank { null },
                 )
@@ -161,7 +161,6 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
             if (activity?.isInPictureInPictureMode != true) PipSignals.entering = false
         }
     }
-    val onPictureBounds: (androidx.compose.ui.geometry.Rect?) -> Unit = { if (!pip) pipBox.value = it }
 
     FullscreenEffect(fullscreen, portrait = vm.isPortraitStream)
     DarkStatusBarEffect(enabled = !fullscreen && wc != WidthClass.Expanded)
@@ -193,7 +192,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
         val toggleFs: () -> Unit = { fullscreen = !fullscreen }
         when {
             pip -> LivePlayerView(vm, true, toggleFs, onBack, Modifier.fillMaxSize(), pip = true)
-            fullscreen -> LivePlayerView(vm, true, toggleFs, onBack, Modifier.fillMaxSize(), onPip = onPip, onPictureBounds = onPictureBounds)
+            fullscreen -> LivePlayerView(vm, true, toggleFs, onBack, Modifier.fillMaxSize(), onPip = onPip, pictureBounds = pictureBounds)
             wc == WidthClass.Expanded -> Row(
                 Modifier
                     .fillMaxSize()
@@ -209,7 +208,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
                             .aspectRatio(16f / 9f)
                             .clip(YoinContainerShapes.Card),
                         onPip = onPip,
-                        onPictureBounds = onPictureBounds,
+                        pictureBounds = pictureBounds,
                     )
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         AnchorBlock(vm, route, Modifier.padding(top = 8.dp))
@@ -229,7 +228,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
             }
             else -> Column(Modifier.fillMaxSize()) {
                 Box(Modifier.background(Color.Black).statusBarsPadding()) {
-                    LivePlayerView(vm, false, toggleFs, onBack, Modifier.fillMaxWidth().aspectRatio(16f / 9f), onPip = onPip, onPictureBounds = onPictureBounds)
+                    LivePlayerView(vm, false, toggleFs, onBack, Modifier.fillMaxWidth().aspectRatio(16f / 9f), onPip = onPip, pictureBounds = pictureBounds)
                 }
                 AnchorBlock(vm, route)
                 Box(
