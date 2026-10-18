@@ -58,6 +58,8 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
 
 internal class FavViewModel(val mid: Long) : ViewModel() {
     val isOwner = mid == BiliClient.mid
@@ -253,7 +255,12 @@ internal fun FolderEditorSheet(
         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
     )
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
         Column(
             Modifier
                 .fillMaxWidth()

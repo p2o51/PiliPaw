@@ -66,6 +66,9 @@ import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.pilipala.ui.components.sheetNavBottom
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
 
 /** Poster + title + score + styles + stats, with the 追番 toggle. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -403,7 +406,13 @@ internal fun EpisodeGridSheet(
     onSelect: (BangumiEpisode) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    val navBottom = sheetNavBottom()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
         Column(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleLarge)
@@ -411,13 +420,13 @@ internal fun EpisodeGridSheet(
                 Text("${groups.sumOf { it.episodes.size }}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(8.dp))
-            Box(Modifier.fillMaxWidth().height((LocalConfiguration.current.screenHeightDp * 0.7f).dp)) {
+            Box(Modifier.fillMaxWidth().height((LocalConfiguration.current.screenHeightDp * 0.7f).dp + navBottom)) {
                 EpisodeGrid(
                     groups,
                     currentId,
                     onSelect,
                     Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp + navBottom),
                 )
             }
         }

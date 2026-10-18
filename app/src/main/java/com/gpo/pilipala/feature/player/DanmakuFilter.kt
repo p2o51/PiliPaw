@@ -57,6 +57,8 @@ import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinShapeTokens
 import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
 
 // ── Settings (feature-owned keys) ────────────────────────────────────────────
 
@@ -207,7 +209,8 @@ internal fun DanmakuBlockRulesSheet(onDismiss: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        contentWindowInsets = { WindowInsets(0) },
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
     ) {
         Column(
             Modifier

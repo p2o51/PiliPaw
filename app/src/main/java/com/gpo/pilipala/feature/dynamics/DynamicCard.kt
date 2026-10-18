@@ -94,6 +94,8 @@ import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
 
 private val CoverShape = ContinuousRoundedCornerShape(12.dp)
 private val BlockShape = ContinuousRoundedCornerShape(12.dp)
@@ -844,7 +846,13 @@ private fun MoreSheet(item: JsonObject, onDismiss: () -> Unit) {
     val url = dynamicShareUrl(item)
     val archive = item.major.obj("archive").takeIf { item.dynType == "DYNAMIC_TYPE_AV" }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
         Column(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -917,7 +925,13 @@ private fun ForwardSheet(item: DynItem, onDismiss: () -> Unit) {
             ?: a.str("face")
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
         Column(
             Modifier
                 .fillMaxWidth()

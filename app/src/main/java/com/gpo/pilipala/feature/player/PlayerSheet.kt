@@ -142,19 +142,8 @@ internal fun PlayerSheet(
  * them (light over the black player strip), navigation-bar icons for the sheet's surface.
  */
 @Composable
-internal fun rememberPlayerSheetProperties(): ModalBottomSheetProperties {
-    val activity = LocalActivity.current
-    val view = LocalView.current
-    val sheetIsLight = MaterialTheme.colorScheme.surfaceContainerLow.luminance() > 0.5f
-    return remember(activity, view, sheetIsLight) {
-        val window = activity?.window
-        val lightStatus = window?.let { WindowCompat.getInsetsController(it, view).isAppearanceLightStatusBars } ?: !sheetIsLight
-        ModalBottomSheetProperties(
-            isAppearanceLightStatusBars = lightStatus,
-            isAppearanceLightNavigationBars = sheetIsLight,
-        )
-    }
-}
+internal fun rememberPlayerSheetProperties(): ModalBottomSheetProperties =
+    com.gpo.pilipala.ui.components.rememberSheetProperties()
 
 /**
  * Fullscreen settings: a panel sliding in from the end edge inside the picture, over a

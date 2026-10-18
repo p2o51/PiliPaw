@@ -45,6 +45,9 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.pilipala.ui.components.sheetNavBottom
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
 
 /** One playable entry in a 分P / 合集 list. */
 @Immutable
@@ -206,7 +209,12 @@ internal fun EpisodeListSheet(
 ) {
     val haptic = LocalHapticFeedback.current
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.75f).dp
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val navBottom = sheetNavBottom()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
         Column(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
@@ -228,8 +236,8 @@ internal fun EpisodeListSheet(
             }
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxWidth().height(maxHeight.coerceAtMost((rows.size * 72 + 32).dp)),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
+                modifier = Modifier.fillMaxWidth().height(maxHeight.coerceAtMost((rows.size * 72 + 32).dp + navBottom)),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp + navBottom),
             ) {
                 itemsIndexed(rows, key = { i, r -> r.second?.key?.let { "e$it" } ?: "h$i" }) { _, (header, entry) ->
                     if (entry == null) {

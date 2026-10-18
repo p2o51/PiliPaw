@@ -143,6 +143,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
+import androidx.compose.foundation.layout.navigationBarsPadding
 
 // ── ViewModel ───────────────────────────────────────────────────────────────
 
@@ -900,8 +903,13 @@ private fun MemberMenuSheet(
             then()
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(Modifier.padding(bottom = 16.dp)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
+        Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
             SheetRow(YoinSymbols.Share, if (vm.isOwner) "分享我的主页" else "分享UP主") { close(onShare) }
             SheetRow(PiliSymbols.Link, "复制链接") { close(onCopyLink) }
             if (!vm.isOwner) {

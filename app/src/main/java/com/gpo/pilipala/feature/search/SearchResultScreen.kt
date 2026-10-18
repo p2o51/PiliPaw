@@ -102,6 +102,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
+import com.gpo.pilipala.ui.components.sheetBottomPadding
 
 // ── ViewModels ──────────────────────────────────────────────────────────────
 
@@ -682,13 +685,18 @@ private fun VideoFilterBar(vm: SearchTabViewModel) {
 private fun VideoFilterSheet(vm: SearchTabViewModel, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptics = LocalHapticFeedback.current
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp),
+                .padding(bottom = sheetBottomPadding(24.dp)),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

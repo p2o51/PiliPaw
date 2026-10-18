@@ -70,6 +70,9 @@ import com.gpo.yoin.symbols.YoinSymbols
 import com.gpo.yoin.symbols.rememberEqualizerSymbolPainter
 import com.gpo.yoin.symbols.rememberExpandSymbolPainter
 import com.gpo.yoin.symbols.rememberPlayModeSymbolPainter
+import com.gpo.pilipala.ui.components.sheetNavBottom
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
 
 // 播放列表: a 收藏夹 / 稍后再看 played as a queue. The player steps it; these views follow it.
 
@@ -199,7 +202,12 @@ internal fun QueueSheet(queue: PlayQueue, player: BiliPlayerState, onDismiss: ()
     val index by queue.index.collectAsState()
     val haptic = LocalHapticFeedback.current
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.75f).dp
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val navBottom = sheetNavBottom()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
         Column(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(horizontal = 24.dp)) {
                 QueueTitle(queue, index, large = true)
@@ -213,8 +221,8 @@ internal fun QueueSheet(queue: PlayQueue, player: BiliPlayerState, onDismiss: ()
             }
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight + navBottom),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp + navBottom),
             ) {
                 itemsIndexed(queue.items, key = { _, it -> "q_${it.bvid}" }) { i, item ->
                     QueueRow(
@@ -238,20 +246,20 @@ internal fun QueueSheet(queue: PlayQueue, player: BiliPlayerState, onDismiss: ()
 private fun QueueTitle(queue: PlayQueue, index: Int, modifier: Modifier = Modifier, large: Boolean = false) {
     Column(modifier) {
         Text("播放列表", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-        Row(verticalAlignment = Alignment.Bottom) {
+        Row {
             Text(
                 queue.title,
                 style = if (large) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
+                modifier = Modifier.weight(1f, fill = false).alignByBaseline(),
             )
             Spacer(Modifier.width(8.dp))
             Text(
                 "${index + 1}/${queue.size}",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 2.dp),
+                modifier = Modifier.alignByBaseline(),
             )
         }
     }
