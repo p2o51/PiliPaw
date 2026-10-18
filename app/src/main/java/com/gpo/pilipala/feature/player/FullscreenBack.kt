@@ -65,8 +65,16 @@ internal class FullscreenBackState {
     /** After a commit: 1 is where the picture was let go, 0 is at rest in its inline slot. */
     val settle = Animatable(0f)
 
-    /** Set with the commit: the chrome reveal snaps shut instead of folding up under the landing picture. */
+    /**
+     * Raised with the commit, before the progress drops back to 0: the chrome stays invisible
+     * and its reveal snaps shut instead of folding up under the landing picture. The player
+     * lowers it a couple of frames later, once the reveal has snapped.
+     */
     var snapChrome by mutableStateOf(false)
+
+    /** From the commit until the picture rests in its slot: the controls stay hidden and uncomposed. */
+    val landing: Boolean
+        get() = settle.isRunning || settle.value != 0f
 
     /** True while the gesture is held or anything still moves (no bounds are trustworthy then). */
     val busy: Boolean
@@ -382,8 +390,11 @@ internal fun FullscreenBackHandler(
             latestExit(false)
             return@PredictiveBackHandler
         }
-        // Commit: the inline picture lands from exactly where it was let go.
+        // Commit: the inline picture lands from exactly where it was let go. The chrome is
+        // held invisible first, so no frame shows it back at full strength (the fade above
+        // only follows the progress, which drops to 0 here).
         val pose = if (inline != null) state.poseNow() else null
+        state.snapChrome = true
         if (pose != null) {
             state.release = pose
             state.restRadius = state.inlineRadius
