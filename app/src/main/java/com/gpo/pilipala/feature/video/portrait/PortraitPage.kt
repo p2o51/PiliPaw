@@ -183,6 +183,7 @@ internal fun PortraitPage(
         face = face,
         showFollow = relationKnown && ownerMid != BiliClient.mid,
         following = relationKnown && up.following,
+        mutual = relationKnown && up.mutual,
         liked = acts && a.liked,
         likeLabel = label(if (acts) a.likeCount else item.likes, "点赞"),
         coined = acts && a.coined > 0,

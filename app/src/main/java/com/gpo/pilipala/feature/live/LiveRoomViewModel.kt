@@ -113,6 +113,9 @@ internal class LiveRoomViewModel(
 
     // ── Relation ──────────────────────────────────────────────────────────
     var following by mutableStateOf(false)
+
+    /** The anchor follows back (attribute 6): the button reads 互相关注. */
+    var mutual by mutableStateOf(false)
         private set
     var followBusy by mutableStateOf(false)
         private set
@@ -602,10 +605,19 @@ internal class LiveRoomViewModel(
 
     // ── Relation ──────────────────────────────────────────────────────────
 
-    private fun loadRelation(uid: Long) {
+    /** [mutualOnly]: the read-only check after a follow only learns 互相关注, never undoes the follow. */
+    private fun loadRelation(uid: Long, mutualOnly: Boolean = false) {
         viewModelScope.launch {
             runCatching { BiliClient.getData("/x/relation", mapOf("fid" to uid)).asObj }
-                .onSuccess { following = it.int("attribute") in setOf(1, 2, 6) }
+                .onSuccess {
+                    val attribute = it.int("attribute")
+                    if (mutualOnly) {
+                        if (attribute == 6 && following) mutual = true
+                    } else {
+                        following = attribute in setOf(1, 2, 6)
+                        mutual = attribute == 6
+                    }
+                }
         }
     }
 
@@ -619,6 +631,7 @@ internal class LiveRoomViewModel(
                 mapOf("fid" to uid, "act" to if (target) 1 else 2, "re_src" to 11),
             )
             following = target
+            if (target) loadRelation(uid, mutualOnly = true) else mutual = false
             null
         } catch (e: Exception) {
             e.friendlyMessage()

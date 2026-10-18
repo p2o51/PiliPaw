@@ -305,7 +305,7 @@ private fun AnchorBlock(vm: LiveRoomViewModel, route: Route.LiveRoom, modifier: 
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text(if (vm.following) "已关注" else "关注")
+                    Text(if (vm.following) (if (vm.mutual) "互相关注" else "已关注") else "关注")
                 }
             }
         }
