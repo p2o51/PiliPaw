@@ -1,5 +1,9 @@
 package com.gpo.pilipala.feature.video
 
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import com.gpo.pilipala.feature.player.LocalPlayerPictureShape
+import androidx.compose.runtime.CompositionLocalProvider
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -120,12 +124,13 @@ internal fun DetailScaffold(
                             Box(
                                 Modifier
                                     .align(Alignment.CenterHorizontally)
-                                    .width(playerWidth)
-                                    .clip(YoinContainerShapes.Card)
-                                    .background(Color.Black),
+                                    .width(playerWidth),
                             ) {
-                                // The player owns its height (16:9 picture + its control strip).
-                                player(Modifier.fillMaxWidth())
+                                // The player owns its height (16:9 picture + its control strip). Only
+                                // the picture is a black card; the strip under it sits on the page.
+                                CompositionLocalProvider(LocalPlayerPictureShape provides YoinContainerShapes.Card) {
+                                    player(Modifier.fillMaxWidth())
+                                }
                             }
                             Box(Modifier.weight(1f)) {
                                 expandedMain(PaddingValues(top = 4.dp, bottom = navBottom + 16.dp))
@@ -158,10 +163,11 @@ internal fun DetailScaffold(
             }
 
             else -> Column(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxWidth().background(Color.Black).statusBarsPadding()) {
-                    // The player owns its height (16:9 picture + its control strip).
-                    player(Modifier.fillMaxWidth())
-                }
+                // Black only under the status bar and the picture: the control strip that
+                // slides out below the picture sits on the page itself.
+                Spacer(Modifier.fillMaxWidth().background(Color.Black).windowInsetsTopHeight(WindowInsets.statusBars))
+                // The player owns its height (16:9 picture + its control strip).
+                player(Modifier.fillMaxWidth())
                 DetailTabRow(compactTabs, compactPagerState, Color.Transparent)
                 HorizontalPager(
                     state = compactPagerState,

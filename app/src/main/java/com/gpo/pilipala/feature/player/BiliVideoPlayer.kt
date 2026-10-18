@@ -1,5 +1,7 @@
 package com.gpo.pilipala.feature.player
 
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.draw.clip
 import android.content.res.Configuration
 import android.os.Build
 import androidx.activity.ComponentActivity
@@ -413,9 +415,12 @@ fun BiliVideoPlayer(
     val phase = ctrl.phase
     val showCover = target == null || !settled || (!ctrl.firstFrameRendered && phase !is PlayerPhase.Error)
 
+    // The inline strip sits on the page, in the page's own colours (captured before the
+    // dark chrome theme takes over), so only the picture itself is black.
+    val stripInk = pageInk(MaterialTheme.colorScheme)
     Box(
         modifier
-            .background(Color.Black)
+            .then(if (fill) Modifier.background(Color.Black) else Modifier)
             .clipToBounds()
             .onGloballyPositioned { yInWindow = it.positionInWindow().y },
     ) {
@@ -471,7 +476,8 @@ fun BiliVideoPlayer(
                                 } else {
                                     Modifier
                                 },
-                            ),
+                            )
+                            .then(if (fill) Modifier else Modifier.clip(LocalPlayerPictureShape.current).background(Color.Black)),
                     ) {
                         if (settled) {
                             // The video view is rebuilt whenever its frame changes size (inline ⇄
@@ -540,6 +546,7 @@ fun BiliVideoPlayer(
                                 ui = ui,
                                 actions = actions,
                                 running = true,
+                                ink = stripInk,
                                 // Slides out from under the picture, taking real space as it grows.
                                 modifier = Modifier
                                     .clipToBounds()
@@ -831,6 +838,12 @@ private fun CoverLoading(ctrl: PiliPlayerController, cover: String, big: Boolean
  * accents (centre button, seek progress) and its surfaces the fullscreen panel,
  * while icons and text over the picture are plain white ([OnVideo]).
  */
+/**
+ * The inline picture's own shape (the host's card corners, for example). Only the picture
+ * is clipped and black: the control strip under it sits on the page.
+ */
+internal val LocalPlayerPictureShape = staticCompositionLocalOf<Shape> { RectangleShape }
+
 @Composable
 private fun PlayerChromeTheme(content: @Composable () -> Unit) {
     val cs = MaterialTheme.colorScheme

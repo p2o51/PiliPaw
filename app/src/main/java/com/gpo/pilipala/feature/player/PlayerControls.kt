@@ -54,6 +54,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -130,6 +132,44 @@ internal fun clock(ms: Long): String = Fmt.durationMs(ms.coerceAtLeast(0L))
  */
 internal val OnVideo = Color.White
 internal val OnVideoVariant = Color.White.copy(alpha = 0.8f)
+
+/**
+ * What the transport controls draw with. Over the picture and on the fullscreen bands it
+ * is [VideoInk] (plain white). The inline strip sits on the page itself, under the
+ * picture, so it takes the page's own ink ([pageInk]) and reads as part of the page.
+ */
+@Immutable
+internal data class PlayerInk(
+    val content: Color,
+    val contentVariant: Color,
+    val pill: Color,
+    val pillContent: Color,
+    val trackRest: Color,
+    val trackBuffered: Color,
+    val trackPlayed: Color,
+)
+
+internal val VideoInk = PlayerInk(
+    content = OnVideo,
+    contentVariant = OnVideo.copy(alpha = 0.56f),
+    pill = OnVideo.copy(alpha = 0.16f),
+    pillContent = OnVideo,
+    trackRest = Color.White.copy(alpha = 0.18f),
+    trackBuffered = Color.White.copy(alpha = 0.35f),
+    trackPlayed = Color.White,
+)
+
+internal fun pageInk(scheme: ColorScheme) = PlayerInk(
+    content = scheme.onSurface,
+    contentVariant = scheme.onSurfaceVariant,
+    pill = scheme.secondaryContainer,
+    pillContent = scheme.onSecondaryContainer,
+    trackRest = scheme.onSurface.copy(alpha = 0.1f),
+    trackBuffered = scheme.onSurface.copy(alpha = 0.2f),
+    trackPlayed = scheme.primary,
+)
+
+internal val LocalPlayerInk = staticCompositionLocalOf { VideoInk }
 
 /** Translucent dark plate behind the small corner buttons over the picture. */
 private val CornerPlate = Color.Black.copy(alpha = 0.5f)
@@ -484,10 +524,11 @@ private fun TimeLabels(ctrl: PiliPlayerController, ui: PlayerChromeState, big: B
     val style = (if (big) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelMedium).withTabularFigures()
     val d = ctrl.durationMs
     val shown = ui.scrub.fraction?.let { (it * d).toLong() } ?: ui.feedback.seekTargetMs ?: ctrl.positionMs
+    val ink = LocalPlayerInk.current
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Text(clock(shown), style = style, color = OnVideo)
+        Text(clock(shown), style = style, color = ink.content)
         Spacer(Modifier.width(8.dp))
-        Text(clock(d), style = style, color = OnVideo.copy(alpha = 0.56f))
+        Text(clock(d), style = style, color = ink.contentVariant)
     }
 }
 
@@ -497,7 +538,7 @@ private fun PlayPauseButton(ctrl: PiliPlayerController, onClick: () -> Unit, siz
     IconButton(
         onClick = onClick,
         shapes = IconButtonDefaults.shapes(),
-        colors = IconButtonDefaults.iconButtonColors(contentColor = OnVideo),
+        colors = IconButtonDefaults.iconButtonColors(contentColor = LocalPlayerInk.current.content),
         modifier = Modifier.size(size),
     ) {
         Icon(rememberPlayPauseSymbolPainter(playing), contentDescription = if (playing) "暂停" else "播放")
@@ -514,7 +555,7 @@ private fun NextButton(ctrl: PiliPlayerController, onClick: () -> Unit) {
         IconButton(
             onClick = onClick,
             shapes = IconButtonDefaults.shapes(),
-            colors = IconButtonDefaults.iconButtonColors(contentColor = OnVideo),
+            colors = IconButtonDefaults.iconButtonColors(contentColor = LocalPlayerInk.current.content),
             modifier = Modifier.size(44.dp),
         ) {
             Icon(YoinSymbols.SkipNextFilled, contentDescription = "下一个")
@@ -527,7 +568,7 @@ private fun FullscreenButton(fullscreen: Boolean, onClick: () -> Unit) {
     IconButton(
         onClick = onClick,
         shapes = IconButtonDefaults.shapes(),
-        colors = IconButtonDefaults.iconButtonColors(contentColor = OnVideo),
+        colors = IconButtonDefaults.iconButtonColors(contentColor = LocalPlayerInk.current.content),
         modifier = Modifier.size(44.dp),
     ) {
         Icon(
@@ -560,7 +601,9 @@ private fun SubtitleButton(ctrl: PiliPlayerController, onClick: () -> Unit) {
 /**
  * Inline control strip under the picture: the seek bar along its top edge, then play /
  * next / time on the left and speed / quality / fullscreen on the right. It takes real
- * layout space (the player grows by its height), so nothing covers the picture.
+ * layout space (the player grows by its height), so nothing covers the picture. It has
+ * no plate of its own: it sits on the page in the page's [ink], so the page simply
+ * continues up to the picture's edge.
  */
 @Composable
 internal fun InlineStrip(
@@ -568,10 +611,11 @@ internal fun InlineStrip(
     ui: PlayerChromeState,
     actions: ChromeActions,
     running: Boolean,
+    ink: PlayerInk,
     modifier: Modifier = Modifier,
 ) {
-    CompositionLocalProvider(LocalContentColor provides OnVideo) {
-        Column(modifier.fillMaxWidth().background(Color.Black)) {
+    CompositionLocalProvider(LocalContentColor provides ink.content, LocalPlayerInk provides ink) {
+        Column(modifier.fillMaxWidth()) {
             PlayerSeekBar(
                 ctrl = ctrl,
                 scrub = ui.scrub,
@@ -849,8 +893,8 @@ private fun PillButton(text: String, onClick: () -> Unit) {
             onClick()
         },
         shape = YoinShapeTokens.Full,
-        color = OnVideo.copy(alpha = 0.16f),
-        contentColor = OnVideo,
+        color = LocalPlayerInk.current.pill,
+        contentColor = LocalPlayerInk.current.pillContent,
     ) {
         val motion = MaterialTheme.motionScheme
         AnimatedContent(

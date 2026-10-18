@@ -64,9 +64,9 @@ import kotlin.math.roundToInt
 private const val ShortVideoMs = 6 * 60_000L
 
 /** Track colours over the picture: plain white at three strengths (scrim-like colours). */
-private val TrackRest = Color.White.copy(alpha = 0.18f)
-private val TrackBuffered = Color.White.copy(alpha = 0.35f)
-private val TrackPlayed = Color.White
+private val TrackRest = VideoInk.trackRest
+private val TrackBuffered = VideoInk.trackBuffered
+private val TrackPlayed = VideoInk.trackPlayed
 
 /**
  * Where the seek bar sits inside the player frame and what it is scrubbing to, so the
@@ -183,6 +183,7 @@ internal fun PlayerSeekBar(
             },
         contentAlignment = Alignment.Center,
     ) {
+        val ink = LocalPlayerInk.current
         Canvas(
             Modifier
                 .fillMaxSize()
@@ -195,6 +196,7 @@ internal fun PlayerSeekBar(
             val played = if (d > 0) (pos.toFloat() / d).coerceIn(0f, 1f) else 0f
             val buffered = if (d > 0) (ctrl.bufferedMs.toFloat() / d).coerceIn(0f, 1f) else 0f
             drawSeekTrack(
+                ink = ink,
                 played = played,
                 buffered = buffered,
                 thickness = (3.dp + 5.dp * g).toPx(),
@@ -207,6 +209,7 @@ internal fun PlayerSeekBar(
 
 /** Track + chapter gaps + (while pressed) the pill thumb with a gap on each side. */
 private fun DrawScope.drawSeekTrack(
+    ink: PlayerInk,
     played: Float,
     buffered: Float,
     thickness: Float,
@@ -223,9 +226,9 @@ private fun DrawScope.drawSeekTrack(
         val r = minOf(th / 2f, len / 2f)
         drawRoundRect(color, Offset(from, top), Size(len, th), CornerRadius(r, r))
     }
-    bar(TrackRest, 0f, w)
-    bar(TrackBuffered, 0f, w * buffered)
-    bar(TrackPlayed, 0f, w * played)
+    bar(ink.trackRest, 0f, w)
+    bar(ink.trackBuffered, 0f, w * buffered)
+    bar(ink.trackPlayed, 0f, w * played)
     // Chapter starts: 2dp gaps through the whole track.
     val gap = 2.dp.toPx()
     for (c in chapterStarts) {
@@ -245,7 +248,7 @@ private fun DrawScope.drawSeekTrack(
             blendMode = BlendMode.Clear,
         )
         drawRoundRect(
-            TrackPlayed,
+            ink.trackPlayed,
             Offset(x - thumbW / 2f, cy - thumbH / 2f),
             Size(thumbW, thumbH),
             CornerRadius(thumbW / 2f, thumbW / 2f),
