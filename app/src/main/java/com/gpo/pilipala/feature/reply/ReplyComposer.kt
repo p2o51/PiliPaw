@@ -254,10 +254,11 @@ internal fun ReplyComposerSheet(
 
 /**
  * Packages as a tab row under their grid. A tap inserts; press and hold
- * previews ([emotePeek]) without inserting.
+ * previews ([emotePeek]) without inserting. Shared with the dynamic composer
+ * (feature/dynamics), which pairs it with its own [EmotePeekOverlay].
  */
 @Composable
-private fun EmotePanel(peek: EmotePeekState, modifier: Modifier = Modifier, onPick: (Emote) -> Unit) {
+internal fun EmotePanel(peek: EmotePeekState, modifier: Modifier = Modifier, onPick: (Emote) -> Unit) {
     var packages by remember { mutableStateOf(EmoteCache.packages) }
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableIntStateOf(0) }

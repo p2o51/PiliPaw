@@ -27,6 +27,7 @@ import androidx.navigationevent.compose.rememberNavigationEventState
 import com.gpo.pilipala.feature.article.OpusScreen
 import com.gpo.pilipala.feature.article.ReadScreen
 import com.gpo.pilipala.feature.bangumi.BangumiDetailScreen
+import com.gpo.pilipala.feature.dynamics.DynamicComposeScreen
 import com.gpo.pilipala.feature.dynamics.DynamicDetailScreen
 import com.gpo.pilipala.feature.dynamics.MemberDynamicsScreen
 import com.gpo.pilipala.feature.feeds.FeedEditorScreen
@@ -166,6 +167,7 @@ private val appEntryProvider = entryProvider<NavKey> {
     entry<Route.MemberLike> { MemberLikeScreen(it) }
     entry<Route.MemberArticle> { MemberArticleScreen(it) }
     entry<Route.DynamicDetail> { DynamicDetailScreen(it) }
+    entry<Route.DynamicCompose> { DynamicComposeScreen() }
     entry<Route.ReplyDetail> { ReplyDetailScreen(it) }
     entry<Route.Opus> { OpusScreen(it) }
     entry<Route.Read> { ReadScreen(it) }
