@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The 继续看 widget in the picker before Android 12 (12+ shows layout/widget_watch_preview). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="250dp"
+    android:height="110dp"
+    android:viewportWidth="250"
+    android:viewportHeight="110">
+    <!-- Surface -->
+    <path
+        android:fillColor="@color/widget_preview_surface"
+        android:pathData="M24,0 H226 A24,24 0 0 1 250,24 V86 A24,24 0 0 1 226,110 H24 A24,24 0 0 1 0,86 V24 A24,24 0 0 1 24,0 Z" />
+    <!-- Cover -->
+    <path
+        android:fillColor="@color/widget_preview_cover"
+        android:pathData="M24,12 H107 A12,12 0 0 1 119,24 V62 A12,12 0 0 1 107,74 H24 A12,12 0 0 1 12,62 V24 A12,12 0 0 1 24,12 Z" />
+    <path
+        android:fillColor="@color/widget_preview_on_block"
+        android:pathData="M61,34 L71,40 L61,46 Z" />
+    <!-- Progress -->
+    <path
+        android:fillColor="#59FFFFFF"
+        android:pathData="M24,62 H107 A2,2 0 0 1 109,64 A2,2 0 0 1 107,66 H24 A2,2 0 0 1 22,64 A2,2 0 0 1 24,62 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M24,62 H72 A2,2 0 0 1 74,64 A2,2 0 0 1 72,66 H24 A2,2 0 0 1 22,64 A2,2 0 0 1 24,62 Z" />
+    <!-- Title -->
+    <path
+        android:fillColor="@color/widget_preview_on_surface"
+        android:fillAlpha="0.7"
+        android:pathData="M17,82 H87 A5,5 0 0 1 92,87 A5,5 0 0 1 87,92 H17 A5,5 0 0 1 12,87 A5,5 0 0 1 17,82 Z" />
+    <!-- 稍后再看 header -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/widget_preview_primary"
+        android:strokeWidth="1.6"
+        android:pathData="M132,20 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z" />
+    <path
+        android:fillColor="@color/widget_preview_on_surface"
+        android:fillAlpha="0.7"
+        android:pathData="M153,15 H195 A5,5 0 0 1 200,20 A5,5 0 0 1 195,25 H153 A5,5 0 0 1 148,20 A5,5 0 0 1 153,15 Z" />
+    <!-- Rows -->
+    <path
+        android:fillColor="@color/widget_preview_block"
+        android:pathData="M141,34 H228 A10,10 0 0 1 238,44 V52 A10,10 0 0 1 228,62 H141 A10,10 0 0 1 131,52 V44 A10,10 0 0 1 141,34 Z" />
+    <path
+        android:fillColor="@color/widget_preview_on_block"
+        android:fillAlpha="0.5"
+        android:pathData="M145,44 H207 A4,4 0 0 1 211,48 A4,4 0 0 1 207,52 H145 A4,4 0 0 1 141,48 A4,4 0 0 1 145,44 Z" />
+    <path
+        android:fillColor="@color/widget_preview_block"
+        android:pathData="M141,66 H228 A10,10 0 0 1 238,76 V84 A10,10 0 0 1 228,94 H141 A10,10 0 0 1 131,84 V76 A10,10 0 0 1 141,66 Z" />
+    <path
+        android:fillColor="@color/widget_preview_on_block"
+        android:fillAlpha="0.5"
+        android:pathData="M145,76 H193 A4,4 0 0 1 197,80 A4,4 0 0 1 193,84 H145 A4,4 0 0 1 141,80 A4,4 0 0 1 145,76 Z" />
+</vector>

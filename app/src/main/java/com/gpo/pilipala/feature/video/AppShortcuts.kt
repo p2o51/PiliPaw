@@ -29,6 +29,9 @@ import com.gpo.pilipala.R
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.util.Images
 import com.gpo.pilipala.feature.player.BiliPlayerState
+import com.gpo.pilipala.feature.widget.ContinueEntry
+import com.gpo.pilipala.feature.widget.WatchWidget
+import com.gpo.pilipala.feature.widget.WidgetStore
 import com.gpo.pilipala.navigation.Route
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +51,9 @@ import kotlin.math.max
  *
  * All dynamic (not shortcuts.xml): a static shortcut relaunches the task from scratch,
  * these come back through onNewIntent and keep whatever is open (and playing).
+ *
+ * The home-screen widget (feature/widget) shows the same 继续看 and opens videos and
+ * 稍后再看 through the same intents ([videoIntent], [pageIntent]).
  */
 object AppShortcuts {
     private const val Scheme = "pilipala"
@@ -62,6 +68,10 @@ object AppShortcuts {
     private const val ExtraProgress = "com.gpo.pilipala.extra.CONTINUE_PROGRESS"
     private const val ExtraCover = "com.gpo.pilipala.extra.CONTINUE_COVER"
     private const val ExtraTitle = "com.gpo.pilipala.extra.CONTINUE_TITLE"
+    private const val ExtraDuration = "com.gpo.pilipala.extra.CONTINUE_DURATION"
+
+    /** Set on the widget's intents: a tap there is not a shortcut use. */
+    private const val ExtraWidget = "com.gpo.pilipala.extra.FROM_WIDGET"
 
     /** Watched less than this: not worth a shortcut. */
     private const val MinWatchedMs = 10_000L
@@ -100,6 +110,73 @@ object AppShortcuts {
             .build()
 
     /**
+     * Opens [bvid] at [progressSec] (MainActivity routes it like 继续看). [source] marks
+     * the widget's intents and tells them apart from the shortcut's and from each other:
+     * PendingIntents that differ only in extras would collapse into one.
+     */
+    fun videoIntent(
+        context: Context,
+        bvid: String,
+        cid: Long,
+        title: String,
+        cover: String,
+        progressSec: Long,
+        durationSec: Long = 0,
+        source: String? = null,
+    ): Intent {
+        val base = Uri.parse("https://www.bilibili.com/video/$bvid")
+        val uri = if (source == null) base else base.buildUpon().fragment(source).build()
+        return Intent(Intent.ACTION_VIEW, uri, context, MainActivity::class.java)
+            .putExtra(ExtraShortcut, IdContinue)
+            .putExtra(ExtraBvid, bvid)
+            .putExtra(ExtraCid, cid)
+            .putExtra(ExtraProgress, progressSec.coerceAtLeast(0))
+            .putExtra(ExtraDuration, durationSec.coerceAtLeast(0))
+            .putExtra(ExtraCover, cover)
+            .putExtra(ExtraTitle, title)
+            .apply { if (source != null) putExtra(ExtraWidget, true) }
+    }
+
+    /** One of the fixed pages ([PageLater] …), opened from the widget. */
+    fun pageIntent(context: Context, page: String): Intent =
+        Intent(Intent.ACTION_VIEW, Uri.parse("$Scheme://$page"), context, MainActivity::class.java)
+            .putExtra(ExtraShortcut, page)
+            .putExtra(ExtraWidget, true)
+
+    const val PageLater: String = IdLater
+
+    /** What the published 继续看 shortcut points at. */
+    class ContinueSnapshot(
+        val bvid: String,
+        val cid: Long,
+        val title: String,
+        val cover: String,
+        val positionSec: Long,
+        /** 0 for a shortcut published before the duration rode along. */
+        val durationSec: Long,
+    )
+
+    /** The live 继续看 shortcut, for a widget placed before anything else recorded it. */
+    fun continueSnapshot(context: Context): ContinueSnapshot? = runCatching {
+        val info = ShortcutManagerCompat.getDynamicShortcuts(context.applicationContext)
+            .firstOrNull { it.id == IdContinue }
+        val intent = info?.intents?.lastOrNull()
+        val bvid = intent?.getStringExtra(ExtraBvid)
+        if (intent == null || bvid.isNullOrBlank()) {
+            null
+        } else {
+            ContinueSnapshot(
+                bvid = bvid,
+                cid = intent.getLongExtra(ExtraCid, 0L),
+                title = intent.getStringExtra(ExtraTitle).orEmpty(),
+                cover = intent.getStringExtra(ExtraCover).orEmpty(),
+                positionSec = intent.getLongExtra(ExtraProgress, 0L),
+                durationSec = intent.getLongExtra(ExtraDuration, 0L),
+            )
+        }
+    }.getOrNull()
+
+    /**
      * Updates 继续看 for the video being left at [positionMs] of [durationMs]; removes it
      * when the video is finished or history is paused.
      */
@@ -118,22 +195,24 @@ object AppShortcuts {
         if (AppSettings.pauseHistory.value || finished) {
             continueJob?.cancel()
             runCatching { ShortcutManagerCompat.removeDynamicShortcuts(app, listOf(IdContinue)) }
+            // In step with the shortcut (a tiny file), so a later publish can't be undone by it.
+            WidgetStore.clearContinue(app)
+            WatchWidget.refresh(app)
             return
         }
         if (positionMs < MinWatchedMs) return
         val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+        WidgetStore.writeContinue(
+            app,
+            ContinueEntry(bvid = bvid, cid = cid, title = title, cover = cover, positionMs = positionMs, durationMs = durationMs),
+        )
+        WatchWidget.refresh(app)
         continueJob?.cancel()
         continueJob = scope.launch {
             val icon = runCatching { coverIcon(app, cover, progress, durationMs > 0) }.getOrNull()
                 ?: IconCompat.createWithResource(app, R.drawable.ic_shortcut_history)
             val label = title.ifBlank { bvid }
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.bilibili.com/video/$bvid"), app, MainActivity::class.java)
-                .putExtra(ExtraShortcut, IdContinue)
-                .putExtra(ExtraBvid, bvid)
-                .putExtra(ExtraCid, cid)
-                .putExtra(ExtraProgress, positionMs / 1000)
-                .putExtra(ExtraCover, cover)
-                .putExtra(ExtraTitle, title)
+            val intent = videoIntent(app, bvid, cid, title, cover, positionMs / 1000, durationMs / 1000)
             val info = ShortcutInfoCompat.Builder(app, IdContinue)
                 .setShortLabel(label.take(12))
                 .setLongLabel(label.take(25))
@@ -165,7 +244,9 @@ object AppShortcuts {
             }
             else -> null
         }
-        if (route != null && id != null) runCatching { ShortcutManagerCompat.reportShortcutUsed(context, id) }
+        if (route != null && id != null && !intent.getBooleanExtra(ExtraWidget, false)) {
+            runCatching { ShortcutManagerCompat.reportShortcutUsed(context, id) }
+        }
         return route
     }
 
