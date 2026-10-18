@@ -1,7 +1,9 @@
 package com.gpo.pilipala.feature.dynamics
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -11,6 +13,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -26,6 +29,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -35,6 +39,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -47,6 +52,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -59,12 +65,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -84,8 +94,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
@@ -94,18 +106,24 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.max
+import androidx.compose.ui.unit.min
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.BiliException
+import com.gpo.pilipala.core.net.BiliJson
 import com.gpo.pilipala.feature.reply.EmotePanel
 import com.gpo.pilipala.feature.reply.EmotePeekOverlay
 import com.gpo.pilipala.feature.reply.EmotePeekState
 import com.gpo.pilipala.feature.reply.ReplyIcons
 import com.gpo.pilipala.navigation.LocalNavigator
+import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.LocalPageSettled
 import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.components.rememberToast
@@ -114,14 +132,25 @@ import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
-import java.net.SocketTimeoutException
+import java.io.InterruptedIOException
 import java.net.UnknownHostException
+import java.security.MessageDigest
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 
-/** Text limit of a plain dynamic. */
+/**
+ * Text limit of a plain dynamic, in code points (an emoji is one). The 1000
+ * and how the server counts an `[emote]` code are not verified; a code counts
+ * as its characters here, the stricter reading.
+ */
 private const val MaxChars = 1000
 
 /** The count shows once this many characters are typed (the last hundred). */
@@ -129,13 +158,41 @@ private const val CountFrom = 900
 
 private const val MaxImages = 9
 
+/** 发布 ignores taps this long after the toolbar comes back from the discard confirm. */
+private const val SendGuardMs = 400L
+
+/** A create that never answered is looked up in the account's own feed this many times, this far apart. */
+private const val VerifyAttempts = 3
+private const val VerifyBackoffMs = 2000L
+
+/** A matching post this long (s) before the attempt still counts: the device clock is not the server's. */
+private const val ClockSlackSeconds = 600L
+
 private val EditorMaxWidth = 640.dp
+private val EditorMinHeight = 96.dp
+private val EmotePanelMaxHeight = 280.dp
 private val ThumbSize = 88.dp
 private val ThumbGap = 8.dp
+private val StripPadding = 12.dp
+private val StripHeight = ThumbSize + StripPadding * 2
 private val ThumbShape = ContinuousRoundedCornerShape(12.dp)
 
 /** Over-image scrim (the remove chip, the upload veil): images are the one place for a fixed colour. */
 private val ImageScrim = Color.Black
+
+// The draft lives in the saved state too: the process can be reclaimed while
+// the photo picker is in front, and the picked pictures come back to a new
+// ViewModel.
+private const val KeyText = "text"
+private const val KeySelStart = "sel_start"
+private const val KeySelEnd = "sel_end"
+private const val KeyImages = "images"
+private const val KeyUploaded = "uploaded"
+private const val KeyUploadId = "upload_id"
+private const val KeyUploadSig = "upload_sig"
+private const val KeyPending = "pending"
+private const val KeyFinished = "finished"
+private const val KeyFocused = "focused_once"
 
 @Immutable
 internal data class PickedImage(val uri: Uri) {
@@ -145,35 +202,104 @@ internal data class PickedImage(val uri: Uri) {
 internal sealed interface ComposeOutcome {
     data object Posted : ComposeOutcome
     data class Failed(val message: String) : ComposeOutcome
+    data class Notice(val message: String) : ComposeOutcome
 }
 
-/**
- * The draft (text, picked pictures) and the send. Lives per nav entry, so a
- * rotation keeps it; the pictures already uploaded survive a failed send, a
- * retry only uploads the rest.
- */
-internal class DynamicComposeViewModel(private val app: Context) : ViewModel() {
-    var text by mutableStateOf(TextFieldValue())
-    val images = mutableStateListOf<PickedImage>()
+internal enum class SendPhase { Idle, Uploading, Publishing }
 
-    var sending by mutableStateOf(false)
+/** A create whose answer never came: what was sent, and when (device seconds). */
+@Serializable
+internal data class PendingPost(val text: String, val pics: Int, val sig: String, val startedAt: Long)
+
+private sealed interface Lookup {
+    data class Found(val id: String) : Lookup
+    data object NotFound : Lookup
+    data object Unreachable : Lookup
+}
+
+/** The create got no answer and the feed check could not confirm it: shown as is. */
+private class UnconfirmedPost(override val message: String) : Exception(message)
+
+/**
+ * The draft (text, picked pictures) and the send. Lives per nav entry and in
+ * its saved state, so neither a rotation nor a reclaimed process loses it;
+ * the pictures already uploaded survive a failed send, a retry only uploads
+ * the rest.
+ *
+ * Duplicate guard: the draft keeps one `upload_id` for as long as its content
+ * stays the same, and a create that never answered is marked pending — before
+ * anything is sent again the account's own latest dynamics are checked, and a
+ * match counts as posted.
+ */
+internal class DynamicComposeViewModel(
+    private val app: Context,
+    private val saved: SavedStateHandle,
+) : ViewModel() {
+    private var textValue by mutableStateOf(restoreText())
+
+    /** The draft text; every change is mirrored into the saved state. */
+    var text: TextFieldValue
+        get() = textValue
+        set(value) {
+            textValue = value
+            saved[KeyText] = value.text
+            saved[KeySelStart] = value.selection.start
+            saved[KeySelEnd] = value.selection.end
+        }
+
+    val images = mutableStateListOf<PickedImage>().apply {
+        saved.get<ArrayList<String>>(KeyImages)?.forEach { add(PickedImage(Uri.parse(it))) }
+    }
+
+    var phase by mutableStateOf(SendPhase.Idle)
         private set
+
+    val sending: Boolean get() = phase != SendPhase.Idle
 
     /** The picture uploading right now; null during the text step or at rest. */
     var uploadingKey by mutableStateOf<String?>(null)
         private set
 
-    /** One-shot result for the screen (toast, close); [consumeOutcome] clears it. */
+    /** One-shot result for the screen (toast); [consumeOutcome] clears it. */
     var outcome by mutableStateOf<ComposeOutcome?>(null)
         private set
 
+    /** Posted: the draft is gone and the page closes as soon as it is the top one. */
+    var finished by mutableStateOf(saved.get<Boolean>(KeyFinished) == true)
+        private set
+
+    /** What the editor keeps showing while the page closes after a post; the draft itself is already cleared. */
+    var closingText by mutableStateOf<TextFieldValue?>(null)
+        private set
+
     /** The editor took focus once, on landing; a rotation doesn't raise the keyboard again. */
-    var focusedOnce = false
+    var focusedOnce: Boolean
+        get() = saved.get<Boolean>(KeyFocused) == true
+        set(value) {
+            saved[KeyFocused] = value
+        }
 
-    private val uploaded = mutableStateMapOf<String, UploadedPic>()
+    private val uploaded = mutableStateMapOf<String, UploadedPic>().apply {
+        saved.get<String>(KeyUploaded)?.let { raw ->
+            runCatching { BiliJson.decodeFromString<Map<String, UploadedPic>>(raw) }.getOrNull()?.let { putAll(it) }
+        }
+    }
 
-    val length: Int get() = text.text.length
-    val hasDraft: Boolean get() = text.text.isNotBlank() || images.isNotEmpty()
+    private var pending: PendingPost? = saved.get<String>(KeyPending)?.let { raw ->
+        runCatching { BiliJson.decodeFromString<PendingPost>(raw) }.getOrNull()
+    }
+        set(value) {
+            field = value
+            saved[KeyPending] = value?.let { BiliJson.encodeToString(it) }
+        }
+
+    private var job: Job? = null
+
+    /** Bumped by every send and cancel: a stale job's cleanup leaves a newer send alone. */
+    private var generation = 0
+
+    val length: Int get() = text.text.let { it.codePointCount(0, it.length) }
+    val hasDraft: Boolean get() = !finished && (text.text.isNotBlank() || images.isNotEmpty())
     val canSend: Boolean get() = !sending && hasDraft && length <= MaxChars
 
     fun isUploaded(key: String): Boolean = key in uploaded
@@ -185,13 +311,18 @@ internal class DynamicComposeViewModel(private val app: Context) : ViewModel() {
         text = TextFieldValue(v.text.substring(0, start) + snippet + v.text.substring(end), TextRange(start + snippet.length))
     }
 
+    /** Picked pictures, with a lasting read grant so they still open after the process restarts. */
     fun addImages(uris: List<Uri>) {
+        if (finished) return
         val room = MaxImages - images.size
         if (room <= 0) return
-        uris.distinct()
-            .filter { uri -> images.none { it.uri == uri } }
-            .take(room)
-            .forEach { images += PickedImage(it) }
+        val fresh = uris.distinct().filter { uri -> images.none { it.uri == uri } }.take(room)
+        if (fresh.isEmpty()) return
+        fresh.forEach { uri ->
+            keepGrant(uri)
+            images += PickedImage(uri)
+        }
+        saveImages()
     }
 
     /** False while sending: the picture stays. */
@@ -199,16 +330,36 @@ internal class DynamicComposeViewModel(private val app: Context) : ViewModel() {
         if (sending) return false
         images.remove(image)
         uploaded.remove(image.key)
+        dropGrant(image.uri)
+        saveImages()
+        saveUploaded()
         return true
     }
 
     fun move(from: Int, to: Int) {
         if (sending || from == to || from !in images.indices || to !in images.indices) return
         images.add(to, images.removeAt(from))
+        saveImages()
     }
 
     fun consumeOutcome() {
         outcome = null
+    }
+
+    /**
+     * Back or close while pictures upload: stops (the ones already up are
+     * kept for the next send). False once the create has started — that one
+     * is never abandoned half way.
+     */
+    fun cancelUpload(): Boolean {
+        if (phase != SendPhase.Uploading) return false
+        generation++
+        job?.cancel()
+        job = null
+        uploadingKey = null
+        phase = SendPhase.Idle
+        outcome = ComposeOutcome.Notice("已取消上传")
+        return true
     }
 
     /** The send button's action, and the only path that publishes. */
@@ -218,47 +369,207 @@ internal class DynamicComposeViewModel(private val app: Context) : ViewModel() {
             outcome = ComposeOutcome.Failed("未登录")
             return
         }
-        sending = true
         val body = text.text.trim()
         val pics = images.toList()
-        viewModelScope.launch {
+        val sig = signature(body, pics)
+        val gen = ++generation
+        phase = if (pics.all { it.key in uploaded }) SendPhase.Publishing else SendPhase.Uploading
+        job = viewModelScope.launch {
             var step = Step.Upload
             try {
                 val ready = pics.map { image ->
                     uploaded[image.key] ?: run {
                         uploadingKey = image.key
-                        DynamicsApi.uploadImage(app.contentResolver, image.uri).also { uploaded[image.key] = it }
+                        DynamicsApi.uploadImage(app.contentResolver, app.cacheDir, image.uri).also {
+                            uploaded[image.key] = it
+                            saveUploaded()
+                        }
                     }
                 }
                 uploadingKey = null
+                ensureActive()
+                phase = SendPhase.Publishing
                 step = Step.Create
-                val id = DynamicsApi.createDynamic(body, ready)
-                DynamicsEvents.posted.tryEmit(id)
-                outcome = ComposeOutcome.Posted
+                // An earlier create never answered: look at the account's own
+                // dynamics before anything is sent again.
+                pending?.let { earlier ->
+                    when (val found = findPosted(earlier, attempts = 1)) {
+                        is Lookup.Found -> {
+                            if (earlier.sig == sig) {
+                                publishDone(found.id)
+                            } else {
+                                pending = null
+                                DynamicsEvents.posted.tryEmit(found.id)
+                                outcome = ComposeOutcome.Notice("上一条已发布")
+                            }
+                            return@launch
+                        }
+                        Lookup.NotFound -> pending = null
+                        Lookup.Unreachable -> {
+                            outcome = ComposeOutcome.Failed("网络不可用")
+                            return@launch
+                        }
+                    }
+                }
+                val attempt = PendingPost(body, ready.size, sig, System.currentTimeMillis() / 1000)
+                val uploadId = uploadIdFor(sig)
+                // Marked before the request: a process reclaimed mid-create still checks first.
+                pending = attempt
+                val id = try {
+                    DynamicsApi.createDynamic(body, ready, uploadId)
+                } catch (e: PublishUnknownException) {
+                    when (val found = findPosted(attempt, VerifyAttempts)) {
+                        is Lookup.Found -> found.id
+                        Lookup.NotFound -> throw UnconfirmedPost("发布失败")
+                        Lookup.Unreachable -> throw UnconfirmedPost("网络不可用")
+                    }
+                } catch (e: BiliException) {
+                    // The server answered with an error: nothing was posted.
+                    pending = null
+                    throw e
+                }
+                publishDone(id)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 outcome = ComposeOutcome.Failed(e.publishMessage(step))
             } finally {
-                uploadingKey = null
-                sending = false
+                if (generation == gen) {
+                    uploadingKey = null
+                    phase = SendPhase.Idle
+                    job = null
+                }
             }
         }
+    }
+
+    override fun onCleared() {
+        // The page is gone (posted, discarded or closed empty): the lasting grants can go.
+        images.forEach { dropGrant(it.uri) }
+    }
+
+    private fun publishDone(id: String) {
+        closingText = text
+        pending = null
+        clearDraft()
+        finished = true
+        saved[KeyFinished] = true
+        DynamicsEvents.posted.tryEmit(id)
+        outcome = ComposeOutcome.Posted
+    }
+
+    /** Posted: nothing of it is left to send again. */
+    private fun clearDraft() {
+        images.forEach { dropGrant(it.uri) }
+        text = TextFieldValue()
+        images.clear()
+        uploaded.clear()
+        saveImages()
+        saveUploaded()
+        saved.remove<String>(KeyUploadId)
+        saved.remove<String>(KeyUploadSig)
+    }
+
+    /** The draft's `upload_id`: kept while its content stays the same, renewed when it changes. */
+    private fun uploadIdFor(sig: String): String {
+        val kept = saved.get<String>(KeyUploadId)
+        if (kept != null && saved.get<String>(KeyUploadSig) == sig) return kept
+        val fresh = "${BiliClient.mid}_${System.currentTimeMillis() / 1000}_${Random.nextInt(1000, 10000)}"
+        saved[KeyUploadId] = fresh
+        saved[KeyUploadSig] = sig
+        return fresh
+    }
+
+    /**
+     * Whether [post] is among the account's latest dynamics (read-only GETs),
+     * asked [attempts] times since a fresh post can lag in the feed.
+     */
+    private suspend fun findPosted(post: PendingPost, attempts: Int): Lookup {
+        var reached = false
+        repeat(attempts) { i ->
+            if (i > 0) delay(VerifyBackoffMs * i)
+            val recent = try {
+                DynamicsApi.ownRecent(BiliClient.mid)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            if (recent != null) {
+                reached = true
+                recent.firstOrNull { it.isPostOf(post) }?.let { return Lookup.Found(it.id) }
+            }
+        }
+        return if (reached) Lookup.NotFound else Lookup.Unreachable
+    }
+
+    private fun restoreText(): TextFieldValue {
+        val t = saved.get<String>(KeyText).orEmpty()
+        val start = (saved.get<Int>(KeySelStart) ?: t.length).coerceIn(0, t.length)
+        val end = (saved.get<Int>(KeySelEnd) ?: t.length).coerceIn(0, t.length)
+        return TextFieldValue(t, TextRange(start, end))
+    }
+
+    private fun saveImages() {
+        saved[KeyImages] = ArrayList(images.map { it.key })
+    }
+
+    private fun saveUploaded() {
+        saved[KeyUploaded] = BiliJson.encodeToString(uploaded.toMap())
+    }
+
+    private fun keepGrant(uri: Uri) {
+        runCatching { app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+    }
+
+    private fun dropGrant(uri: Uri) {
+        runCatching { app.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
     }
 
     private enum class Step { Upload, Create }
 
     private fun Throwable.publishMessage(step: Step): String {
+        if (this is UnconfirmedPost) return message
         val server = (this as? BiliException)?.message?.takeIf { it.isNotBlank() && !it.startsWith("HTTP") }
         return when {
             server != null -> server
             this is UnknownHostException -> "网络不可用"
-            this is SocketTimeoutException -> if (step == Step.Upload) "图片上传超时" else "请求超时"
+            this is InterruptedIOException -> if (step == Step.Upload) "图片上传超时" else "请求超时"
             this is SecurityException -> "图片无法读取"
+            this is OutOfMemoryError -> "图片过大"
             step == Step.Upload -> "图片上传失败"
             else -> "发布失败"
         }
     }
+}
+
+/** The content's identity for `upload_id`: the trimmed text and the pictures in order. */
+private fun signature(body: String, pics: List<PickedImage>): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    digest.update(body.toByteArray())
+    pics.forEach {
+        digest.update(0)
+        digest.update(it.key.toByteArray())
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+private val Whitespace = Regex("""\s+""")
+
+private fun String.squashed(): String = replace(Whitespace, " ").trim()
+
+/** A text or picture dynamic of this account carrying [post]'s text and picture count, not older than its attempt. */
+private fun DynItem.isPostOf(post: PendingPost): Boolean {
+    if (kind != "DYNAMIC_TYPE_WORD" && kind != "DYNAMIC_TYPE_DRAW") return false
+    val published = pubTs
+    if (published > 0 && published < post.startedAt - ClockSlackSeconds) return false
+    if (pictures.size != post.pics) return false
+    val shown = postedText().squashed()
+    val sent = post.text.squashed()
+    if (shown == sent) return true
+    // A long text can come back cut, ending in an ellipsis.
+    val cut = shown.trimEnd('…', '.', ' ')
+    return cut.length >= 20 && cut.length < sent.length && sent.startsWith(cut)
 }
 
 /**
@@ -266,50 +577,68 @@ internal class DynamicComposeViewModel(private val app: Context) : ViewModel() {
  * the picked pictures under the text, and a toolbar that rides the keyboard —
  * emotes (the comment composer's panel, swapping with the keyboard), the
  * system photo picker, the count near the limit, send. Back with a draft asks
- * in place.
+ * in place; back while pictures upload stops the upload.
  */
 @Composable
 fun DynamicComposeScreen() {
     val context = LocalContext.current
-    val vm: DynamicComposeViewModel = viewModel { DynamicComposeViewModel(context.applicationContext) }
+    val vm: DynamicComposeViewModel = viewModel {
+        DynamicComposeViewModel(context.applicationContext, createSavedStateHandle())
+    }
     val nav = LocalNavigator.current
     val toast = rememberToast()
     val haptic = LocalHapticFeedback.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val focus = remember { FocusRequester() }
     val peek = remember { EmotePeekState() }
     val settled = LocalPageSettled.current
     var panel by rememberSaveable { mutableStateOf(false) }
     var confirming by rememberSaveable { mutableStateOf(false) }
     var leaving by remember { mutableStateOf(false) }
+    // When the toolbar last came back from the confirm: 发布 sits out the next SendGuardMs.
+    var toolbarBackAt by remember { mutableLongStateOf(0L) }
+    var refocus by remember { mutableIntStateOf(0) }
+    // Only this page is ever popped: a page pushed over it meanwhile (a link from outside) stays.
+    val onTop by remember(nav) { derivedStateOf { nav.backStack.lastOrNull() == Route.DynamicCompose } }
 
     // The page keeps showing what it showed (the confirm, the text) while it closes.
     fun leave() {
+        if (leaving || !onTop) return
         leaving = true
         keyboard?.hide()
         nav.pop()
     }
 
+    fun startConfirm() {
+        keyboard?.hide()
+        focusManager.clearFocus(force = true)
+        panel = false
+        confirming = true
+    }
+
+    fun endConfirm() {
+        toolbarBackAt = SystemClock.uptimeMillis()
+        confirming = false
+    }
+
     fun requestClose() {
-        when {
-            leaving || vm.sending -> Unit
-            vm.hasDraft -> {
-                keyboard?.hide()
-                panel = false
-                confirming = true
-            }
-            else -> leave()
+        if (leaving) return
+        when (vm.phase) {
+            SendPhase.Uploading -> vm.cancelUpload()
+            SendPhase.Publishing -> Unit
+            SendPhase.Idle -> if (vm.hasDraft) startConfirm() else leave()
         }
     }
 
     fun toggleEmotes() {
+        if (confirming) return
         if (panel) {
             panel = false
             runCatching { focus.requestFocus() }
             keyboard?.show()
         } else {
             keyboard?.hide()
-            confirming = false
             panel = true
         }
     }
@@ -317,7 +646,7 @@ fun DynamicComposeScreen() {
     // The keyboard comes up once the page has landed: opening it mid-grow would
     // resize the container under the transform.
     LaunchedEffect(settled) {
-        if (settled && !vm.focusedOnce) {
+        if (settled && !vm.focusedOnce && !confirming && !vm.finished) {
             vm.focusedOnce = true
             withFrameNanos { }
             runCatching { focus.requestFocus() }
@@ -325,14 +654,20 @@ fun DynamicComposeScreen() {
         }
     }
 
-    // The keyboard and the emote panel take turns: whenever the keyboard comes up
-    // (a tap on the text, 继续编辑), the panel and the confirm give way.
+    // 继续编辑: focus once the editor is editable again (it is read-only under the confirm).
+    LaunchedEffect(refocus) {
+        if (refocus > 0) {
+            withFrameNanos { }
+            runCatching { focus.requestFocus() }
+            keyboard?.show()
+        }
+    }
+
+    // The keyboard and the emote panel take turns. The confirm is left only by
+    // its own buttons or back, never by the keyboard or focus moving.
     val imeVisible = WindowInsets.isImeVisible
     LaunchedEffect(imeVisible) {
-        if (imeVisible) {
-            panel = false
-            confirming = false
-        }
+        if (imeVisible) panel = false
     }
 
     LaunchedEffect(vm.outcome) {
@@ -341,22 +676,34 @@ fun DynamicComposeScreen() {
                 vm.consumeOutcome()
                 haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                 toast("发布成功")
-                leave()
             }
             is ComposeOutcome.Failed -> {
                 vm.consumeOutcome()
                 haptic.performHapticFeedback(HapticFeedbackType.Reject)
                 toast(o.message)
             }
+            is ComposeOutcome.Notice -> {
+                vm.consumeOutcome()
+                toast(o.message)
+            }
             null -> Unit
         }
+    }
+
+    // Posted: close as soon as this page is the top one.
+    LaunchedEffect(vm.finished, onTop) {
+        if (vm.finished && onTop) leave()
     }
 
     // In-page back outranks the host's page back while there is something to settle here.
     BackHandler(enabled = !leaving && (vm.sending || panel || confirming || vm.hasDraft)) {
         when {
-            vm.sending -> Unit
-            confirming -> confirming = false
+            vm.phase == SendPhase.Uploading -> vm.cancelUpload()
+            vm.sending -> {
+                haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                toast("正在发布")
+            }
+            confirming -> endConfirm()
             panel -> panel = false
             else -> requestClose()
         }
@@ -372,9 +719,19 @@ fun DynamicComposeScreen() {
     val pickImages: () -> Unit = {
         val request = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
         when {
-            vm.sending -> Unit
+            vm.sending || confirming || vm.finished -> Unit
             remaining >= 2 -> pickMany.launch(request)
             remaining == 1 -> pickOne.launch(request)
+        }
+    }
+    val onSend: () -> Unit = {
+        // A tap meant for the confirm that just left (or still leaving) never publishes.
+        val calm = SystemClock.uptimeMillis() - toolbarBackAt >= SendGuardMs
+        if (calm && !confirming && !leaving && vm.canSend) {
+            haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+            keyboard?.hide()
+            panel = false
+            vm.send()
         }
     }
 
@@ -387,6 +744,9 @@ fun DynamicComposeScreen() {
     val fadeOutSpec = YoinMotion.fastEffectsSpec<Float>()
     val scaleSpec = YoinMotion.fastSpatialSpec<Float>()
     val sizeSpec = YoinMotion.defaultSpatialSpec<IntSize>()
+    // A short window (phone landscape, split screen, a small desktop window)
+    // keeps room for the text under the panel.
+    val panelHeight = min(EmotePanelMaxHeight, LocalConfiguration.current.screenHeightDp.dp * 0.4f)
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         Column(
@@ -395,8 +755,8 @@ fun DynamicComposeScreen() {
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
                 .imePadding(),
         ) {
-            ComposerTopBar(enabled = !vm.sending, onClose = ::requestClose)
-            Column(
+            ComposerTopBar(enabled = vm.phase != SendPhase.Publishing && !leaving, onClose = ::requestClose)
+            BoxWithConstraints(
                 Modifier
                     .weight(1f)
                     .readingWidth(EditorMaxWidth)
@@ -405,38 +765,43 @@ fun DynamicComposeScreen() {
                     .clip(YoinContainerShapes.PanelAnimated)
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             ) {
-                TextField(
-                    value = vm.text,
-                    onValueChange = { vm.text = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .focusRequester(focus)
-                        .onFocusChanged {
-                            if (it.isFocused) {
-                                panel = false
-                                confirming = false
-                            }
-                        },
-                    readOnly = vm.sending,
-                    placeholder = { Text("动态内容") },
-                    textStyle = MaterialTheme.typography.bodyLarge,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent,
-                    ),
+                val stripSpace by animateDpAsState(
+                    if (vm.images.isNotEmpty()) StripHeight else 0.dp,
+                    YoinMotion.defaultSpatialSpec(),
+                    label = "stripSpace",
                 )
-                AnimatedVisibility(
-                    visible = vm.images.isNotEmpty(),
-                    enter = expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(fadeInSpec),
-                    exit = shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(fadeOutSpec),
-                ) {
-                    ThumbStrip(vm = vm, canAdd = remaining > 0, onAdd = pickImages)
+                // The text fills what the pictures leave, never less than a few
+                // lines; when the block is too short for both, it scrolls.
+                val fieldMin = max(EditorMinHeight, maxHeight - stripSpace)
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    TextField(
+                        value = vm.closingText ?: vm.text,
+                        onValueChange = { if (!vm.finished) vm.text = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = fieldMin)
+                            .focusRequester(focus)
+                            .onFocusChanged { if (it.isFocused) panel = false },
+                        readOnly = vm.sending || confirming || vm.finished,
+                        placeholder = { Text("动态内容") },
+                        textStyle = MaterialTheme.typography.bodyLarge,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent,
+                        ),
+                    )
+                    AnimatedVisibility(
+                        visible = vm.images.isNotEmpty(),
+                        enter = expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(fadeInSpec),
+                        exit = shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(fadeOutSpec),
+                    ) {
+                        ThumbStrip(vm = vm, canAdd = remaining > 0, onAdd = pickImages)
+                    }
                 }
             }
             AnimatedContent(
@@ -450,14 +815,17 @@ fun DynamicComposeScreen() {
                 label = "composerBar",
                 modifier = Modifier.readingWidth(EditorMaxWidth),
             ) { asking ->
+                // Each side acts only while it is the current one: the bar on its
+                // way out ignores taps.
                 if (asking) {
                     DiscardBar(
                         onKeep = {
-                            confirming = false
-                            runCatching { focus.requestFocus() }
-                            keyboard?.show()
+                            if (confirming) {
+                                endConfirm()
+                                refocus++
+                            }
                         },
-                        onDiscard = ::leave,
+                        onDiscard = { if (confirming) leave() },
                     )
                 } else {
                     ComposerToolbar(
@@ -466,12 +834,7 @@ fun DynamicComposeScreen() {
                         canPick = remaining > 0,
                         onToggleEmotes = ::toggleEmotes,
                         onPick = pickImages,
-                        onSend = {
-                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                            keyboard?.hide()
-                            panel = false
-                            vm.send()
-                        },
+                        onSend = onSend,
                     )
                 }
             }
@@ -485,7 +848,7 @@ fun DynamicComposeScreen() {
                 ) {
                     EmotePanel(
                         peek = peek,
-                        modifier = Modifier.readingWidth(EditorMaxWidth).height(280.dp),
+                        modifier = Modifier.readingWidth(EditorMaxWidth).height(panelHeight),
                         onPick = { vm.insert(it.text) },
                     )
                 }
@@ -611,7 +974,12 @@ private fun CharCount(length: Int) {
     }
 }
 
-/** The in-page confirm for leaving with a draft: a filled block in the toolbar's place. */
+/**
+ * The in-page confirm for leaving with a draft: a filled block in the
+ * toolbar's place. 舍弃 leads, at the opposite end from where 发布 sits in
+ * the toolbar; the trailing slot, under a finger that was on 发布, is the
+ * harmless 继续编辑.
+ */
 @Composable
 private fun DiscardBar(onKeep: () -> Unit, onDiscard: () -> Unit) {
     Row(
@@ -620,25 +988,25 @@ private fun DiscardBar(onKeep: () -> Unit, onDiscard: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .clip(YoinContainerShapes.Panel)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        FilledTonalButton(
+            onClick = onDiscard,
+            shapes = ButtonDefaults.shapes(),
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            ),
+        ) { Text("舍弃") }
         Text(
             "草稿未发送",
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
         )
-        FilledTonalButton(onClick = onKeep, shapes = ButtonDefaults.shapes()) { Text("继续编辑") }
-        Button(
-            onClick = onDiscard,
-            shapes = ButtonDefaults.shapes(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error,
-                contentColor = MaterialTheme.colorScheme.onError,
-            ),
-        ) { Text("舍弃") }
+        Button(onClick = onKeep, shapes = ButtonDefaults.shapes()) { Text("继续编辑") }
     }
 }
 
@@ -660,7 +1028,7 @@ private fun ThumbStrip(vm: DynamicComposeViewModel, canAdd: Boolean, onAdd: () -
         Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(12.dp),
+            .padding(StripPadding),
     ) {
         Box(Modifier.width(width).height(ThumbSize)) {
             vm.images.forEachIndexed { index, image ->
@@ -813,13 +1181,14 @@ private fun PickedThumb(
             exit = fadeOut(fastEffects),
             modifier = Modifier.align(Alignment.TopEnd),
         ) {
+            // A 48dp target around the small chip.
             Box(
                 Modifier
-                    .padding(4.dp)
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(ImageScrim.copy(alpha = 0.55f))
-                    .clickable {
+                    .size(48.dp)
+                    .clickable(
+                        interactionSource = null,
+                        indication = ripple(bounded = false, radius = 18.dp, color = Color.White),
+                    ) {
                         if (removing) return@clickable
                         removing = true
                         haptic.performHapticFeedback(HapticFeedbackType.ToggleOff)
@@ -834,7 +1203,12 @@ private fun PickedThumb(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(YoinSymbols.Close, contentDescription = "移除", tint = Color.White, modifier = Modifier.size(16.dp))
+                Box(
+                    Modifier.size(28.dp).clip(CircleShape).background(ImageScrim.copy(alpha = 0.55f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(YoinSymbols.Close, contentDescription = "移除", tint = Color.White, modifier = Modifier.size(16.dp))
+                }
             }
         }
     }
