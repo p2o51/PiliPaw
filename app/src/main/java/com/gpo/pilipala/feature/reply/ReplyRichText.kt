@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.reply
 
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -168,7 +169,9 @@ internal fun ReplyRichText(
     Text(
         text = text,
         modifier = modifier,
-        style = style,
+        // A fixed line height can't make room for a big sticker (3.2em), so it would spill into
+        // the lines around it: with big stickers the lines size to their content instead.
+        style = if (content.emotes.values.any { it.size >= 2 }) style.copy(lineHeight = TextUnit.Unspecified) else style,
         color = color,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,

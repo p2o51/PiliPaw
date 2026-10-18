@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.video.portrait
 
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.theme.LightBarIcons
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.LocalContentColor
@@ -355,7 +356,8 @@ private fun CommentsSheet(aid: Long, count: Long, onSeek: (Long) -> Unit, onDism
                     ReplyList(
                         oid = aid,
                         type = 1,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        // Comments sink under the sheet's header with the seam, not a hard cut.
+                        modifier = Modifier.weight(1f).fillMaxWidth().seamViewport(),
                         contentPadding = PaddingValues(bottom = 16.dp + navBottom),
                         onTimestampClick = onSeek,
                         threadsInPlace = true,
