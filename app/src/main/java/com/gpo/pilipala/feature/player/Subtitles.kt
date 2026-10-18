@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -83,13 +84,20 @@ internal object SubtitleApi {
 /** Language code of the last subtitle the viewer picked; "" = off (the default). */
 internal val SubtitlePreferredLan = AppSettings.register("subtitle_lan", "")
 
+/**
+ * 默认字幕: what a new video starts with. "off" 关闭, "auto" 自动 (the language picked
+ * last, off when that was 关闭), "zh" 优先中文 (a Chinese track, AI ones too, else as 自动).
+ */
+val SubtitleDefaultMode = AppSettings.register("subtitle_default", "auto")
+
 /** Picks a track (or -1 = off) and remembers the choice for the next video. */
 internal fun chooseSubtitle(ctrl: PiliPlayerController, index: Int) {
+    ctrl.lyricsBorrowedSubtitle = false
     ctrl.selectSubtitle(index)
     AppSettings.set(SubtitlePreferredLan, ctrl.subtitles.getOrNull(index)?.lan.orEmpty())
 }
 
-/** Exact language first, then the same language with / without the AI prefix (zh-CN ↔ ai-zh). */
+/** Exact language first, then the same language with / without the AI prefix (zh-CN <-> ai-zh). */
 private fun preferredIndex(tracks: List<SubtitleTrack>, lan: String): Int {
     if (lan.isEmpty() || tracks.isEmpty()) return -1
     val exact = tracks.indexOfFirst { it.lan == lan }
@@ -99,22 +107,70 @@ private fun preferredIndex(tracks: List<SubtitleTrack>, lan: String): Int {
     return tracks.indexOfFirst { base(it.lan) == want }
 }
 
-/** Bottom-centred subtitle line on a scrim plate; lifts above the controls when they show. */
+/** Simplified Chinese by people, then any Chinese by people, then the AI one (ai-zh). */
+private fun chineseIndex(tracks: List<SubtitleTrack>): Int {
+    val passes = listOf<(String) -> Boolean>(
+        { it == "zh-CN" || it == "zh-Hans" },
+        { it.startsWith("zh") },
+        { it.startsWith("ai-zh") },
+    )
+    for (p in passes) {
+        val i = tracks.indexOfFirst { p(it.lan) }
+        if (i >= 0) return i
+    }
+    return -1
+}
+
+/** The track a new video starts with under 默认字幕, or -1. */
+private fun defaultIndex(tracks: List<SubtitleTrack>): Int = when (SubtitleDefaultMode.value) {
+    "off" -> -1
+    "zh" -> chineseIndex(tracks).takeIf { it >= 0 } ?: preferredIndex(tracks, SubtitlePreferredLan.value)
+    else -> preferredIndex(tracks, SubtitlePreferredLan.value)
+}
+
+/**
+ * Turns on the default subtitle when a video's tracks arrive, and, while 仅听声音 is on
+ * with subtitles off, borrows a track for the lyrics (handed back when the picture returns).
+ * Lives with the player, not the overlay, so it works whatever is drawn.
+ */
+@Composable
+internal fun SubtitleAutoSelect(ctrl: PiliPlayerController) {
+    val tracks = ctrl.subtitles
+    val listening = ctrl.audioOnly
+    LaunchedEffect(tracks) {
+        if (tracks.isEmpty() || ctrl.subtitleIndex >= 0) return@LaunchedEffect
+        val idx = defaultIndex(tracks)
+        if (idx >= 0) ctrl.selectSubtitle(idx)
+    }
+    LaunchedEffect(tracks, listening) {
+        if (listening) {
+            if (tracks.isNotEmpty() && ctrl.subtitleIndex < 0) {
+                val idx = chineseIndex(tracks).takeIf { it >= 0 }
+                    ?: preferredIndex(tracks, SubtitlePreferredLan.value).takeIf { it >= 0 }
+                    ?: 0
+                ctrl.selectSubtitle(idx)
+                ctrl.lyricsBorrowedSubtitle = true
+            }
+        } else if (ctrl.lyricsBorrowedSubtitle) {
+            ctrl.lyricsBorrowedSubtitle = false
+            ctrl.selectSubtitle(-1)
+        }
+    }
+}
+
+/**
+ * Bottom-centred subtitle line on a scrim plate; lifts above the controls when they show.
+ * [minimal]: the portrait page draws its title and seek bar over the lower part of the
+ * picture, so the line sits higher, clear of them.
+ */
 @Composable
 internal fun SubtitleOverlay(
     ctrl: PiliPlayerController,
     controlsVisible: Boolean,
     big: Boolean,
     modifier: Modifier = Modifier,
+    minimal: Boolean = false,
 ) {
-    // Restore the remembered language when a video's tracks arrive (default off).
-    val tracks = ctrl.subtitles
-    LaunchedEffect(tracks) {
-        if (tracks.isEmpty() || ctrl.subtitleIndex >= 0) return@LaunchedEffect
-        val idx = preferredIndex(tracks, SubtitlePreferredLan.value)
-        if (idx >= 0) ctrl.selectSubtitle(idx)
-    }
-
     val lines = ctrl.subtitleLines
     if (lines.isEmpty()) return
     val line = SubtitleApi.lineAt(lines, ctrl.positionMs)?.text?.trim()
@@ -124,26 +180,29 @@ internal fun SubtitleOverlay(
         label = "subtitleLift",
     )
     val motion = MaterialTheme.motionScheme
-    Box(modifier.fillMaxSize().padding(bottom = lift), contentAlignment = Alignment.BottomCenter) {
-        AnimatedContent(
-            targetState = line,
-            transitionSpec = {
-                fadeIn(motion.fastEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec())
-            },
-            label = "subtitleLine",
-        ) { text ->
-            if (!text.isNullOrBlank()) {
-                Text(
-                    text = text,
-                    style = if (big) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleSmall,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .widthIn(max = if (big) 960.dp else 640.dp)
-                        .padding(horizontal = if (big) 48.dp else 24.dp)
-                        .background(Color.Black.copy(alpha = 0.58f), if (big) YoinShapeTokens.Medium else YoinShapeTokens.Small)
-                        .padding(horizontal = if (big) 14.dp else 10.dp, vertical = if (big) 6.dp else 3.dp),
-                )
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val bottom = if (minimal) maxOf(lift, maxHeight * 0.32f) else lift
+        Box(Modifier.fillMaxSize().padding(bottom = bottom), contentAlignment = Alignment.BottomCenter) {
+            AnimatedContent(
+                targetState = line,
+                transitionSpec = {
+                    fadeIn(motion.fastEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec())
+                },
+                label = "subtitleLine",
+            ) { text ->
+                if (!text.isNullOrBlank()) {
+                    Text(
+                        text = text,
+                        style = if (big) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleSmall,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .widthIn(max = if (big) 960.dp else 640.dp)
+                            .padding(horizontal = if (big) 48.dp else 24.dp)
+                            .background(Color.Black.copy(alpha = 0.58f), if (big) YoinShapeTokens.Medium else YoinShapeTokens.Small)
+                            .padding(horizontal = if (big) 14.dp else 10.dp, vertical = if (big) 6.dp else 3.dp),
+                    )
+                }
             }
         }
     }

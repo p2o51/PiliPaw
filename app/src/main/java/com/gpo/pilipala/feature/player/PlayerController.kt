@@ -143,6 +143,17 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     var subtitleLines by mutableStateOf<List<SubtitleLine>>(emptyList())
         private set
 
+    /** The track list for the current video has arrived (or failed): an empty list is final. */
+    var subtitlesReady by mutableStateOf(false)
+        private set
+
+    /** The chosen track's cues are on their way. */
+    var subtitleLoading by mutableStateOf(false)
+        private set
+
+    /** A track picked only so 仅听声音 has lyrics; dropped again when the picture returns. */
+    internal var lyricsBorrowedSubtitle = false
+
     /** Chapters (view points) of the current video; empty when it has none. */
     var chapters by mutableStateOf<List<Chapter>>(emptyList())
         private set
@@ -340,6 +351,10 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         subtitles = emptyList()
         subtitleIndex = -1
         subtitleLines = emptyList()
+        subtitlesReady = false
+        subtitleLoading = false
+        lyricsBorrowedSubtitle = false
+        subtitleJob?.cancel()
         chapters = emptyList()
         shots = null
         seekGeneration++
@@ -387,11 +402,18 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         }
         if (!t.isPgc || t.bvid.isNotBlank() || t.aid > 0) {
             sideJobs += scope.launch {
-                runCatching { SubtitleApi.playerInfo(t) }.onSuccess { (tracks, points) ->
+                try {
+                    val (tracks, points) = SubtitleApi.playerInfo(t)
                     subtitles = tracks
                     chapters = points
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
                 }
+                subtitlesReady = true
             }
+        } else {
+            subtitlesReady = true
         }
         sideJobs += scope.launch {
             runCatching { VideoShotsApi.get(t) }.onSuccess { shots = it }
@@ -720,9 +742,20 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         subtitleJob?.cancel()
         subtitleIndex = index
         subtitleLines = emptyList()
-        val track = subtitles.getOrNull(index) ?: return
+        val track = subtitles.getOrNull(index)
+        if (track == null) {
+            subtitleLoading = false
+            return
+        }
+        subtitleLoading = true
         subtitleJob = scope.launch {
-            runCatching { SubtitleApi.lines(track) }.onSuccess { subtitleLines = it }
+            try {
+                subtitleLines = SubtitleApi.lines(track)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+            }
+            subtitleLoading = false
         }
     }
 

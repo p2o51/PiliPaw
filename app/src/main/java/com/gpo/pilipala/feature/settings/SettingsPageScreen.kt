@@ -77,6 +77,7 @@ import com.gpo.pilipala.feature.player.DanmakuBlockRules
 import com.gpo.pilipala.feature.player.DanmakuBlockRulesSheet
 import com.gpo.pilipala.feature.player.DanmakuMergeDuplicates
 import com.gpo.pilipala.feature.player.DanmakuRules
+import com.gpo.pilipala.feature.player.SubtitleDefaultMode
 import com.gpo.pilipala.feature.player.danmakuLevelLabel
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
@@ -401,6 +402,7 @@ private fun ColumnScope.PlayBody() {
     val bg by AppSettings.backgroundPlay.state.collectAsState()
     val pip by AppSettings.autoPip.state.collectAsState()
     val liveQn by LiveDefaultQn.state.collectAsState()
+    val subtitleMode by SubtitleDefaultMode.state.collectAsState()
 
     SettingsGroup("画质") {
         item {
@@ -442,6 +444,9 @@ private fun ColumnScope.PlayBody() {
         }
         item {
             SettingsSwitchItem("横屏自动全屏", autoFs, { AppSettings.set(AppSettings.autoFullscreenLandscape, it) }, icon = PiliSymbols.Fullscreen, summary = "旋转至横屏时进入全屏")
+        }
+        item {
+            SettingsChoiceItem("默认字幕", SettingsChoices.subtitleDefault, subtitleMode, { AppSettings.set(SubtitleDefaultMode, it) }, icon = PiliSymbols.Subtitles)
         }
     }
     SettingsGroup("后台") {
