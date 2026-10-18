@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.search
 
+import androidx.compose.ui.text.TextRange
 import com.gpo.pilipala.ui.components.seam.seamViewport
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -305,8 +306,12 @@ fun SearchResultScreen(route: Route.SearchResult) {
         snapshotFlow { search.bar.targetValue }.collect { v ->
             if (v == SearchBarValue.Expanded && last == SearchBarValue.Collapsed) {
                 search.order = searchSortOrder(videoVm.order)
+                // The tap that opened it placed a cursor; open on the whole keyword selected.
+                search.input.edit { selection = TextRange(0, length) }
             }
-            if (v == SearchBarValue.Collapsed) search.input.setTextAndSelectAll(keyword)
+            // Folding away without a submit puts this page's keyword back (a submit keeps the
+            // typed text through the fold; the branches that stay on this page reset it).
+            if (v == SearchBarValue.Collapsed && !search.submitted) search.input.setTextAndSelectAll(keyword)
             last = v
         }
     }
@@ -328,7 +333,9 @@ fun SearchResultScreen(route: Route.SearchResult) {
                     val page = tabs.indexOf(SearchTab.Video)
                     if (pagerState.currentPage != page) scope.launch { pagerState.animateScrollToPage(page, animationSpec = pageSpec) }
                 } else {
-                    // A new keyword replaces this page; a video or link opens over it.
+                    // A new keyword replaces this page; a video or link opens over it, and this
+                    // page keeps its own keyword in the field for when it comes back.
+                    if (target !is SearchTarget.Keyword) search.input.setTextAndSelectAll(keyword)
                     nav.openSearch(request, replace = target is SearchTarget.Keyword)
                 }
             },

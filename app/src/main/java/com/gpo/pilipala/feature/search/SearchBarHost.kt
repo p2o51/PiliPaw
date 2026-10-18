@@ -1,5 +1,9 @@
 package com.gpo.pilipala.feature.search
 
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableLongStateOf
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -165,8 +169,13 @@ internal fun rememberPiliSearchState(
     initialOrder: String = DefaultSearchOrder,
     expanded: Boolean = false,
 ): PiliSearchState {
+    val motion = MaterialTheme.motionScheme
     val bar = rememberContainedSearchBarState(
         initialValue = if (expanded) SearchBarValue.Expanded else SearchBarValue.Collapsed,
+        // Springs, not M3's default eased tweens. The scheme's specs are cached instances, so
+        // they are stable inputs for the saveable state.
+        animationSpecForContentFadeIn = motion.defaultEffectsSpec(),
+        animationSpecForContentFadeOut = motion.fastEffectsSpec(),
     )
     val input = rememberTextFieldState(initialText, TextRange(0, initialText.length))
     val order = rememberSaveable { mutableStateOf(searchSortOrder(initialOrder)) }
@@ -240,14 +249,18 @@ internal fun PiliSearchBar(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     )
-    ExpandedFullScreenContainedSearchBar(
-        state = state.bar,
-        inputField = inputField,
-        colors = colors,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        SearchExpandedContent(state = state, vm = vm, hint = hint, onSubmit = ::submit)
+    // M3 reads the dialog's system-bar icon appearance from LocalContentColor, and the panel's
+    // uncoloured text inherits it: give it the page's own content colour so both follow the theme.
+    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+        ExpandedFullScreenContainedSearchBar(
+            state = state.bar,
+            inputField = inputField,
+            colors = colors,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {
+            SearchExpandedContent(state = state, vm = vm, hint = hint, onSubmit = ::submit)
+        }
     }
 }
 
@@ -331,8 +344,8 @@ private fun ColumnScope.SearchExpandedContent(
     val haptics = LocalHapticFeedback.current
     val text = state.text
     // History word whose 新建 Feed / 添加到 Feed sheet is open; the typed text's sheet.
-    var historySheet by remember { mutableStateOf<String?>(null) }
-    var feedSheet by remember { mutableStateOf<String?>(null) }
+    var historySheet by rememberSaveable { mutableStateOf<String?>(null) }
+    var feedSheet by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(vm) { vm.ensureHot() }
     LaunchedEffect(state.input, vm) {
@@ -445,6 +458,9 @@ private fun SearchActionRow(
 private fun SortSplitButton(order: String, toggleOrder: String, onOrder: (String) -> Unit) {
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
+    // The popup is not touch-modal, so a tap on the chevron while it is open dismisses it on
+    // touch-down and would toggle it open again on touch-up: ignore that reopen.
+    var dismissedAt by remember { mutableLongStateOf(0L) }
     val label = SearchSortOrders.firstOrNull { it.value == order }?.label ?: SearchSortOrders.first().label
     val enter = YoinMotion.defaultEffectsSpec<Float>()
     val exit = YoinMotion.fastEffectsSpec<Float>()
@@ -479,7 +495,9 @@ private fun SortSplitButton(order: String, toggleOrder: String, onOrder: (String
             Box {
                 SplitButtonDefaults.TonalTrailingButton(
                     checked = menu,
-                    onCheckedChange = { menu = it },
+                    onCheckedChange = { open ->
+                        menu = open && SystemClock.uptimeMillis() - dismissedAt > 300
+                    },
                     modifier = Modifier.semantics {
                         contentDescription = "排序"
                         stateDescription = if (menu) "已展开" else "已收起"
@@ -498,7 +516,10 @@ private fun SortSplitButton(order: String, toggleOrder: String, onOrder: (String
                 BackHandler(enabled = menu) { menu = false }
                 DropdownMenuPopup(
                     expanded = menu,
-                    onDismissRequest = { menu = false },
+                    onDismissRequest = {
+                        menu = false
+                        dismissedAt = SystemClock.uptimeMillis()
+                    },
                     properties = PopupProperties(focusable = false),
                 ) {
                     DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 1)) {
