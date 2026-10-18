@@ -2,6 +2,7 @@ package com.gpo.pilipala.navigation.transition
 
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
@@ -17,8 +18,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +54,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.navigation3.scene.Scene
+import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.theme.BackMotionTokens
 import com.gpo.pilipala.ui.theme.YoinMotion
@@ -138,16 +143,22 @@ private class PageSharedSourceNode(
  *  - plays the push's forward motion (taken from [PageTransitions.takeEnter])
  *    in real time, over the page beneath as captured at the tap:
  *    · from a card — container transform: the container's bounds lerp from
- *      the card to the window on the spatial spring, corners 12dp → 0; it
- *      starts as the card's own pixels, which fade off the page (laid out at
- *      full size, scaled to fill, top aligned like the cover) on the effects
- *      spring; the page beneath dims under the M3 scrim;
+ *      the card to the window on the spatial spring; it reads as a rounded
+ *      card the whole way ([containerCornerPx]: the card's 12dp opens to the
+ *      28dp window corner early, holds while it moves, eases to 0 only as it
+ *      lands); it starts as the card's own pixels, which fade off the page
+ *      (laid out at full size, scaled to fill, top aligned like the cover) on
+ *      the effects spring; the page beneath dims under the M3 scrim;
  *    · otherwise — Yoin's forward mirror: in from 96dp on EMPHASIZED with the
- *      effects fade, the page beneath stays put.
+ *      effects fade, clipped to the 28dp window corner while it slides
+ *      ([slideCornerPx]), the page beneath stays put.
  *    The clock starts only once the page has composed, drawn (hidden) and
  *    its heavy first frames have passed, so they never eat the opening;
+ *  - provides [LocalPageSettled]: true from the frame the motion lands (its
+ *    own, or the scene's forward mirror when nothing was captured);
  *  - records the page into a layer, the source of the pixels a later back
- *    reveals beneath the page pushed on top of it;
+ *    reveals beneath the page pushed on top of it (the corner clip sits
+ *    outside it: snapshots are always the square, full page);
  *  - votes 120Hz while it enters.
  */
 @Composable
@@ -166,6 +177,17 @@ internal fun PageEntryFrame(
     val slide = remember(enter) { Animatable(if (enter != null && !enter.container) 1f else 0f) }
     val fade = remember(enter) { Animatable(if (enter != null) 0f else 1f) }
     var entering by remember(enter) { mutableStateOf(enter != null) }
+    // Without a capture the scene itself plays the forward mirror
+    // (pagePushTransform): the page is still moving until that enter is done.
+    // Only the entering direction counts — a page being covered (target
+    // PostExit) stays settled, its picture must not drop out beneath.
+    val sceneTransition = LocalNavAnimatedContentScope.current.transition
+    val sceneSettled by remember(sceneTransition) {
+        derivedStateOf {
+            sceneTransition.targetState != EnterExitState.Visible ||
+                sceneTransition.currentState == EnterExitState.Visible
+        }
+    }
     if (enter != null) {
         LaunchedEffect(enter) {
             // The page composes and draws (hidden behind the card's own pixels
@@ -221,7 +243,15 @@ internal fun PageEntryFrame(
                 .graphicsLayer {
                     if (enter == null) return@graphicsLayer
                     if (!enter.container) {
-                        translationX = BackMotionTokens.EnteringStartOffset.toPx() * slide.value
+                        val remaining = slide.value
+                        translationX = BackMotionTokens.EnteringStartOffset.toPx() * remaining
+                        val corner = slideCornerPx(remaining, EnterCorner.toPx())
+                        if (corner > 0f && size.width > 0f && size.height > 0f) {
+                            // Equal shapes compare equal: the outline is rebuilt
+                            // only while the corner actually changes.
+                            shape = LocalRectShape(Rect(0f, 0f, size.width, size.height), corner)
+                            clip = true
+                        }
                         return@graphicsLayer
                     }
                     val s = growth.value
@@ -232,7 +262,12 @@ internal fun PageEntryFrame(
                     scaleY = geometry.scale
                     translationX = geometry.translationX
                     translationY = geometry.translationY
-                    val corner = BackMotionTokens.ContainerSourceCorner.toPx() * (1f - s.coerceIn(0f, 1f))
+                    val corner = containerCornerPx(
+                        s,
+                        BackMotionTokens.ContainerSourceCorner.toPx(),
+                        EnterCorner.toPx(),
+                    )
+                    // The clip lives in the page's own (unscaled) coordinates.
                     shape = LocalRectShape(geometry.local, corner / geometry.scale)
                     clip = true
                 }
@@ -285,7 +320,11 @@ internal fun PageEntryFrame(
                     // backdrop never shows through an entering page.
                     .background(MaterialTheme.colorScheme.surface),
             ) {
-                androidx.compose.runtime.CompositionLocalProvider(LocalPageSettled provides !entering) {
+                // `entering` turns false only after the last animation has
+                // snapped to its target — the layer above has drawn its final
+                // frame with no transform or clip — so settled never leads
+                // the landing (at most it trails it by the recomposition frame).
+                CompositionLocalProvider(LocalPageSettled provides (!entering && sceneSettled)) {
                     content()
                 }
             }
@@ -298,8 +337,11 @@ internal fun PageEntryFrame(
  * true once it has landed. Pages hold back things the transition can't carry —
  * a video SurfaceView ignores the container's rounded clip — until it is true.
  * CONTRACT for feature code; navigation/transition owns how it is driven.
+ *
+ * Read-tracked (not static) on purpose: it flips once per page, at the landing
+ * frame, and only its readers recompose then — not the whole page.
  */
-val LocalPageSettled = androidx.compose.runtime.staticCompositionLocalOf { true }
+val LocalPageSettled = compositionLocalOf { true }
 
 /** The container at growth s: where the full-size page is drawn and which part of it shows. */
 private class ContainerGeometry(
@@ -327,13 +369,52 @@ private fun containerGeometry(transitions: PageTransitions, source: Rect, s: Flo
  * rounded rect on purpose: the clip is resized every frame, and
  * Outline.Rounded stays on RenderNode's native clip — a continuous-curvature
  * path clip cost ~10ms of RenderThread per frame on the tablet (Yoin's
- * *Animated shapes rule).
+ * *Animated shapes rule). The radius never exceeds half the short side.
+ * A data class: graphicsLayer compares shapes by equality, so an unchanged
+ * clip (the slide's held 28dp) doesn't rebuild the outline each frame.
  */
-private class LocalRectShape(private val rect: Rect, private val radiusPx: Float) : Shape {
+private data class LocalRectShape(private val rect: Rect, private val radiusPx: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val r = radiusPx.coerceAtLeast(0f)
+        val r = radiusPx.coerceIn(0f, min(rect.width, rect.height).coerceAtLeast(0f) / 2f)
         return Outline.Rounded(RoundRect(rect, CornerRadius(r, r)))
     }
+}
+
+/**
+ * The corner an entering page wears while it moves: the device-like window
+ * corner, the same 28dp the back path's closing page clips to.
+ */
+private val EnterCorner = BackMotionTokens.PopPageCornerRadius
+
+/** Growth by which the container's corner has opened from the card's to [EnterCorner]. */
+private const val CornerOpenEnd = 0.3f
+
+/** Travel fraction from which the corner eases to 0: the last ~10%, as the page lands. */
+private const val CornerLandStart = 0.9f
+
+/**
+ * The container's corner (px, screen space) at growth [s] — one C¹ curve of
+ * the growth value, no step: the card's [sourcePx] opens to [windowPx] over
+ * the first [CornerOpenEnd] of the grow, holds while the container moves, and
+ * eases to 0 over the last ~10% as it lands (0 at s ≥ 1, so a hair of spring
+ * overshoot never brings a corner back).
+ */
+private fun containerCornerPx(s: Float, sourcePx: Float, windowPx: Float): Float {
+    val open = sourcePx + (windowPx - sourcePx) * smoothstep(0f, CornerOpenEnd, s)
+    return open * (1f - smoothstep(CornerLandStart, 1f, s))
+}
+
+/**
+ * The forward mirror's corner (px) with [remaining] of the 96dp slide still to
+ * go (1 → 0): [windowPx] while it slides, easing to 0 over the last ~10% of
+ * the travel as it settles.
+ */
+private fun slideCornerPx(remaining: Float, windowPx: Float): Float =
+    windowPx * (1f - smoothstep(CornerLandStart, 1f, 1f - remaining))
+
+private fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
+    val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
 }
 
 /** The spring may overshoot by a hair; past this the page is simply in place. */
