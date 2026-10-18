@@ -1,6 +1,10 @@
-# PiliPala Compose
+# PiliPaw
 
-A Jetpack Compose rewrite of [guozhigq/pilipala](https://github.com/guozhigq/pilipala) (Flutter), a third-party Bilibili client, in the Yoin design language: Material 3 Expressive, system dynamic color with cover-driven palettes on detail pages, Google Sans Flex, continuous corners, spring motion, Yoin Symbols.
+PiliPaw (霹雳啵) is a Jetpack Compose rewrite of PiliPala, the Flutter Bilibili client by [guozhigq/pilipala](https://github.com/guozhigq/pilipala); it is not related to PiliPawa (噼哩啪哇).
+
+A third-party Bilibili client in the Yoin design language: Material 3 Expressive, system dynamic color with cover-driven palettes on detail pages, Google Sans Flex, continuous corners, spring motion, Yoin Symbols.
+
+基于 [guozhigq/pilipala](https://github.com/guozhigq/pilipala)（PiliPala）重写，GPL-3.0.
 
 ## Build
 
@@ -23,6 +27,6 @@ Requires the Android SDK (compileSdk 36). `flutter-src/` (the original Flutter s
 
 ## Credits
 
-- [pilipala](https://github.com/guozhigq/pilipala) — the original app, API usage and feature set.
+- [PiliPala](https://github.com/guozhigq/pilipala) by guozhigq (GPL-3.0) — the original app this is rewritten from: API usage and feature set.
 - [bilibili-accelerator](https://github.com/realzza/bilibili-accelerator) (MIT) — the line-switching approach used in `feature/player/cdn`.
 - [bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect) — API documentation.

@@ -7,7 +7,7 @@ import android.net.Uri
 import androidx.browser.customtabs.CustomTabColorSchemeParams
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialShapes
@@ -29,10 +30,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
@@ -48,6 +49,7 @@ import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
 private const val RepoUrl = "https://github.com/guozhigq/pilipala"
+private const val LicenseUrl = "https://www.gnu.org/licenses/gpl-3.0.html"
 
 @Composable
 fun AboutScreen() {
@@ -61,10 +63,10 @@ internal fun AboutContent(showBack: Boolean) {
     val open: (String) -> Unit = { openCustomTab(context, it, toolbar) }
     SettingsScaffold(title = "关于", showBack = showBack) {
         AboutHero()
-        SettingsGroup("项目") {
+        SettingsGroup("致谢") {
             item {
                 SettingsItem(
-                    title = "开源地址",
+                    title = "基于 guozhigq/pilipala（PiliPala）重写",
                     icon = YoinSymbols.Code,
                     summary = "github.com/guozhigq/pilipala",
                     onClick = { open(RepoUrl) },
@@ -73,20 +75,10 @@ internal fun AboutContent(showBack: Boolean) {
             }
             item {
                 SettingsItem(
-                    title = "问题反馈",
-                    icon = PiliSymbols.Comment,
-                    summary = "GitHub Issues",
-                    onClick = { open("$RepoUrl/issues") },
-                    trailing = { LaunchGlyph() },
-                )
-            }
-            item {
-                SettingsItem(
-                    title = "版本发布",
-                    icon = YoinSymbols.Download,
-                    summary = "GitHub Releases",
-                    onClick = { open("$RepoUrl/releases") },
-                    trailing = { LaunchGlyph() },
+                    title = "开源许可",
+                    icon = PiliSymbols.Article,
+                    onClick = { open(LicenseUrl) },
+                    trailing = { ValueLabel("GPL-3.0") },
                 )
             }
         }
@@ -125,7 +117,10 @@ private fun LaunchGlyph() {
     Icon(YoinSymbols.Launch, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
 }
 
-/** App mark on a cookie that morphs and turns on each tap; name and version under it. */
+/**
+ * The launcher icon, large: its forest field clipped to a cookie that morphs and turns on each
+ * tap, the mark counter-turning so the P stays upright. Name, 霹雳啵 and version under it.
+ */
 @Composable
 private fun AboutHero() {
     val haptics = LocalHapticFeedback.current
@@ -135,8 +130,9 @@ private fun AboutHero() {
         animationSpec = YoinMotion.defaultSpatialSpec(role = YoinMotionRole.Expressive),
         label = "aboutTurn",
     )
+    // Shallow-lobed shapes only: the mark (r 29.4 of the 108 viewport) never touches a valley.
     val shapes = remember {
-        listOf(MaterialShapes.Cookie12Sided, MaterialShapes.Clover8Leaf, MaterialShapes.Sunny, MaterialShapes.Cookie9Sided)
+        listOf(MaterialShapes.Cookie9Sided, MaterialShapes.Cookie12Sided, MaterialShapes.Sunny, MaterialShapes.Circle)
     }
     val base = turn.toInt().coerceAtLeast(0)
     val frac = (turn - base).coerceIn(0f, 1f)
@@ -144,30 +140,43 @@ private fun AboutHero() {
     Column(
         Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Box(
             Modifier
-                .size(112.dp)
+                .size(HeroSize)
                 .graphicsLayer { rotationZ = turn * 45f }
                 .clip(MorphShape(morph, frac))
-                .background(MaterialTheme.colorScheme.primaryContainer)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                     haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                     taps++
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
+            Image(
+                painterResource(R.drawable.ic_launcher_background),
+                contentDescription = null,
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.matchParentSize(),
+            )
+            Image(
                 painterResource(R.drawable.ic_launcher_foreground),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(104.dp).graphicsLayer { rotationZ = -turn * 45f },
+                modifier = Modifier.requiredSize(HeroSize * MarkScale).graphicsLayer { rotationZ = -turn * 45f },
             )
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("PiliPala", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("PiliPaw", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                "霹雳啵",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                Modifier.padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
                     BuildConfig.VERSION_NAME,
                     style = MaterialTheme.typography.labelLarge,
@@ -178,6 +187,11 @@ private fun AboutHero() {
         }
     }
 }
+
+private val HeroSize = 144.dp
+
+/** The 108-unit foreground across the cookie: a touch under the launcher's 1.5 so lobes clear it. */
+private const val MarkScale = 1.36f
 
 /** Opens [url] in a Custom Tab (falls back to any browser). */
 internal fun openCustomTab(context: Context, url: String, toolbarColor: Int? = null) {
