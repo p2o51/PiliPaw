@@ -5,7 +5,6 @@ import androidx.compose.ui.draw.clip
 import android.content.res.Configuration
 import android.os.Build
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -95,6 +94,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.foundation.shape.CornerBasedShape
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.zIndex
 import com.gpo.pilipala.ui.theme.rememberRichHaptics
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -348,10 +351,22 @@ fun BiliVideoPlayer(
     val turning by remember { derivedStateOf { turnAngle.value != 0f } }
     val full = chrome == PlayerChrome.Full
     val cardFrame = fullscreen && full
-    val surfaceType = if (turned || turning || cardFrame) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
+    // Fullscreen predictive back (FullscreenBack.kt): the picture follows the finger home,
+    // then lands in its inline slot; the landing scales a TextureView too.
+    val back = remember { FullscreenBackState() }
+    val landing by remember { derivedStateOf { back.settle.isRunning || back.settle.value != 0f } }
+    val surfaceType = if (turned || turning || cardFrame || landing) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
+    val view = LocalView.current
+    val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
 
-    BackHandler(enabled = fullscreen && !inPip) { onFullscreenChange(false) }
     LaunchedEffect(fullscreen) { if (!fullscreen) ctrl.fullscreenByRotation = false }
+    // Back into fullscreen mid-landing: the landing is over.
+    LaunchedEffect(fullscreen) {
+        if (fullscreen && back.settle.value != 0f) {
+            back.settle.snapTo(0f)
+            back.release = null
+        }
+    }
     val autoFs by AppSettings.autoFullscreenLandscape.state.collectAsState()
     var lastLandscape by remember { mutableStateOf(landscape) }
     LaunchedEffect(landscape) {
@@ -389,6 +404,30 @@ fun BiliVideoPlayer(
     val inline = controls && !fullscreen
     val fill = !inline
     val shown = controls && ui.visible && !ui.locked && !pipEntering
+
+    // Back exits fullscreen. With the full chrome the picture follows the finger home and the
+    // chrome is gone by the time it lands (the inline strip must not unfold under it).
+    FullscreenBackHandler(
+        state = back,
+        enabled = fullscreen && !inPip,
+        animate = full && cardFrame,
+        turnAngle = turnAngle,
+        turnTarget = turnTarget,
+        windowSize = windowSize,
+        onExit = { animated ->
+            if (animated) {
+                ui.visible = false
+                back.snapChrome = true
+            }
+            onFullscreenChange(false)
+        },
+    )
+    LaunchedEffect(back.snapChrome) {
+        if (!back.snapChrome) return@LaunchedEffect
+        withFrameNanos { }
+        withFrameNanos { }
+        back.snapChrome = false
+    }
     LaunchedEffect(pipEntering) {
         if (!pipEntering) return@LaunchedEffect
         ui.visible = false
@@ -400,7 +439,7 @@ fun BiliVideoPlayer(
     // Into PiP it snaps: the system is already flying the picture, the chrome must not ride along.
     val revealState = animateFloatAsState(
         targetValue = if (shown) 1f else 0f,
-        animationSpec = if (pipEntering) snap() else YoinMotion.defaultSpatialSpec(YoinMotionRole.Expressive),
+        animationSpec = if (pipEntering || back.snapChrome) snap() else YoinMotion.defaultSpatialSpec(YoinMotionRole.Expressive),
         label = "chromeReveal",
     )
     val reveal: () -> Float = remember(revealState) { { revealState.value } }
@@ -418,10 +457,38 @@ fun BiliVideoPlayer(
     // The inline strip sits on the page, in the page's own colours (captured before the
     // dark chrome theme takes over), so only the picture itself is black.
     val stripInk = pageInk(MaterialTheme.colorScheme)
+    // The back pose's view of the frame, and the inline slot it flies home to.
+    val minCardScale = if (shortFrame) 0.76f else 0.8f
+    val frameSpec = BackFrameSpec(
+        fill = fill,
+        swapped = fill && turned,
+        angle = { turnAngle.value },
+        aspect = { ctrl.videoAspect },
+        reveal = if (cardFrame) reveal else null,
+        topBand = topBand,
+        bottomBand = bottomBand,
+        minScale = minCardScale,
+    )
+    SideEffect {
+        back.spec = frameSpec
+        back.density = density
+    }
+    val pictureShape = LocalPlayerPictureShape.current
+    val pictureRadius = remember(pictureShape, density) {
+        (pictureShape as? CornerBasedShape)?.topStart?.toPx(Size(1600f, 900f), density) ?: 0f
+    }
+    // The controls fade with the finger while the picture flies home.
+    val chromeAlpha: () -> Float = remember(back) {
+        {
+            val g = back.progress.value
+            if (g > 0f) (1f - 3f * g).coerceIn(0f, 1f) else 1f
+        }
+    }
     Box(
         modifier
+            // Landing from where the finger let go, the picture flies over the page around it.
+            .then(if (landing) Modifier.zIndex(1f) else Modifier.clipToBounds())
             .then(if (fill) Modifier.background(Color.Black) else Modifier)
-            .clipToBounds()
             .onGloballyPositioned { yInWindow = it.positionInWindow().y },
     ) {
         PlayerChromeTheme {
@@ -451,9 +518,12 @@ fun BiliVideoPlayer(
             )
             PlayerFrame(
                 fill = fill,
+                chromeAlpha = chromeAlpha,
                 modifier = Modifier
                     .then(if (fill) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
+                    .fullscreenBackFrame(back, frameSpec)
                     .frameTurn(turned, fill) { turnAngle.value }
+                    .fullscreenBackClip(back, frameSpec)
                     .onPlaced { ui.frame = it },
                 picture = {
                     Box(
@@ -462,7 +532,10 @@ fun BiliVideoPlayer(
                             // The picture's resting rect (before the card's shrink below), for the PiP
                             // flight. Not from inside the PiP window, and not while it is turned by hand.
                             .onGloballyPositioned { c ->
-                                if (!latestInPip) pipBox = if (turned || turnAngle.value != 0f) null else c.boundsInWindow()
+                                val resting = turnAngle.value == 0f && !back.busy
+                                if (!latestInPip) pipBox = if (turned || !resting) null else c.boundsInWindow()
+                                // The inline slot, for the fullscreen back gesture to fly home to.
+                                if (inline && resting && !latestInPip) back.captureInline(c, pictureRadius, windowSize())
                             }
                             .then(
                                 if (cardFrame) {
@@ -471,7 +544,7 @@ fun BiliVideoPlayer(
                                         aspect = { ctrl.videoAspect },
                                         topBand = topBand,
                                         bottomBand = bottomBand,
-                                        minScale = if (shortFrame) 0.76f else 0.8f,
+                                        minScale = minCardScale,
                                     )
                                 } else {
                                     Modifier
@@ -483,8 +556,11 @@ fun BiliVideoPlayer(
                             // The video view is rebuilt whenever its frame changes size (inline ⇄
                             // fullscreen, window resize). On some devices a resized SurfaceView keeps its
                             // old size and the picture sits small in a corner of the fullscreen frame; a
-                            // new view is laid out at the right size from its first frame.
-                            key(surfaceType, fullscreen, configuration.screenWidthDp, configuration.screenHeightDp) {
+                            // new view is laid out at the right size from its first frame. A TextureView
+                            // resizes fine, so it is kept across the back gesture's landing (no blank frame
+                            // as the picture flies into its slot).
+                            val sizeKey = if (surfaceType == SURFACE_TYPE_SURFACE_VIEW) fullscreen else null
+                            key(surfaceType, sizeKey, configuration.screenWidthDp, configuration.screenHeightDp) {
                                 ContentFrame(
                                     player = ctrl.player,
                                     modifier = Modifier.fillMaxSize(),
@@ -667,11 +743,13 @@ private const val PipEnteringTimeoutMs = 2500L
  * fullscreen bottom bar) sits on its bottom edge. Otherwise the picture, gestures and
  * overlay take a 16:9 box and the strip goes under it, growing the frame by its height.
  * The floating layer (the seek bubble) covers the whole frame on top. Draw / touch order:
- * picture, gestures, strip, overlay, floating.
+ * picture, gestures, strip, overlay, floating. [chromeAlpha] fades everything but the
+ * picture (the fullscreen back gesture).
  */
 @Composable
 private fun PlayerFrame(
     fill: Boolean,
+    chromeAlpha: () -> Float,
     modifier: Modifier,
     picture: @Composable () -> Unit,
     gestures: @Composable () -> Unit,
@@ -697,9 +775,9 @@ private fun PlayerFrame(
             layout(w, h) {
                 picP.forEach { it.place(0, 0) }
                 gesP.forEach { it.place(0, 0) }
-                stP.forEach { it.place(0, h - it.height) }
-                ovP.forEach { it.place(0, 0) }
-                flP.forEach { it.place(0, 0) }
+                stP.forEach { it.placeWithLayer(0, h - it.height) { alpha = chromeAlpha() } }
+                ovP.forEach { it.placeWithLayer(0, 0) { alpha = chromeAlpha() } }
+                flP.forEach { it.placeWithLayer(0, 0) { alpha = chromeAlpha() } }
             }
         } else {
             val ph = (w * 9f / 16f).roundToInt()
@@ -713,9 +791,9 @@ private fun PlayerFrame(
             layout(w, total) {
                 picP.forEach { it.place(0, 0) }
                 gesP.forEach { it.place(0, 0) }
-                stP.forEach { it.place(0, ph) }
-                ovP.forEach { it.place(0, 0) }
-                flP.forEach { it.place(0, 0) }
+                stP.forEach { it.placeWithLayer(0, ph) { alpha = chromeAlpha() } }
+                ovP.forEach { it.placeWithLayer(0, 0) { alpha = chromeAlpha() } }
+                flP.forEach { it.placeWithLayer(0, 0) { alpha = chromeAlpha() } }
             }
         }
     }
@@ -778,14 +856,10 @@ private fun Modifier.pictureCard(
     val a = aspect().takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
     val pw = minOf(w, h * a)
     val ph = pw / a
-    val top = topBand.toPx()
-    val bottom = bottomBand.toPx()
-    val gap = 6.dp.toPx()
-    val fit = ((h - top - bottom - gap * 2f) / ph).coerceIn(minScale, 1f)
-    val s = 1f - (1f - fit) * p
+    val (s, dy) = cardPose(p, a, w, h, topBand.toPx(), bottomBand.toPx(), CardGap.toPx(), minScale)
     scaleX = s
     scaleY = s
-    translationY = (top - bottom) / 2f * p
+    translationY = dy
     val pc = p.coerceIn(0f, 1f)
     val insetX = (w - pw) / 2f * pc
     val insetY = (h - ph) / 2f * pc
@@ -796,7 +870,21 @@ private fun Modifier.pictureCard(
     clip = true
 }
 
-private val CardRadius = 20.dp
+/**
+ * The card's scale and lift at reveal [p] for a [w] x [h] picture box showing an [aspect]
+ * picture: it shrinks into the band between the bars (never below [minScale]) and lifts
+ * to that band's centre. Shared with the fullscreen back pose.
+ */
+internal fun cardPose(p: Float, aspect: Float, w: Float, h: Float, top: Float, bottom: Float, gap: Float, minScale: Float): Pair<Float, Float> {
+    if (p <= 0.0005f) return 1f to 0f
+    val pw = minOf(w, h * aspect)
+    val ph = pw / aspect
+    val fit = ((h - top - bottom - gap * 2f) / ph).coerceIn(minScale, 1f)
+    return (1f - (1f - fit) * p) to (top - bottom) / 2f * p
+}
+
+internal val CardRadius = 20.dp
+internal val CardGap = 6.dp
 
 private class PictureCardShape(private val rect: Rect, private val radius: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =

@@ -13,9 +13,13 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.util.fastForEach
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -97,6 +101,10 @@ internal class GestureFeedback {
     /** Minimal chrome: the play/pause glyph flashed after a tap (bumped per tap). */
     var flash by mutableIntStateOf(0)
     var flashPlaying by mutableStateOf(false)
+
+    /** Hold to speed up: the detents of the current hold and which one plays (-1: no hold). */
+    var holdRates by mutableStateOf<List<Float>>(emptyList())
+    var holdIndex by mutableIntStateOf(-1)
 }
 
 /**
@@ -204,7 +212,22 @@ internal fun ChromeAutoHide(ctrl: PiliPlayerController, ui: PlayerChromeState, f
  * glyph), double tap goes to [onDoubleTap], only horizontal drags are taken (seek), so a
  * vertical pager around the player keeps its swipes. Otherwise tap toggles the controls,
  * double tap plays / pauses, horizontal drag seeks and vertical drags set volume (right
- * half) or brightness (left half).
+ * half) or brightness (left half). In both, holding still on a playing picture speeds it
+ * up and sliding while held sets the speed ([holdSpeed]).
+ *
+ * Arbitration. Two detectors on the same node: the tap detector (outer) only does tap and
+ * double tap; the press detector (inner, so it sees each event first) decides what every
+ * press is, by whichever comes first:
+ * - the finger lifts: a tap; the press detector lets it through untouched;
+ * - it moves past the touch slop: a drag (seek, or volume / brightness by the first
+ *   direction and the side); the slop move is consumed, which cancels the tap;
+ * - it stays put for the long-press timeout: on a playing, unlocked picture that is a
+ *   hold, which owns the press until release (vertical travel steps the speed, sideways
+ *   travel does nothing, every event is consumed so it never ends as a tap or a seek).
+ *   Paused, a long press is nothing: a later move still drags, a release is swallowed.
+ *   Locked, it is swallowed whole.
+ * So a press settles into exactly one of tap, drag or hold, and a drag can never begin
+ * mid-hold. A tap followed by a hold toggles the controls once, then holds.
  */
 @Composable
 internal fun Modifier.playerGestures(
@@ -245,79 +268,51 @@ internal fun Modifier.playerGestures(
                     minimal -> null
                     else -> { _ -> if (!locked) togglePlay() }
                 },
-                onLongPress = {
-                    if (!locked && ctrl.isPlaying) {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        ctrl.beginBoost()
-                    }
-                },
-                onPress = {
-                    tryAwaitRelease()
-                    if (ctrl.boosting) {
-                        ctrl.endBoost()
-                        haptics.performHapticFeedback(HapticFeedbackType.GestureEnd)
-                    }
-                },
             )
         }
         .pointerInput(locked, minimal) {
-            if (locked) return@pointerInput
-            var seekBase = 0L
-            var seekTarget = 0L
-            if (minimal) {
-                detectHorizontalDragGestures(
-                    onDragStart = {
-                        seekBase = ctrl.exactPositionMs()
-                        seekTarget = seekBase
-                    },
-                    onDragEnd = {
-                        if (ctrl.durationMs > 0 && feedback.seekTargetMs != null) {
-                            ctrl.seekTo(seekTarget)
-                            haptics.performHapticFeedback(HapticFeedbackType.GestureEnd)
-                        }
-                        feedback.seekTargetMs = null
-                    },
-                    onDragCancel = { feedback.seekTargetMs = null },
-                    onHorizontalDrag = { change, dx ->
-                        if (ctrl.durationMs <= 0) return@detectHorizontalDragGestures
-                        change.consume()
-                        val scale = 90_000f / size.width
-                        seekTarget = (seekTarget + (dx * scale).toLong()).coerceIn(0L, ctrl.durationMs)
-                        feedback.seekTargetMs = seekTarget
-                        feedback.seekDeltaMs = seekTarget - seekBase
-                    },
-                )
-                return@pointerInput
-            }
-            var mode = 0 // 1 seek, 2 volume, 3 brightness, -1 ignored
-            var startX = 0f
-            var level = 0f
-            var lastStep = 0
+            val slop = viewConfiguration.touchSlop
+            val holdTimeout = viewConfiguration.longPressTimeoutMillis
+            val step = HoldSpeedStep.toPx()
             val edge = 40.dp.toPx()
-            detectDragGestures(
-                onDragStart = { offset ->
-                    mode = if (latestFullscreen && (offset.y < edge || offset.y > size.height - edge)) -1 else 0
-                    startX = offset.x
-                    seekBase = ctrl.exactPositionMs()
-                    seekTarget = seekBase
-                },
-                onDragEnd = {
-                    if (mode == 1 && ctrl.durationMs > 0) {
-                        ctrl.seekTo(seekTarget)
-                        haptics.performHapticFeedback(HapticFeedbackType.GestureEnd)
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val early = withTimeoutOrNull(holdTimeout) {
+                    awaitPress(down.id, slop, drags = !locked, horizontalOnly = minimal)
+                }
+                val press: Press = when {
+                    early != null -> early
+                    // Held still: a playing picture speeds up until the finger lifts.
+                    !locked && ctrl.isPlaying -> {
+                        holdSpeed(down.id, step, ctrl, feedback, haptics)
+                        return@awaitEachGesture
                     }
-                    mode = 0
-                    feedback.seekTargetMs = null
-                    feedback.level = null
-                },
-                onDragCancel = {
-                    mode = 0
-                    feedback.seekTargetMs = null
-                    feedback.level = null
-                },
-                onDrag = { change, drag ->
-                    if (mode == -1) return@detectDragGestures
-                    change.consume()
+                    locked -> {
+                        consumeUntilRelease(down.id)
+                        return@awaitEachGesture
+                    }
+                    else -> awaitPress(down.id, slop, drags = true, horizontalOnly = minimal).also {
+                        // A long press that did nothing does not end as a tap.
+                        if (it == Press.Released) currentEvent.changes.fastForEach { c -> c.consume() }
+                    }
+                }
+                if (press !is Press.Moved) return@awaitEachGesture
+
+                // ── Drag.
+                val seekBase = ctrl.exactPositionMs()
+                var seekTarget = seekBase
+                // 1 seek, 2 volume, 3 brightness, -1 ignored. The minimal chrome only seeks;
+                // in fullscreen a drag from the very top / bottom edge is the system's.
+                var mode = when {
+                    minimal -> 1
+                    latestFullscreen && (down.position.y < edge || down.position.y > size.height - edge) -> -1
+                    else -> 0
+                }
+                val startX = down.position.x
+                var level = 0f
+                var lastStep = 0
+                val onDrag: (PointerInputChange, Offset) -> Unit = onDrag@{ change, drag ->
+                    if (mode == -1) return@onDrag
                     if (mode == 0) {
                         mode = when {
                             abs(drag.x) > abs(drag.y) -> if (ctrl.durationMs > 0) 1 else -1
@@ -334,7 +329,10 @@ internal fun Modifier.playerGestures(
                                 lastStep = (level * 10).roundToInt()
                             }
                         }
+                        if (mode == -1) return@onDrag
                     }
+                    if (mode == 1 && ctrl.durationMs <= 0) return@onDrag
+                    change.consume()
                     when (mode) {
                         1 -> {
                             val scale = 90_000f / size.width
@@ -344,9 +342,9 @@ internal fun Modifier.playerGestures(
                         }
                         2 -> {
                             level = (level - drag.y / (size.height * 0.85f)).coerceIn(0f, 1f)
-                            val step = volume.set(level)
-                            if (step != lastStep) {
-                                lastStep = step
+                            val applied = volume.set(level)
+                            if (applied != lastStep) {
+                                lastStep = applied
                                 haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                             }
                             feedback.level = (if (level <= 0.001f) YoinSymbols.VolumeMute else YoinSymbols.VolumeUp) to level
@@ -354,16 +352,28 @@ internal fun Modifier.playerGestures(
                         3 -> {
                             level = (level - drag.y / (size.height * 0.85f)).coerceIn(0.01f, 1f)
                             BrightnessControl.set(activity, level)
-                            val step = (level * 10).roundToInt()
-                            if (step != lastStep) {
-                                lastStep = step
+                            val applied = (level * 10).roundToInt()
+                            if (applied != lastStep) {
+                                lastStep = applied
                                 haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                             }
                             feedback.level = PiliSymbols.Brightness to level
                         }
                     }
-                },
-            )
+                }
+                var ended = false
+                try {
+                    onDrag(press.change, press.overSlop)
+                    ended = drag(press.change.id) { c -> onDrag(c, if (minimal) Offset(c.positionChange().x, 0f) else c.positionChange()) }
+                } finally {
+                    if (ended && mode == 1 && ctrl.durationMs > 0 && feedback.seekTargetMs != null) {
+                        ctrl.seekTo(seekTarget)
+                        haptics.performHapticFeedback(HapticFeedbackType.GestureEnd)
+                    }
+                    feedback.seekTargetMs = null
+                    feedback.level = null
+                }
+            }
         }
 }
 
@@ -809,7 +819,8 @@ internal fun LockButton(ui: PlayerChromeState, visible: Boolean, turned: Boolean
  */
 @Composable
 internal fun CentreButton(ctrl: PiliPlayerController, ui: PlayerChromeState, shown: Boolean, big: Boolean, onPlay: () -> Unit, modifier: Modifier = Modifier) {
-    val showBuffering = ctrl.isBuffering && ctrl.firstFrameRendered
+    // While a hold lasts its pill sits here and shows the buffering itself.
+    val showBuffering = ctrl.isBuffering && ctrl.firstFrameRendered && ui.feedback.holdIndex < 0
     val playing = ctrl.isPlaying || (ctrl.playWhenReady && !ctrl.ended)
     val centreState = when {
         showBuffering -> 1
@@ -914,7 +925,7 @@ private fun PillButton(text: String, onClick: () -> Unit) {
 
 /**
  * Gesture feedback: the drag-seek bubble (with the preview frame when the video has
- * sprites), the volume / brightness level and the 3x chip.
+ * sprites), the volume / brightness level and the hold-to-speed pill.
  */
 @Composable
 internal fun GestureFeedbackLayer(ctrl: PiliPlayerController, feedback: GestureFeedback, big: Boolean) {
@@ -1008,28 +1019,8 @@ internal fun GestureFeedbackLayer(ctrl: PiliPlayerController, feedback: GestureF
             }
         }
 
-        // 3x boost chip.
-        AnimatedVisibility(
-            visible = ctrl.boosting,
-            enter = fadeIn(YoinMotion.fastEffectsSpec()) + slideInVertically(YoinMotion.fastSpatialSpec()) { -it / 2 },
-            exit = fadeOut(YoinMotion.fastEffectsSpec()) + slideOutVertically(YoinMotion.fastSpatialSpec()) { -it / 2 },
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp),
-        ) {
-            Surface(
-                shape = YoinShapeTokens.Full,
-                color = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(YoinSymbols.Speed, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("3 倍速", style = MaterialTheme.typography.labelLarge)
-                }
-            }
-        }
+        // Hold to speed up: the speed pill in the middle while the finger is down.
+        HoldSpeedPill(ctrl, feedback, big = big, modifier = Modifier.align(Alignment.Center))
     }
 }
 
