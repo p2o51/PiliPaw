@@ -398,17 +398,27 @@ internal object DynamicsApi {
 
     /**
      * One vote: `/x/vote/vote_info` (`vote_info` + `my_votes`, option images), the
-     * legacy vc endpoint (`info`) when the new one is unreachable. A business error
-     * (260010 投票不可展示 …) is the answer and is not retried.
+     * legacy vc endpoint (`info`) only when the new one is unreachable (a transport
+     * failure or HTTP 5xx). Any code bilibili answers with (-412 风控, -400, 260010
+     * 投票不可展示 …) is the answer and surfaces as is; so does the original error
+     * when the legacy endpoint has no such vote either.
      */
     suspend fun voteInfo(voteId: Long): VoteInfo = withContext(Dispatchers.Default) {
         val data = try {
             BiliClient.getData("/x/vote/vote_info", mapOf("vote_id" to voteId)).asObj
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            if (e is CancellationException || (e is BiliException && e.code >= 1000)) throw e
-            runCatching {
+            val unreachable = e is java.io.IOException && (e !is BiliException || e.code in 500..599)
+            if (!unreachable) throw e
+            val legacy = try {
                 BiliClient.getData("${BiliHosts.VC}/vote_svr/v1/vote_svr/vote_info", mapOf("vote_id" to voteId)).asObj
-            }.getOrElse { throw e }
+            } catch (c: CancellationException) {
+                throw c
+            } catch (_: Exception) {
+                throw e
+            }
+            return@withContext parseVoteInfo(legacy) ?: throw e
         }
         parseVoteInfo(data) ?: throw BiliException(-404, "投票不存在")
     }
@@ -416,7 +426,8 @@ internal object DynamicsApi {
     /**
      * Casts a vote. Only ever called from the 投票 button. JSON body like the web
      * client (`/x/vote/do_vote`, csrf in query and body); the response carries the
-     * updated `vote_info` with `my_votes`, null when it does not.
+     * updated `vote_info` with `my_votes`, null when it does not. `dynamic_id` goes
+     * out only when there is a numeric one (like PiliPlus); never a stand-in 0.
      */
     suspend fun doVote(voteId: Long, votes: List<Int>, dynamicId: String): VoteInfo? = withContext(Dispatchers.Default) {
         val csrf = BiliClient.csrf
@@ -426,7 +437,7 @@ internal object DynamicsApi {
             put("voter_uid", BiliClient.mid)
             put("status", 0)
             put("op_bit", 0)
-            put("dynamic_id", dynamicId.toLongOrNull() ?: 0L)
+            dynamicId.toLongOrNull()?.takeIf { it > 0 }?.let { put("dynamic_id", it) }
             put("csrf_token", csrf)
             put("csrf", csrf)
         }.toString()

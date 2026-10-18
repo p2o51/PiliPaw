@@ -31,7 +31,10 @@ fun MemberDynamicsScreen(route: Route.MemberDynamics) {
     ) { padding ->
         RefreshBox(
             isRefreshing = vm.pager.isRefreshing && vm.pager.items.isNotEmpty(),
-            onRefresh = vm.pager::refresh,
+            onRefresh = {
+                VoteStore.invalidate()
+                vm.pager.refresh()
+            },
             modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
         ) {
             MemberDynamicsList(

@@ -2,14 +2,18 @@ package com.gpo.pilipala.feature.dynamics
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
@@ -34,10 +38,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -51,8 +56,10 @@ import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,11 +75,14 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
@@ -80,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asInt
@@ -104,8 +115,12 @@ import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.pilipala.ui.theme.YoinMotionSpeed
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 // ── Model ───────────────────────────────────────────────────────────────────
@@ -139,6 +154,13 @@ internal fun voteSummaryOf(vote: JsonObject?, fallbackId: Long = 0L): VoteSummar
     )
 }
 
+/** A vote that only shows as an inline `RICH_TEXT_NODE_TYPE_VOTE` node (desc or opus summary). */
+internal fun inlineVoteSummary(item: JsonObject): VoteSummary? {
+    val node = richSource(item).second?.objects()?.firstOrNull { it.str("type") == "RICH_TEXT_NODE_TYPE_VOTE" } ?: return null
+    val id = node.long("rid").takeIf { it > 0 } ?: return null
+    return VoteSummary(id, title = node.str("text"), joinCount = 0L, endTime = 0L, status = 0, choiceCount = 1)
+}
+
 @Immutable
 internal data class VoteOption(val idx: Int, val desc: String, val count: Long, val image: String)
 
@@ -164,12 +186,24 @@ internal data class VoteInfo(
 ) {
     val voted: Boolean get() = myVotes.isNotEmpty()
     val isImage: Boolean get() = options.any { it.image.isNotEmpty() }
-    private val total: Long = options.sumOf { it.count }
+    val hasVotes: Boolean get() = joinCount > 0 || options.any { it.count > 0 }
+
+    /**
+     * Single choice: all picks (one per voter). Multi choice: the participants
+     * (join_num), so an option reads as how many voters picked it.
+     */
+    private val denominator: Long = options.sumOf { it.count }.let { picks ->
+        if (choiceCount > 1 && joinCount > 0) joinCount else picks
+    }
+    private val percents: Map<Int, Int> = wholePercents(options, single = choiceCount <= 1, denominator)
 
     fun ended(nowSec: Long): Boolean = status >= 2 || endTime in 1 until nowSec
 
-    /** Share of all picks, so a single-choice vote sums to 100%. */
-    fun share(o: VoteOption): Float = if (total <= 0L) 0f else o.count.toFloat() / total
+    /** Bar length, capped at 1 (a multi-choice count can run ahead of join_num). */
+    fun share(o: VoteOption): Float = if (denominator <= 0L) 0f else (o.count.toFloat() / denominator).coerceIn(0f, 1f)
+
+    /** Whole percentage; a single-choice vote's add up to exactly 100. */
+    fun percent(o: VoteOption): Int = percents[o.idx] ?: 0
 
     /** The result when the vote went through but no fresh info came back. */
     fun withOwnVote(votes: List<Int>): VoteInfo = copy(
@@ -177,6 +211,27 @@ internal data class VoteInfo(
         joinCount = joinCount + 1,
         options = options.map { if (it.idx in votes) it.copy(count = it.count + 1) else it },
     )
+}
+
+/**
+ * Whole percentages by option idx. Multi choice: each rounded on its own (they
+ * overlap, so no total to keep). Single choice: largest remainder — floor every
+ * share, then hand the points still missing from 100 to the biggest remainders.
+ */
+private fun wholePercents(options: List<VoteOption>, single: Boolean, denominator: Long): Map<Int, Int> {
+    if (denominator <= 0L) return emptyMap()
+    if (!single) return options.associate { it.idx to (it.count * 100.0 / denominator).roundToInt().coerceIn(0, 100) }
+    val exact = options.map { it.count * 100.0 / denominator }
+    val whole = IntArray(options.size) { floor(exact[it]).toInt() }
+    var missing = 100 - whole.sum()
+    for (i in exact.indices.sortedByDescending { exact[it] - whole[it] }) {
+        if (missing <= 0) break
+        if (exact[i] > whole[i]) {
+            whole[i]++
+            missing--
+        }
+    }
+    return options.indices.associate { options[it].idx to whole[it] }
 }
 
 /**
@@ -226,51 +281,134 @@ internal sealed interface VoteLoad {
     data class Ready(val info: VoteInfo) : VoteLoad
 }
 
-/** Results after the viewer's own vote, read by every page so list, detail and the vote page agree. */
-private object VoteResults {
-    val map = mutableStateMapOf<Long, VoteInfo>()
+/** One vote as one account sees it (`my_votes` differs per account; 0 = guest). */
+internal data class VoteKey(val mid: Long, val voteId: Long)
+
+/** The account requests go out as: the cookie's mid, 0 for a guest. */
+private fun voterMid(): Long = if (BiliClient.isLoggedIn) BiliClient.mid else 0L
+
+/**
+ * Vote state every page shares, per account:
+ * - [results]: the latest info after the viewer's own vote, so list, detail and the vote page agree;
+ * - [pending]: votes in flight, so one vote is never sent twice from two screens;
+ * - [generation]: bumped by a feed refresh, so cards on screen fetch their counts again.
+ */
+internal object VoteStore {
+    val results = mutableStateMapOf<VoteKey, VoteInfo>()
+    val pending = mutableStateMapOf<VoteKey, Boolean>()
+    var generation by mutableIntStateOf(0)
+        private set
+
+    /** Sends outlive the page that started them, so leaving it still lands the result and frees [pending]. */
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    private var account = Long.MIN_VALUE
+
+    fun isPending(key: VoteKey): Boolean = pending[key] == true
+
+    /** A feed pull-to-refresh: cards fetch again as they show (quietly, keeping what they show). */
+    fun invalidate() {
+        generation++
+    }
+
+    /** Signed in, out or switched: forget what belonged to other accounts. */
+    fun onAccount(mid: Long) {
+        if (mid == account) return
+        account = mid
+        results.keys.filter { it.mid != mid }.forEach { results.remove(it) }
+    }
+
+    /**
+     * Fresh info from a fetch. Once the viewer has voted here, the server's counts
+     * replace the stored ones; its `my_votes` too, unless it lags behind the vote.
+     */
+    fun offer(key: VoteKey, fresh: VoteInfo) {
+        val stored = results[key] ?: return
+        results[key] = if (fresh.voted) fresh else fresh.copy(myVotes = stored.myVotes)
+    }
 }
 
 /**
  * Vote details for one page (nav entry). A card asks the first time it composes —
- * lazy lists compose only what is on screen — and the answer is cached per vote_id,
- * so scrolling back never refetches.
+ * lazy lists compose only what is on screen — and the answer is cached per
+ * (account, vote), so scrolling back never refetches; an account change or a feed
+ * refresh does. Picks and the 结果 peek live here too, so they survive a card
+ * scrolling out and back.
  */
 internal class VoteViewModel : ViewModel() {
-    private val loads = mutableStateMapOf<Long, VoteLoad>()
-    private val sending = mutableStateMapOf<Long, Boolean>()
+    private val loads = mutableStateMapOf<VoteKey, VoteLoad>()
 
-    fun state(id: Long): VoteLoad? = VoteResults.map[id]?.let { VoteLoad.Ready(it) } ?: loads[id]
+    /** The [VoteStore.generation] each load was asked in. */
+    private val askedIn = HashMap<VoteKey, Int>()
+    private val picks = mutableStateMapOf<Long, List<Int>>()
+    private val peeks = mutableStateMapOf<Long, Boolean>()
 
-    fun isSending(id: Long): Boolean = sending[id] == true
-
-    fun ensure(id: Long) {
-        if (loads[id] == null) fetch(id)
+    init {
+        viewModelScope.launch {
+            Account.user.collect {
+                val mid = voterMid()
+                VoteStore.onAccount(mid)
+                loads.keys.filter { it.mid != mid }.forEach {
+                    loads.remove(it)
+                    askedIn.remove(it)
+                }
+            }
+        }
     }
 
-    fun retry(id: Long) = fetch(id)
+    fun state(key: VoteKey): VoteLoad? = VoteStore.results[key]?.let { VoteLoad.Ready(it) } ?: loads[key]
 
-    private fun fetch(id: Long) {
-        loads[id] = VoteLoad.Loading
+    fun picks(voteId: Long): List<Int> = picks[voteId].orEmpty()
+
+    fun setPicks(voteId: Long, value: List<Int>) {
+        picks[voteId] = value
+    }
+
+    fun peek(voteId: Long): Boolean = peeks[voteId] == true
+
+    fun setPeek(voteId: Long, on: Boolean) {
+        peeks[voteId] = on
+    }
+
+    /** First sight of a vote, or a feed refresh since it was fetched. */
+    fun ensure(key: VoteKey, generation: Int) {
+        val current = loads[key]
+        when {
+            current == null -> fetch(key, generation, quiet = false)
+            current is VoteLoad.Loading -> Unit
+            (askedIn[key] ?: generation) < generation -> fetch(key, generation, quiet = current is VoteLoad.Ready)
+        }
+    }
+
+    fun retry(key: VoteKey) = fetch(key, VoteStore.generation, quiet = false)
+
+    /** [quiet]: a refresh behind counts already shown — no skeleton, and a failure keeps them. */
+    private fun fetch(key: VoteKey, generation: Int, quiet: Boolean) {
+        askedIn[key] = generation
+        if (!quiet) loads[key] = VoteLoad.Loading
         viewModelScope.launch {
-            loads[id] = try {
-                VoteLoad.Ready(DynamicsApi.voteInfo(id))
+            val result = try {
+                VoteLoad.Ready(DynamicsApi.voteInfo(key.voteId))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 VoteLoad.Failed(e.friendlyMessage())
             }
+            // Asked as another account: that answer's my_votes is not this viewer's.
+            if (voterMid() != key.mid) return@launch
+            if (result is VoteLoad.Ready) VoteStore.offer(key, result.info)
+            if (result is VoteLoad.Ready || loads[key] !is VoteLoad.Ready) loads[key] = result
         }
     }
 
     /**
-     * Casts [votes] — only from the 投票 button's tap. Runs in the view model's scope
-     * so a card scrolling away mid-request still lands the result.
+     * Casts [votes] — only from the 投票 button's tap. At most one send per
+     * (account, vote) at a time across every page ([VoteStore.pending]).
      */
-    fun vote(info: VoteInfo, votes: List<Int>, dynamicId: String, onDone: (Throwable?) -> Unit) {
-        if (votes.isEmpty() || sending[info.id] == true) return
-        sending[info.id] = true
-        viewModelScope.launch {
+    fun vote(key: VoteKey, info: VoteInfo, votes: List<Int>, dynamicId: String, onDone: (Throwable?) -> Unit) {
+        if (votes.isEmpty() || key.mid <= 0 || VoteStore.isPending(key)) return
+        VoteStore.pending[key] = true
+        VoteStore.scope.launch {
             val error = try {
                 val fresh = DynamicsApi.doVote(info.id, votes, dynamicId)
                     ?: runCatching { DynamicsApi.voteInfo(info.id) }.getOrNull()
@@ -279,15 +417,16 @@ internal class VoteViewModel : ViewModel() {
                     fresh.myVotes.isEmpty() -> fresh.copy(myVotes = votes)
                     else -> fresh
                 }
-                VoteResults.map[result.id] = result
-                loads[result.id] = VoteLoad.Ready(result)
+                VoteStore.results[key] = result
+                loads[key] = VoteLoad.Ready(result)
+                picks.remove(key.voteId)
                 null
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 e
             } finally {
-                sending.remove(info.id)
+                VoteStore.pending.remove(key)
             }
             onDone(error)
         }
@@ -302,6 +441,22 @@ private val TileShape = ContinuousRoundedCornerShape(12.dp)
 private val ThumbShape = ContinuousRoundedCornerShape(8.dp)
 private val HeaderShape = ContinuousRoundedCornerShape(8.dp)
 
+/** A feed card shows this many text options (or image tiles); the rest wait on the vote page. */
+private const val CardTextOptions = 4
+private const val CardImageOptions = 6
+
+/** Option rows and tiles: a full touch target. */
+private val OptionMinHeight = 48.dp
+
+/** The vote of a dynamic: its `additional.vote`, else a vote that only shows as an inline node. */
+@Composable
+internal fun VoteForItem(item: JsonObject, color: Color) {
+    val summary = remember(item) {
+        voteSummaryOf(item.dynModule.obj("additional").obj("vote")) ?: inlineVoteSummary(item)
+    } ?: return
+    VoteCard(summary, dynamicId = item.dynId, color = color)
+}
+
 /** The vote block of a dynamic (`additional.vote`) or an opus link card (`card.vote`). */
 @Composable
 internal fun VoteCard(
@@ -315,9 +470,10 @@ internal fun VoteCard(
 }
 
 /**
- * A vote inside a card: title, the options (rows, or a grid of thumbnails for an
- * image vote), and once results show (voted, ended, or 结果 toggled) a bar per
- * option that springs to its share. Tapping the header opens the vote page.
+ * A vote inside a card: title, the first options (rows, or a grid of thumbnails
+ * for an image vote) with a 全部 N 项 row when there are more, and once results
+ * show (voted, ended, or 结果 toggled) a bar per option that springs to its share.
+ * Tapping the header or 全部 N 项 opens the vote page.
  */
 @Composable
 internal fun VoteCard(
@@ -338,6 +494,23 @@ internal fun VoteCard(
 }
 
 @Composable
+private fun revealIn(): EnterTransition =
+    fadeIn(YoinMotion.defaultEffectsSpec()) + expandVertically(YoinMotion.defaultSpatialSpec())
+
+@Composable
+private fun revealOut(): ExitTransition =
+    fadeOut(YoinMotion.fastEffectsSpec()) + shrinkVertically(YoinMotion.defaultSpatialSpec())
+
+/** The last non-null [value], so content leaving through an exit transition keeps what it showed. */
+@Composable
+private fun <T : Any> latest(value: T?): T? {
+    val holder = remember { arrayOfNulls<Any>(1) }
+    if (value != null) holder[0] = value
+    @Suppress("UNCHECKED_CAST")
+    return holder[0] as T?
+}
+
+@Composable
 private fun VoteBlock(
     voteId: Long,
     summary: VoteSummary?,
@@ -353,14 +526,22 @@ private fun VoteBlock(
     val toast = rememberToast()
     val haptics = LocalHapticFeedback.current
     val viewer = rememberImageViewerState()
-    LaunchedEffect(voteId) { vm.ensure(voteId) }
+    // Read the account so signing in (coming back from 登录), out or switching recomposes;
+    // the cache key follows the cookie's mid, which a change of key refetches.
+    val user by Account.user.collectAsState()
+    val mid = if (user != null || BiliClient.isLoggedIn) voterMid() else 0L
+    val key = VoteKey(mid, voteId)
+    val generation = VoteStore.generation
+    LaunchedEffect(key, generation) { vm.ensure(key, generation) }
 
     val cs = MaterialTheme.colorScheme
-    val load = vm.state(voteId)
+    val load = vm.state(key)
     val info = (load as? VoteLoad.Ready)?.info
     val now = remember(load) { System.currentTimeMillis() / 1000 }
-    var picked by remember(voteId) { mutableStateOf(emptyList<Int>()) }
-    var peek by remember(voteId) { mutableStateOf(false) }
+    val picked = vm.picks(voteId)
+    val peek = vm.peek(voteId)
+    val sending = VoteStore.isPending(key)
+    var rejects by remember(voteId) { mutableIntStateOf(0) }
 
     val title = info?.title.orEmpty().ifEmpty { summary?.title.orEmpty() }.ifEmpty { fallbackTitle }
     val choiceCount = info?.choiceCount ?: summary?.choiceCount ?: 1
@@ -372,13 +553,22 @@ private fun VoteBlock(
     // Rows sit one step off the block, whichever container the block itself is.
     val rowBase = if (color == cs.surfaceContainerHighest) cs.surfaceContainerLow else cs.surfaceContainerHighest
 
+    // Past the limit a tap is refused (never trading away an earlier pick): a reject
+    // haptic and the n/N counter pulses.
     fun toggle(idx: Int) {
-        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-        picked = when {
-            idx in picked -> picked - idx
+        val current = vm.picks(voteId)
+        val next = when {
+            idx in current -> current - idx
             choiceCount <= 1 -> listOf(idx)
-            picked.size >= choiceCount -> picked.drop(1) + idx
-            else -> picked + idx
+            current.size >= choiceCount -> null
+            else -> current + idx
+        }
+        if (next == null) {
+            haptics.performHapticFeedback(HapticFeedbackType.Reject)
+            rejects++
+        } else {
+            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+            vm.setPicks(voteId, next)
         }
     }
 
@@ -391,8 +581,13 @@ private fun VoteBlock(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (page && info != null && info.publisherName.isNotEmpty()) {
-            Publisher(info)
+        val publisher = latest(info?.takeIf { page && it.publisherName.isNotEmpty() })
+        AnimatedVisibility(
+            visible = page && info?.publisherName?.isNotEmpty() == true,
+            enter = revealIn(),
+            exit = revealOut(),
+        ) {
+            publisher?.let { Publisher(it) }
         }
         VoteHeader(
             title = title,
@@ -410,33 +605,45 @@ private fun VoteBlock(
             when (l) {
                 is VoteLoad.Ready -> {
                     val data = l.info
-                    if (data.isImage) {
-                        ImageOptions(
-                            info = data,
-                            chosen = chosen,
-                            showResults = showResults,
-                            enabled = canVote,
-                            base = rowBase,
-                            track = color,
-                            onToggle = ::toggle,
-                            onView = { i -> viewer.open(data.options.map { it.image }.filter { it.isNotEmpty() }, i) },
-                        )
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            data.options.forEach { o ->
+                    val limit = when {
+                        page -> Int.MAX_VALUE
+                        data.isImage -> CardImageOptions
+                        else -> CardTextOptions
+                    }
+                    val shown = data.options.take(limit)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (data.isImage) {
+                            ImageOptions(
+                                info = data,
+                                options = shown,
+                                compact = !page,
+                                chosen = chosen,
+                                showResults = showResults,
+                                enabled = canVote && !sending,
+                                base = rowBase,
+                                track = color,
+                                onToggle = ::toggle,
+                                onView = { i -> viewer.open(data.options.map { it.image }.filter { it.isNotEmpty() }, i) },
+                            )
+                        } else {
+                            shown.forEach { o ->
                                 key(o.idx) {
                                     OptionRow(
                                         option = o,
                                         share = data.share(o),
+                                        percent = data.percent(o),
                                         selected = o.idx in chosen,
                                         showResults = showResults,
-                                        enabled = canVote,
+                                        enabled = canVote && !sending,
                                         multi = choiceCount > 1,
                                         base = rowBase,
                                         onClick = { toggle(o.idx) },
                                     )
                                 }
                             }
+                        }
+                        if (shown.size < data.options.size && onOpen != null) {
+                            AllOptionsRow(count = data.options.size, base = rowBase, onClick = onOpen)
                         }
                     }
                 }
@@ -452,33 +659,33 @@ private fun VoteBlock(
                         color = cs.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = { vm.retry(voteId) }, shapes = ButtonDefaults.shapes()) { Text("重试") }
+                    TextButton(onClick = { vm.retry(key) }, shapes = ButtonDefaults.shapes()) { Text("重试") }
                 }
                 else -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     repeat(2) {
-                        Box(Modifier.fillMaxWidth().height(44.dp).clip(OptionShape).background(rowBase))
+                        Box(Modifier.fillMaxWidth().height(OptionMinHeight).clip(OptionShape).background(rowBase))
                     }
                 }
             }
         }
-        AnimatedVisibility(
-            visible = canVote,
-            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + expandVertically(YoinMotion.defaultSpatialSpec()),
-            exit = fadeOut(YoinMotion.fastEffectsSpec()) + shrinkVertically(YoinMotion.defaultSpatialSpec()),
-        ) {
+        AnimatedVisibility(visible = canVote, enter = revealIn(), exit = revealOut()) {
             VoteActions(
                 picked = picked.size,
                 choiceCount = choiceCount,
+                rejects = rejects,
                 peek = peek,
-                sending = vm.isSending(voteId),
-                onPeek = { peek = it },
+                showPeek = info?.hasVotes == true,
+                sending = sending,
+                loggedIn = mid > 0,
+                base = rowBase,
+                onPeek = { vm.setPeek(voteId, it) },
                 onVote = {
                     val current = info ?: return@VoteActions
-                    if (!BiliClient.isLoggedIn) {
+                    if (mid <= 0) {
                         nav.push(Route.Login)
                         return@VoteActions
                     }
-                    vm.vote(current, picked, dynamicId) { error ->
+                    vm.vote(key, current, vm.picks(voteId), dynamicId) { error ->
                         if (error == null) {
                             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                         } else {
@@ -538,16 +745,25 @@ private fun VoteHeader(title: String, desc: String, multi: Boolean, large: Boole
             Icon(PollGlyph, null, Modifier.size(20.dp), tint = cs.onSecondaryContainer)
         }
         Column(Modifier.weight(1f).seamText(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                title.ifEmpty { "投票" },
-                style = if (large) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = if (large) Int.MAX_VALUE else 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (desc.isNotEmpty() && desc != title) {
+            // A card that only knew the vote id shows 投票 until the title loads.
+            AnimatedContent(
+                targetState = title.ifEmpty { "投票" },
+                transitionSpec = { YoinMotion.fadeIn(YoinMotionRole.Standard) togetherWith YoinMotion.fadeOut(YoinMotionRole.Standard, YoinMotionSpeed.Fast) },
+                label = "voteTitle",
+            ) { t ->
                 Text(
-                    desc,
+                    t,
+                    style = if (large) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = if (large) Int.MAX_VALUE else 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            val shownDesc = desc.takeIf { it.isNotEmpty() && it != title }
+            val lastDesc = latest(shownDesc)
+            AnimatedVisibility(visible = shownDesc != null, enter = revealIn(), exit = revealOut()) {
+                Text(
+                    lastDesc.orEmpty(),
                     style = MaterialTheme.typography.bodySmall,
                     color = cs.onSurfaceVariant,
                     maxLines = if (large) Int.MAX_VALUE else 2,
@@ -555,7 +771,13 @@ private fun VoteHeader(title: String, desc: String, multi: Boolean, large: Boole
                 )
             }
         }
-        if (multi) Tag("多选")
+        AnimatedVisibility(
+            visible = multi,
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + expandHorizontally(YoinMotion.defaultSpatialSpec()),
+            exit = fadeOut(YoinMotion.fastEffectsSpec()) + shrinkHorizontally(YoinMotion.defaultSpatialSpec()),
+        ) {
+            Tag("多选")
+        }
         if (onOpen != null) {
             Icon(YoinSymbols.ChevronRight, null, Modifier.size(18.dp).seamText(), tint = cs.onSurfaceVariant)
         }
@@ -571,6 +793,7 @@ private fun VoteHeader(title: String, desc: String, multi: Boolean, large: Boole
 private fun OptionRow(
     option: VoteOption,
     share: Float,
+    percent: Int,
     selected: Boolean,
     showResults: Boolean,
     enabled: Boolean,
@@ -595,15 +818,16 @@ private fun OptionRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 44.dp)
+            .heightIn(min = OptionMinHeight)
             .clip(OptionShape)
             .background(base)
             .drawBehind { drawBar(fill.value, fillColor) }
+            // selectable / toggleable: TalkBack reads the picked state, not just the role.
             .then(
-                if (enabled) {
-                    Modifier.clickable(role = if (multi) Role.Checkbox else Role.RadioButton, onClick = onClick)
+                if (multi) {
+                    Modifier.toggleable(value = selected, enabled = enabled, role = Role.Checkbox, onValueChange = { onClick() })
                 } else {
-                    Modifier
+                    Modifier.selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
                 },
             )
             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -627,8 +851,39 @@ private fun OptionRow(
             enter = fadeIn(YoinMotion.defaultEffectsSpec()),
             exit = fadeOut(YoinMotion.fastEffectsSpec()),
         ) {
-            Percent(share, Modifier.padding(start = 8.dp))
+            Percent(percent, Modifier.padding(start = 8.dp))
         }
+    }
+}
+
+/** 全部 N 项: the options a feed card leaves out, on the vote page. */
+@Composable
+private fun AllOptionsRow(count: Int, base: Color, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = OptionMinHeight)
+            .clip(OptionShape)
+            .background(base)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .seamText(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("全部", style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant, modifier = Modifier.alignByBaseline())
+        Spacer(Modifier.width(4.dp))
+        Text(
+            "$count",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = cs.onSurface,
+            modifier = Modifier.alignByBaseline(),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text("项", style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant, modifier = Modifier.alignByBaseline())
+        Spacer(Modifier.weight(1f))
+        Icon(YoinSymbols.ChevronRight, null, Modifier.size(18.dp), tint = cs.onSurfaceVariant)
     }
 }
 
@@ -643,10 +898,10 @@ private fun DrawScope.drawBar(fraction: Float, color: Color) {
 
 /** Bold number, quiet sign. */
 @Composable
-private fun Percent(share: Float, modifier: Modifier = Modifier) {
+private fun Percent(value: Int, modifier: Modifier = Modifier) {
     Row(modifier.seamText()) {
         Text(
-            "${(share * 100).roundToInt()}",
+            "$value",
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -661,10 +916,16 @@ private fun Percent(share: Float, modifier: Modifier = Modifier) {
     }
 }
 
-/** Image vote: a grid of rounded thumbnails, the caption and (with results) a thin share bar under each. */
+/**
+ * Image vote: a grid of rounded thumbnails, the caption and (with results) a thin
+ * share bar under each. [compact] (a feed card): small tiles, one row of six or
+ * rows of three; the vote page: larger tiles, two to five across.
+ */
 @Composable
 private fun ImageOptions(
     info: VoteInfo,
+    options: List<VoteOption>,
+    compact: Boolean,
     chosen: List<Int>,
     showResults: Boolean,
     enabled: Boolean,
@@ -675,16 +936,21 @@ private fun ImageOptions(
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val gap = 8.dp
-        val cols = ((maxWidth + gap) / (112.dp + gap)).toInt().coerceIn(2, 5)
+        val cols = if (compact) {
+            if (((maxWidth + gap) / (80.dp + gap)).toInt() >= 6) 6 else 3
+        } else {
+            ((maxWidth + gap) / (112.dp + gap)).toInt().coerceIn(2, 5)
+        }
         val withImage = info.options.filter { it.image.isNotEmpty() }
         Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-            info.options.chunked(cols).forEach { row ->
+            options.chunked(cols).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
                     row.forEach { o ->
                         key(o.idx) {
                             ImageTile(
                                 option = o,
                                 share = info.share(o),
+                                percent = info.percent(o),
                                 selected = o.idx in chosen,
                                 showResults = showResults,
                                 enabled = enabled,
@@ -707,6 +973,7 @@ private fun ImageOptions(
 private fun ImageTile(
     option: VoteOption,
     share: Float,
+    percent: Int,
     selected: Boolean,
     showResults: Boolean,
     enabled: Boolean,
@@ -735,6 +1002,7 @@ private fun ImageTile(
                 onLongClick = onView,
                 onClick = if (enabled) onClick else onView,
             )
+            .semantics { this.selected = selected }
             .padding(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -772,8 +1040,8 @@ private fun ImageTile(
         )
         AnimatedVisibility(
             visible = showResults,
-            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + expandVertically(YoinMotion.defaultSpatialSpec()),
-            exit = fadeOut(YoinMotion.fastEffectsSpec()) + shrinkVertically(YoinMotion.defaultSpatialSpec()),
+            enter = revealIn(),
+            exit = revealOut(),
         ) {
             Row(
                 Modifier.padding(horizontal = 2.dp),
@@ -788,18 +1056,27 @@ private fun ImageTile(
                         .background(track)
                         .drawBehind { drawBar(fill.value, barColor) },
                 )
-                Percent(share)
+                Percent(percent)
             }
         }
     }
 }
 
+/**
+ * The action row: the n/N counter (multi choice) and 结果 on the left, 投票 alone
+ * on the right — a filled button, kept apart from the harmless toggle by the
+ * flexible gap (never under 16dp), since a vote cannot be taken back.
+ */
 @Composable
 private fun VoteActions(
     picked: Int,
     choiceCount: Int,
+    rejects: Int,
     peek: Boolean,
+    showPeek: Boolean,
     sending: Boolean,
+    loggedIn: Boolean,
+    base: Color,
     onPeek: (Boolean) -> Unit,
     onVote: () -> Unit,
 ) {
@@ -807,25 +1084,20 @@ private fun VoteActions(
     Row(
         Modifier.fillMaxWidth().seamText(),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (choiceCount > 1) {
-            AnimatedContent(
-                targetState = picked,
-                transitionSpec = { YoinMotion.fadeIn(YoinMotionRole.Standard) togetherWith YoinMotion.fadeOut(YoinMotionRole.Standard, YoinMotionSpeed.Fast) },
-                label = "votePicked",
-            ) { n ->
-                Text("$n", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = cs.onSurface)
-            }
-            Text("/$choiceCount", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
-        }
-        Spacer(Modifier.weight(1f))
-        Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+        if (choiceCount > 1) PickCounter(picked, choiceCount, rejects)
+        AnimatedVisibility(
+            visible = showPeek,
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + expandHorizontally(YoinMotion.defaultSpatialSpec(), expandFrom = Alignment.Start),
+            exit = fadeOut(YoinMotion.fastEffectsSpec()) + shrinkHorizontally(YoinMotion.defaultSpatialSpec(), shrinkTowards = Alignment.Start),
+        ) {
             ToggleButton(
                 checked = peek,
                 onCheckedChange = onPeek,
-                shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
+                shapes = ToggleButtonDefaults.shapes(),
                 colors = ToggleButtonDefaults.toggleButtonColors(
-                    containerColor = cs.surfaceContainerHighest,
+                    containerColor = base,
                     contentColor = cs.onSurfaceVariant,
                     checkedContainerColor = cs.secondaryContainer,
                     checkedContentColor = cs.onSecondaryContainer,
@@ -834,27 +1106,65 @@ private fun VoteActions(
             ) {
                 Text("结果", style = MaterialTheme.typography.labelLarge)
             }
-            val trailing = ButtonGroupDefaults.connectedTrailingButtonShapes()
-            Button(
-                onClick = onVote,
-                enabled = picked > 0 && !sending,
-                shapes = ButtonDefaults.shapes(trailing.shape, trailing.pressedShape),
-                contentPadding = PaddingValues(horizontal = 20.dp),
-            ) {
-                AnimatedContent(
-                    targetState = sending,
-                    transitionSpec = { YoinMotion.fadeIn(YoinMotionRole.Standard) togetherWith YoinMotion.fadeOut(YoinMotionRole.Standard, YoinMotionSpeed.Fast) },
-                    contentAlignment = Alignment.Center,
-                    label = "voteSending",
-                ) { busy ->
-                    if (busy) {
-                        LoadingIndicator(Modifier.size(20.dp), color = cs.onSurfaceVariant)
-                    } else {
-                        Text("投票", style = MaterialTheme.typography.labelLarge)
-                    }
+        }
+        Spacer(Modifier.weight(1f))
+        Button(
+            onClick = onVote,
+            // A guest's tap goes to 登录 before anything is picked.
+            enabled = !sending && (picked > 0 || !loggedIn),
+            shapes = ButtonDefaults.shapes(),
+            contentPadding = PaddingValues(horizontal = 24.dp),
+        ) {
+            AnimatedContent(
+                targetState = sending,
+                transitionSpec = { YoinMotion.fadeIn(YoinMotionRole.Standard) togetherWith YoinMotion.fadeOut(YoinMotionRole.Standard, YoinMotionSpeed.Fast) },
+                contentAlignment = Alignment.Center,
+                label = "voteSending",
+            ) { busy ->
+                if (busy) {
+                    LoadingIndicator(Modifier.size(20.dp), color = cs.onSurfaceVariant)
+                } else {
+                    Text("投票", style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
+    }
+}
+
+/** n/N picked; each refused tap ([rejects] ticking up) pulses it on the spatial spring, flashing error. */
+@Composable
+private fun PickCounter(picked: Int, choiceCount: Int, rejects: Int) {
+    val cs = MaterialTheme.colorScheme
+    val scale = remember { Animatable(1f) }
+    var flashing by remember { mutableStateOf(false) }
+    val up = YoinMotion.fastSpatialSpec<Float>()
+    val settle = YoinMotion.defaultSpatialSpec<Float>()
+    LaunchedEffect(rejects) {
+        if (rejects == 0) return@LaunchedEffect
+        flashing = true
+        scale.animateTo(1.3f, up)
+        flashing = false
+        scale.animateTo(1f, settle)
+    }
+    val numberColor by animateColorAsState(
+        if (flashing) cs.error else cs.onSurface,
+        YoinMotion.fastEffectsSpec(),
+        label = "votePickedColor",
+    )
+    Row(
+        Modifier.graphicsLayer {
+            scaleX = scale.value
+            scaleY = scale.value
+        },
+    ) {
+        AnimatedContent(
+            targetState = picked,
+            transitionSpec = { YoinMotion.fadeIn(YoinMotionRole.Standard) togetherWith YoinMotion.fadeOut(YoinMotionRole.Standard, YoinMotionSpeed.Fast) },
+            label = "votePicked",
+        ) { n ->
+            Text("$n", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = numberColor)
+        }
+        Text("/$choiceCount", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
     }
 }
 
@@ -863,29 +1173,40 @@ private fun VoteActions(
 private fun VoteFooter(joinCount: Long, endTime: Long, ended: Boolean, now: Long) {
     val cs = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().seamText()) {
-        Text(
-            Fmt.count(joinCount),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = cs.onSurface,
+        AnimatedContent(
+            targetState = Fmt.count(joinCount),
+            transitionSpec = { YoinMotion.fadeIn(YoinMotionRole.Standard) togetherWith YoinMotion.fadeOut(YoinMotionRole.Standard, YoinMotionSpeed.Fast) },
             modifier = Modifier.alignByBaseline(),
-        )
+            label = "voteJoined",
+        ) { count ->
+            Text(count, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = cs.onSurface)
+        }
         Spacer(Modifier.width(2.dp))
         Text("人参与", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant, modifier = Modifier.alignByBaseline())
         Spacer(Modifier.weight(1f))
-        val left = if (ended) null else timeLeft(endTime, now)
-        when {
-            ended -> Text("已结束", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant, modifier = Modifier.alignByBaseline())
-            left != null -> {
-                Text(
-                    left.first,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = cs.onSurface,
-                    modifier = Modifier.alignByBaseline(),
-                )
-                Spacer(Modifier.width(2.dp))
-                Text(left.second, style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant, modifier = Modifier.alignByBaseline())
+        // (number, unit); an empty number is 已结束; null shows nothing (open-ended).
+        val tail = if (ended) "" to "已结束" else timeLeft(endTime, now)
+        AnimatedContent(
+            targetState = tail,
+            transitionSpec = { YoinMotion.fadeIn(YoinMotionRole.Standard) togetherWith YoinMotion.fadeOut(YoinMotionRole.Standard, YoinMotionSpeed.Fast) },
+            contentAlignment = Alignment.CenterEnd,
+            modifier = Modifier.alignByBaseline(),
+            label = "voteTail",
+        ) { t ->
+            Row {
+                if (t != null && t.first.isNotEmpty()) {
+                    Text(
+                        t.first,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = cs.onSurface,
+                        modifier = Modifier.alignByBaseline(),
+                    )
+                    Spacer(Modifier.width(2.dp))
+                }
+                if (t != null) {
+                    Text(t.second, style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant, modifier = Modifier.alignByBaseline())
+                }
             }
         }
     }

@@ -79,8 +79,8 @@ internal sealed interface ArticleBlock {
     data class ListItem(val marker: String?, val level: Int, val content: RichContent) : ArticleBlock
     data class Code(val text: String) : ArticleBlock
     data class Card(val title: String, val subtitle: String, val cover: String, val url: String, val badge: String) : ArticleBlock
-    /** An opus `LINK_CARD_TYPE_VOTE`, or a legacy article's `data-vote-id` image. */
-    data class Vote(val summary: VoteSummary) : ArticleBlock
+    /** An opus `LINK_CARD_TYPE_VOTE` ([dynamicId] = the opus id), or a legacy article's `data-vote-id` image. */
+    data class Vote(val summary: VoteSummary, val dynamicId: String = "") : ArticleBlock
     data object Gap : ArticleBlock
 }
 
@@ -91,10 +91,11 @@ internal class ParseStyle(val primary: Color, val bodySize: TextUnit)
 
 // ── Opus paragraphs (module_content.paragraphs) ─────────────────────────────
 
-internal fun parseOpusParagraphs(paragraphs: JsonArray, style: ParseStyle): ParsedArticle {
+/** [dynamicId]: the opus id (the same id as its dynamic), passed on to vote cards. */
+internal fun parseOpusParagraphs(paragraphs: JsonArray, style: ParseStyle, dynamicId: String = ""): ParsedArticle {
     val images = mutableListOf<String>()
     val blocks = mutableListOf<ArticleBlock>()
-    paragraphs.objects().forEach { parseParagraph(it, blocks, images, style) }
+    paragraphs.objects().forEach { parseParagraph(it, blocks, images, style, dynamicId) }
     return ParsedArticle(blocks, images)
 }
 
@@ -104,7 +105,13 @@ private fun alignOf(p: JsonObject): TextAlign = when (p.obj("format")?.int("alig
     else -> TextAlign.Start
 }
 
-private fun parseParagraph(p: JsonObject, out: MutableList<ArticleBlock>, images: MutableList<String>, style: ParseStyle) {
+private fun parseParagraph(
+    p: JsonObject,
+    out: MutableList<ArticleBlock>,
+    images: MutableList<String>,
+    style: ParseStyle,
+    dynamicId: String,
+) {
     val heading = p.obj("heading")
     val text = p.obj("text")
     val pic = p.obj("pic")
@@ -139,12 +146,12 @@ private fun parseParagraph(p: JsonObject, out: MutableList<ArticleBlock>, images
         }
         quote != null -> {
             val children = mutableListOf<ArticleBlock>()
-            quote.arr("children").objects().forEach { parseParagraph(it, children, images, style) }
+            quote.arr("children").objects().forEach { parseParagraph(it, children, images, style, dynamicId) }
             if (children.isNotEmpty()) out += ArticleBlock.Quote(children)
         }
         list != null -> parseList(list, 1, out, style)
         code != null -> out += ArticleBlock.Code(code.str("content"))
-        card != null -> parseCard(card)?.let { out += it }
+        card != null -> parseCard(card, dynamicId)?.let { out += it }
         else -> Unit
     }
 }
@@ -158,11 +165,11 @@ private fun parseList(list: JsonObject, level: Int, out: MutableList<ArticleBloc
     }
 }
 
-private fun parseCard(linkCard: JsonObject): ArticleBlock? {
+private fun parseCard(linkCard: JsonObject, dynamicId: String): ArticleBlock? {
     val card = linkCard.obj("card") ?: return null
     val type = card.str("type").removePrefix("LINK_CARD_TYPE_").lowercase()
     if (type == "vote") {
-        return voteSummaryOf(card.obj("vote"), card.long("oid"))?.let { ArticleBlock.Vote(it) }
+        return voteSummaryOf(card.obj("vote"), card.long("oid"))?.let { ArticleBlock.Vote(it, dynamicId) }
     }
     val inner: JsonObject = card.obj(type)
         ?: card.values.firstNotNullOfOrNull { (it as? JsonObject)?.takeIf { o -> o.str("title").isNotEmpty() } }
@@ -605,7 +612,12 @@ internal fun ArticleBlockView(block: ArticleBlock, onImage: (Int) -> Unit, modif
                 if (block.badge.isNotEmpty()) Tag(block.badge)
             }
         }
-        is ArticleBlock.Vote -> VoteCard(block.summary, modifier, color = MaterialTheme.colorScheme.surfaceContainerLow)
+        is ArticleBlock.Vote -> VoteCard(
+            block.summary,
+            modifier,
+            dynamicId = block.dynamicId,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        )
         ArticleBlock.Gap -> Spacer(modifier.height(8.dp))
     }
 }
@@ -669,6 +681,8 @@ internal fun ArticleMeta(h: ArticleHeaderData, modifier: Modifier = Modifier) {
 
 /** Opus detail JSON (`data.item`) → header + paragraphs + comment subject. */
 internal class OpusDoc(
+    /** The opus id (`id_str`), which is also its dynamic's id. */
+    val id: String,
     val header: ArticleHeaderData,
     val paragraphs: JsonArray,
     val commentOid: Long,
@@ -697,6 +711,7 @@ internal fun opusDoc(item: JsonObject): OpusDoc {
         collection = module("module_collection").str("name"),
     )
     return OpusDoc(
+        id = item.str("id_str"),
         header = header,
         paragraphs = module("module_content").arr("paragraphs"),
         commentOid = basic.str("comment_id_str").toLongOrNull() ?: 0L,

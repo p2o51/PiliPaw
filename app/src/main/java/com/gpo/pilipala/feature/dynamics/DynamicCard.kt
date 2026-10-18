@@ -405,7 +405,12 @@ private fun MajorContent(item: JsonObject, blockColor: Color) {
 @Composable
 private fun AdditionalContent(item: JsonObject, blockColor: Color) {
     val nav = LocalNavigator.current
-    val add = item.dynModule.obj("additional") ?: return
+    val add = item.dynModule.obj("additional")
+    // A vote card for additional.vote, or for a vote that only shows as an inline node.
+    if (add == null || add.str("type") == "ADDITIONAL_TYPE_VOTE") {
+        VoteForItem(item, blockColor)
+        return
+    }
     when (add.str("type")) {
         "ADDITIONAL_TYPE_UGC" -> add.obj("ugc")?.let { u ->
             val bvid = IdUtils.findBvid(u.str("jump_url"))
@@ -430,7 +435,6 @@ private fun AdditionalContent(item: JsonObject, blockColor: Color) {
                 onClick = r.str("jump_url").takeIf { it.isNotEmpty() }?.let { u -> { nav.openUrl(normalizeUrl(u)) } },
             )
         }
-        "ADDITIONAL_TYPE_VOTE" -> add.obj("vote")?.let { v -> VoteCard(v, dynamicId = item.dynId, color = blockColor) }
         "ADDITIONAL_TYPE_GOODS" -> add.obj("goods")?.let { g ->
             val first = g.arr("items").objects().firstOrNull() ?: return@let
             RowBlock(
