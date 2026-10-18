@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.member
 
+import com.gpo.pilipala.feature.feeds.FeedSourceSheet
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -350,6 +351,7 @@ private fun MemberContent(vm: MemberViewModel) {
         if (wide) (wideScroll.value / barFillDistance).coerceIn(0f, 1f) else collapsing.fraction
     }
     var showMenu by remember { mutableStateOf(false) }
+    var feedSheet by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Int?>(null) }
 
     val profile = vm.profile
@@ -526,6 +528,9 @@ private fun MemberContent(vm: MemberViewModel) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            IconButton(onClick = { feedSheet = true }, shapes = IconButtonDefaults.shapes()) {
+                Icon(YoinSymbols.LibraryAdd, contentDescription = "添加到 Feed")
+            }
             IconButton(
                 onClick = { shareText(context, shareLine, name) },
                 shapes = IconButtonDefaults.shapes(),
@@ -534,6 +539,15 @@ private fun MemberContent(vm: MemberViewModel) {
                 Icon(YoinSymbols.MoreVertical, contentDescription = "更多")
             }
         }
+    }
+
+    if (feedSheet) {
+        FeedSourceSheet(
+            upMid = vm.mid,
+            upName = name,
+            upFace = profile?.face ?: vm.initFace,
+            onDismiss = { feedSheet = false },
+        )
     }
 
     if (showMenu) {
