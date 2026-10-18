@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.member
 
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.gpo.pilipala.feature.feeds.FeedSourceSheet
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -275,6 +276,13 @@ private class CollapsingState {
         }
     }
 
+    companion object {
+        val Saver: androidx.compose.runtime.saveable.Saver<CollapsingState, Float> = androidx.compose.runtime.saveable.Saver(
+            save = { it.offset },
+            restore = { saved -> CollapsingState().also { it.offset = saved } },
+        )
+    }
+
     val connection = object : NestedScrollConnection {
         override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset =
             if (available.y < 0f) Offset(0f, consume(available.y)) else Offset.Zero
@@ -347,7 +355,9 @@ private fun MemberContent(vm: MemberViewModel) {
     val pinnedTop = statusTop + barHeight
 
     val pagerState = rememberPagerState(initialPage = 1) { Tabs.size }
-    val collapsing = remember { CollapsingState() }
+    // Saved with the page: coming back from a pushed page keeps the header as collapsed as
+    // the list under it is scrolled.
+    val collapsing = rememberSaveable(saver = CollapsingState.Saver) { CollapsingState() }
     val decay = rememberSplineBasedDecay<Float>()
     // Wide mode: the left header column scrolls on its own; the overlay bar fills as it does.
     val wideScroll = rememberScrollState()
