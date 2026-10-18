@@ -11,7 +11,16 @@ import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.feature.video.AppShortcuts
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import java.io.File
@@ -75,6 +84,29 @@ internal object WidgetStore {
 
     private val lock = Any()
 
+    /**
+     * Bumped whenever what the widget shows may have changed ([WatchWidget.refresh]). A
+     * running Glance session only recomposes on update and never reruns provideGlance, so
+     * the widget reloads its data when this moves.
+     */
+    private val _version = MutableStateFlow(0L)
+    val version: StateFlow<Long> = _version.asStateFlow()
+
+    fun changed() {
+        _version.update { it + 1 }
+    }
+
+    /**
+     * The list's GET runs here, detached from the widget update: OkHttp's blocking call
+     * ignores cancellation, so a timeout around it would still wait for the socket. The
+     * update stops waiting after [FetchTimeoutMs]; a late answer still lands in the cache.
+     */
+    private val fetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var inflight: Pair<Long, Deferred<LaterCache?>>? = null
+
+    /** The signed-in account's mid, 0 when logged out. */
+    fun currentMid(): Long = runCatching { if (BiliClient.isLoggedIn) BiliClient.mid else 0L }.getOrDefault(0L)
+
     private fun file(context: Context, name: String): File =
         File(context.applicationContext.filesDir, Dir).apply { mkdirs() }.resolve(name)
 
@@ -118,7 +150,7 @@ internal object WidgetStore {
      * or the cache belongs to another account: nothing.
      */
     suspend fun laterForWidget(context: Context, force: Boolean = false): LaterCache? {
-        val mid = runCatching { if (BiliClient.isLoggedIn) BiliClient.mid else 0L }.getOrDefault(0L)
+        val mid = currentMid()
         if (mid <= 0L) {
             synchronized(lock) { runCatching { file(context, LaterFile).delete() } }
             return null
@@ -126,18 +158,27 @@ internal object WidgetStore {
         val cached = readLater(context)?.takeIf { it.mid == mid }
         val fresh = cached != null && System.currentTimeMillis() - cached.fetchedAt in 0..LaterMaxAgeMs
         if (fresh && !force) return cached
-        val fetched = try {
-            withTimeoutOrNull(FetchTimeoutMs) { fetchLater(mid) }
-        } catch (c: CancellationException) {
-            throw c
-        } catch (_: Exception) {
-            null
-        }
-        if (fetched != null) {
-            write(context, LaterFile, BiliJson.encodeToString(LaterCache.serializer(), fetched))
-            return fetched
+        val job = fetch(context.applicationContext, mid)
+        val fetched = withTimeoutOrNull(FetchTimeoutMs) { job.await() }
+        if (fetched != null) return fetched
+        if (!job.isCompleted) {
+            // Too slow for this update: the widget shows the cached list now and the fresh one once it lands.
+            fetchScope.launch { if (job.await() != null) WatchWidget.refresh(context) }
         }
         return cached
+    }
+
+    /** One GET per account at a time; a widget update during a slow one waits on the same call. */
+    private fun fetch(context: Context, mid: Long): Deferred<LaterCache?> = synchronized(lock) {
+        inflight?.takeIf { it.first == mid && it.second.isActive }?.second
+            ?: fetchScope.async {
+                val fetched = runCatching { fetchLater(mid) }.getOrNull()
+                // Signed out (or switched) while it was in flight: not this account's list any more.
+                if (fetched != null && currentMid() == mid) {
+                    write(context, LaterFile, BiliJson.encodeToString(LaterCache.serializer(), fetched))
+                }
+                fetched
+            }.also { inflight = mid to it }
     }
 
     /** Read-only: the same GET the 稍后再看 page makes. */

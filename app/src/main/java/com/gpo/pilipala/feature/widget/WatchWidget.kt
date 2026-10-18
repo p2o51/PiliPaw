@@ -7,6 +7,12 @@ import android.net.Uri
 import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
@@ -82,8 +88,17 @@ class WatchWidget : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Responsive(setOf(Small, Medium, Large, Tall))
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = WidgetData.load(context)
+        // The first frame draws what is loaded here. The session then stays up for a while,
+        // and an update inside it only recomposes (this function doesn't run again), so the
+        // data reloads in the composition whenever WidgetStore.version moves.
+        val loadedAt = WidgetStore.version.value
+        val initial = WidgetData.load(context)
         provideContent {
+            val version by WidgetStore.version.collectAsState()
+            var data by remember { mutableStateOf(initial) }
+            LaunchedEffect(version) {
+                if (version != loadedAt) data = WidgetData.load(context)
+            }
             GlanceTheme {
                 WatchContent(data)
             }
@@ -109,6 +124,8 @@ class WatchWidget : GlanceAppWidget() {
                 pending?.cancel()
                 pending = scope.launch {
                     delay(RefreshDebounceMs)
+                    // A running session reloads on this; a new one loads fresh anyway.
+                    WidgetStore.changed()
                     runCatching {
                         if (GlanceAppWidgetManager(app).getGlanceIds(WatchWidget::class.java).isNotEmpty()) {
                             WatchWidget().updateAll(app)
