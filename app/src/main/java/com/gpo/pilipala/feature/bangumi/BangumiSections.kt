@@ -69,6 +69,10 @@ import com.gpo.yoin.symbols.YoinSymbols
 import com.gpo.pilipala.ui.components.sheetNavBottom
 import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.SheetInsets
+import androidx.compose.foundation.layout.heightIn
+import com.gpo.pilipala.ui.components.inlineIconSize
+import com.gpo.pilipala.ui.components.centered
+import com.gpo.pilipala.ui.components.Tag
 
 /** Poster + title + score + styles + stats, with the 追番 toggle. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -361,14 +365,14 @@ private fun EpisodeTile(ep: BangumiEpisode, selected: Boolean, onClick: () -> Un
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.heightIn(min = IndexRowHeight), verticalAlignment = Alignment.CenterVertically) {
             if (selected) {
-                Icon(YoinSymbols.Equalizer, null, Modifier.size(14.dp), tint = colors.primary)
+                Icon(YoinSymbols.Equalizer, null, Modifier.size(IndexStyle().inlineIconSize()), tint = colors.primary)
                 Spacer(Modifier.width(4.dp))
             }
             Text(
                 ep.title,
-                style = MaterialTheme.typography.labelMedium,
+                style = IndexStyle(),
                 fontWeight = FontWeight.SemiBold,
                 color = if (selected) colors.primary else colors.onSurfaceVariant,
                 maxLines = 1,
@@ -376,15 +380,7 @@ private fun EpisodeTile(ep: BangumiEpisode, selected: Boolean, onClick: () -> Un
             )
             if (ep.badge.isNotEmpty()) {
                 Spacer(Modifier.width(6.dp))
-                Text(
-                    ep.badge,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.onTertiaryContainer,
-                    modifier = Modifier
-                        .clip(ContinuousRoundedCornerShape(4.dp))
-                        .background(colors.tertiaryContainer)
-                        .padding(horizontal = 4.dp),
-                )
+                Tag(ep.badge)
             }
         }
         Text(
@@ -432,3 +428,11 @@ internal fun EpisodeGridSheet(
         }
     }
 }
+
+
+/** The index line of an episode tile / row: tight label, so the playing glyph and tag centre on it. */
+@Composable
+private fun IndexStyle() = MaterialTheme.typography.labelMedium.centered()
+
+/** Index lines keep one height whether or not they carry a tag. */
+private val IndexRowHeight = 18.dp

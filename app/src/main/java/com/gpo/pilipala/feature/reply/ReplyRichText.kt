@@ -50,6 +50,7 @@ import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Navigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Tag
+import com.gpo.pilipala.ui.components.rememberTagPlaceholder
 import com.gpo.pilipala.ui.theme.YoinMotion
 
 private val UrlRegex = Regex("""https?://[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+""")
@@ -110,7 +111,10 @@ internal fun ReplyRichText(
     val hasLongPress = onEmoteLongPress != null
     // A relation tag known when the line first showed is simply there; one that lands later fades in.
     val fadeRelationTag = remember { (prefix?.relation ?: 0) == 0 }
-    val inline = remember(content, prefix != null && prefix.isUp, prefix?.relation ?: 0, density, hasLongPress) {
+    // Inline tags take exactly a header Tag's size, centred on the line's text.
+    val upPlaceholder = rememberTagPlaceholder("UP")
+    val relationPlaceholder = rememberTagPlaceholder(if (prefix?.relation == 6) "互关" else "关注")
+    val inline = remember(content, prefix != null && prefix.isUp, prefix?.relation ?: 0, density, hasLongPress, upPlaceholder, relationPlaceholder) {
         buildMap {
             content.emotes.forEach { (key, emote) ->
                 val big = emote.size >= 2
@@ -140,7 +144,7 @@ internal fun ReplyRichText(
             if (relation != 0) {
                 put(
                     RELATION_TAG_ID,
-                    InlineTextContent(Placeholder(2.7.em, 1.3.em, PlaceholderVerticalAlign.TextCenter)) {
+                    InlineTextContent(relationPlaceholder) {
                         InlineRelationTag(relation, fadeRelationTag)
                     },
                 )
@@ -148,7 +152,7 @@ internal fun ReplyRichText(
             if (prefix?.isUp == true) {
                 put(
                     UP_TAG_ID,
-                    InlineTextContent(Placeholder(1.9.em, 1.3.em, PlaceholderVerticalAlign.TextCenter)) {
+                    InlineTextContent(upPlaceholder) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Tag(
                                 "UP",

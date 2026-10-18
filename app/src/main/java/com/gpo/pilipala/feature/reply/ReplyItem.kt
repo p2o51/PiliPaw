@@ -95,6 +95,8 @@ import com.gpo.yoin.symbols.YoinSymbols
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
+import com.gpo.pilipala.ui.components.inlineIconSize
+import com.gpo.pilipala.ui.components.centered
 
 /** Everything a reply row can trigger; hosts (list / thread page) wire it to their ViewModel. */
 @Stable
@@ -176,7 +178,8 @@ internal fun ReplyRow(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     reply.member.name,
-                    style = MaterialTheme.typography.labelLarge,
+                    // Set tight: the LV / UP / 关注 tags centre on the name's glyphs.
+                    style = MaterialTheme.typography.labelLarge.centered(),
                     fontWeight = if (reply.member.vip) FontWeight.SemiBold else FontWeight.Medium,
                     color = if (reply.member.vip) scheme.primary else scheme.onSurfaceVariant,
                     maxLines = 1,
@@ -193,12 +196,13 @@ internal fun ReplyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(Fmt.relativeTime(reply.ctime), style = MaterialTheme.typography.labelSmall, color = scheme.outline)
+                val meta = MaterialTheme.typography.labelSmall.centered()
+                Text(Fmt.relativeTime(reply.ctime), style = meta, color = scheme.outline)
                 if (reply.location.isNotEmpty()) {
-                    Text(reply.location, style = MaterialTheme.typography.labelSmall, color = scheme.outline)
+                    Text(reply.location, style = meta, color = scheme.outline)
                 }
                 if (reply.invisible) {
-                    Text("已隐藏", style = MaterialTheme.typography.labelSmall, color = scheme.error)
+                    Text("已隐藏", style = meta, color = scheme.error)
                 }
             }
             if (clampLines) {
@@ -405,13 +409,13 @@ private fun ExpandToggle(
         Box {
             Text(
                 "展开",
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelLarge.centered(),
                 color = primary,
                 modifier = Modifier.graphicsLayer { alpha = 1f - progress.value.coerceIn(0f, 1f) },
             )
             Text(
                 "收起",
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelLarge.centered(),
                 color = primary,
                 modifier = Modifier.graphicsLayer { alpha = progress.value.coerceIn(0f, 1f) },
             )
@@ -482,10 +486,10 @@ private fun ActionRow(reply: Reply, actions: ReplyActions) {
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Icon(ReplyIcons.Reply, null, Modifier.size(16.dp), tint = scheme.outline)
-            Text("回复", style = MaterialTheme.typography.labelMedium, color = scheme.outline)
+            Text("回复", style = MaterialTheme.typography.labelMedium.centered(), color = scheme.outline)
         }
         if (reply.upLiked) {
-            Text("UP主觉得很赞", style = MaterialTheme.typography.labelSmall, color = scheme.primary)
+            Text("UP主觉得很赞", style = MaterialTheme.typography.labelSmall.centered(), color = scheme.primary)
         }
         if (reply.hot) {
             Tag("热评", container = scheme.errorContainer, content = scheme.onErrorContainer)
@@ -584,7 +588,7 @@ private fun RollingCount(count: Long, color: ColorProducer) {
                     },
                     label = "likeDigit",
                 ) { c ->
-                    BasicText(c, style = MaterialTheme.typography.labelMedium, color = color)
+                    BasicText(c, style = MaterialTheme.typography.labelMedium.centered(), color = color)
                 }
             }
         }
@@ -649,16 +653,17 @@ private fun SubReplyPreview(reply: Reply, actions: ReplyActions, modifier: Modif
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                val label = MaterialTheme.typography.labelMedium.centered()
                 if (reply.upReplied) {
-                    Text("UP主等人", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                    Text("UP主等人", style = label, color = scheme.onSurfaceVariant)
                 }
                 Text(
                     reply.entryText.ifEmpty { "${reply.rcount} 条回复" },
-                    style = MaterialTheme.typography.labelMedium,
+                    style = label,
                     fontWeight = FontWeight.Medium,
                     color = scheme.primary,
                 )
-                Icon(YoinSymbols.ChevronRight, null, Modifier.size(14.dp), tint = scheme.primary)
+                Icon(YoinSymbols.ChevronRight, null, Modifier.size(label.inlineIconSize()), tint = scheme.primary)
             }
         }
     }

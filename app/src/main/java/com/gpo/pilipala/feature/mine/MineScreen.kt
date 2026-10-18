@@ -99,6 +99,8 @@ import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 import java.util.Locale
+import com.gpo.pilipala.ui.components.inlineIconSize
+import com.gpo.pilipala.ui.components.centered
 
 internal class MineViewModel : ViewModel() {
     var folders by mutableStateOf<List<FavFolder>>(emptyList())
@@ -318,10 +320,11 @@ private fun UserProfile(u: UserInfo) {
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(PiliSymbols.Coin, contentDescription = "硬币", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
+                    val coinStyle = MaterialTheme.typography.labelLarge.centered()
+                    Icon(PiliSymbols.Coin, contentDescription = "硬币", Modifier.size(coinStyle.inlineIconSize()), tint = MaterialTheme.colorScheme.outline)
                     Text(
                         formatCoins(u.coins),
-                        style = MaterialTheme.typography.labelLarge,
+                        style = coinStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

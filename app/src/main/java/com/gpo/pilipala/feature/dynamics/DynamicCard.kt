@@ -96,6 +96,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.SheetInsets
+import com.gpo.pilipala.ui.components.inlineIconSize
+import com.gpo.pilipala.ui.components.centered
 
 private val CoverShape = ContinuousRoundedCornerShape(12.dp)
 private val BlockShape = ContinuousRoundedCornerShape(12.dp)
@@ -200,13 +202,13 @@ private fun AuthorRow(item: DynItem) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 val time = item.timeText
                 if (time.isNotEmpty()) {
-                    Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(time, style = MaterialTheme.typography.labelSmall.centered(), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 val action = a.str("pub_action")
                 if (action.isNotEmpty()) {
                     Text(
                         action,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelSmall.centered(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -504,7 +506,9 @@ private fun ForwardBlock(orig: DynItem, viewer: ImageViewerState) {
                 color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                // Name and time share a baseline (two sizes).
                 modifier = Modifier
+                    .alignByBaseline()
                     .weight(1f, fill = false)
                     .overflowClickable(
                         horizontal = 8.dp,
@@ -515,7 +519,7 @@ private fun ForwardBlock(orig: DynItem, viewer: ImageViewerState) {
             )
             val time = orig.timeText
             if (time.isNotEmpty()) {
-                Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.alignByBaseline())
             }
         }
         // The original belongs to its own author, not to whoever forwarded it.
@@ -606,8 +610,8 @@ private fun LiveBlock(
                             .seamText()
                             .clip(ContinuousRoundedCornerShape(6.dp))
                             .background(Color.Black.copy(alpha = 0.55f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.labelSmall,
+                            .padding(horizontal = 6.dp, vertical = 3.dp),
+                        style = MaterialTheme.typography.labelSmall.centered(),
                         color = Color.White,
                     )
                 }
@@ -623,8 +627,9 @@ private fun LiveBlock(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(PiliSymbols.Live, null, Modifier.size(14.dp).seamText(), tint = Color.White)
-                    Text(area, style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.seamText())
+                    val areaStyle = MaterialTheme.typography.labelSmall.centered()
+                    Icon(PiliSymbols.Live, null, Modifier.size(areaStyle.inlineIconSize()).seamText(), tint = Color.White)
+                    Text(area, style = areaStyle, color = Color.White, modifier = Modifier.seamText())
                 }
             }
         }
@@ -812,7 +817,7 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
                 transitionSpec = { fadeIn(fadeInSpec).togetherWith(fadeOut(fadeOutSpec)) },
                 label = "likeCount",
             ) { text ->
-                Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Text(text, style = MaterialTheme.typography.labelLarge.centered(), maxLines = 1)
             }
         }
     }
@@ -823,7 +828,7 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
 private fun ActionLabel(icon: ImageVector, count: Long, label: String, fame: Boolean = true) {
     Icon(icon, null, Modifier.size(18.dp))
     Spacer(Modifier.width(6.dp))
-    Text(countText(count, label, hidden = fame && fameHides()), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    Text(countText(count, label, hidden = fame && fameHides()), style = MaterialTheme.typography.labelLarge.centered(), maxLines = 1)
 }
 
 /**

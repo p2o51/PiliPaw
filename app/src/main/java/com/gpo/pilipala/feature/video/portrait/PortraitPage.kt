@@ -109,6 +109,8 @@ import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+import com.gpo.pilipala.ui.components.inlineIconSize
+import com.gpo.pilipala.ui.components.centered
 
 /** The page-level actions a page forwards to (sheets live on the video page). */
 @Immutable
@@ -614,9 +616,10 @@ private fun ExpandedInfo(d: VideoDetail, tags: List<String>, onSeek: (Long) -> U
 private fun IconCount(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, self: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         val tint = OnPicture.copy(alpha = 0.72f)
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+        val style = MaterialTheme.typography.labelMedium.onPicture().centered()
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(style.inlineIconSize()))
         Spacer(Modifier.width(4.dp))
-        FameCount(text, style = MaterialTheme.typography.labelMedium.onPicture(), color = tint, lineColor = tint, revealable = false, self = self)
+        FameCount(text, style = style, color = tint, lineColor = tint, revealable = false, self = self)
     }
 }
 

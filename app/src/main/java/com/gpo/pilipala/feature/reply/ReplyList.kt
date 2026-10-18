@@ -82,6 +82,8 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.pilipala.ui.components.inlineIconSize
+import com.gpo.pilipala.ui.components.centered
 
 private const val KEY_BAR = "reply:bar"
 private const val KEY_COMPOSE = "reply:compose"
@@ -373,7 +375,8 @@ private fun SortBar(count: Long, sort: Int, onSort: (Int) -> Unit, modifier: Mod
         }
         Spacer(Modifier.weight(1f))
         if (count > 0) {
-            Icon(PiliSymbols.Comment, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            val countStyle = MaterialTheme.typography.labelLarge.centered()
+            Icon(PiliSymbols.Comment, null, Modifier.size(countStyle.inlineIconSize()), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.size(4.dp))
             AnimatedContent(
                 targetState = count,
@@ -384,7 +387,7 @@ private fun SortBar(count: Long, sort: Int, onSort: (Int) -> Unit, modifier: Mod
             ) { c ->
                 Text(
                     Fmt.count(c),
-                    style = MaterialTheme.typography.labelLarge,
+                    style = countStyle,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

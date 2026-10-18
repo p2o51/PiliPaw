@@ -109,6 +109,7 @@ import com.gpo.yoin.symbols.YoinSymbols
 import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.gpo.pilipala.ui.components.centered
 
 @Composable
 fun LiveRoomScreen(route: Route.LiveRoom) {
@@ -385,8 +386,8 @@ private fun InfoChip(text: String, primary: Boolean) {
         modifier = Modifier
             .clip(ContinuousRoundedCornerShape(10.dp))
             .background(if (primary) cs.secondaryContainer else cs.surfaceContainerHighest)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        style = MaterialTheme.typography.labelLarge,
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        style = MaterialTheme.typography.labelLarge.centered(),
         color = if (primary) cs.onSecondaryContainer else cs.onSurfaceVariant,
     )
 }

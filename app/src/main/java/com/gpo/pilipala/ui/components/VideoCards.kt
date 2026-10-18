@@ -22,6 +22,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
@@ -185,7 +191,7 @@ fun VideoCardH(
                         if (item.pubdate > 0) {
                             Text(
                                 Fmt.relativeTime(item.pubdate),
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelSmall.centered(),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -217,11 +223,12 @@ fun Stat(
     revealable: Boolean = false,
     self: Boolean = LocalFameSelf.current,
 ) {
+    val style = MaterialTheme.typography.labelSmall.centered()
     Row(modifier.seamText(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        Icon(icon, null, Modifier.size(14.dp), tint = tint)
+        Icon(icon, null, Modifier.size(style.inlineIconSize()), tint = tint)
         FameCount(
             text,
-            style = MaterialTheme.typography.labelSmall,
+            style = style,
             color = tint,
             lineColor = tint,
             revealable = revealable,
@@ -240,7 +247,7 @@ private fun CoverStats(item: VideoItem, modifier: Modifier) {
             if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku), tint = Color.White)
             Spacer(Modifier.weight(1f))
             if (item.duration > 0) {
-                Text(Fmt.duration(item.duration), style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.seamText())
+                Text(Fmt.duration(item.duration), style = MaterialTheme.typography.labelSmall.centered(), color = Color.White, modifier = Modifier.seamText())
             }
         }
     }
@@ -267,7 +274,9 @@ fun CoverScrim(
     shape: Shape = CoverShape,
     content: @Composable RowScope.() -> Unit,
 ) {
-    Row(
+    // The labels centre on each other (icon pairs, plain text, chips of other heights);
+    // the line as a whole sits on the scrim's bottom edge.
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = CoverScrimHeight)
@@ -277,10 +286,15 @@ fun CoverScrim(
                 onDrawBehind { drawOutline(outline, brush) }
             }
             .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        content = content,
-    )
+        contentAlignment = Alignment.BottomStart,
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            content = content,
+        )
+    }
 }
 
 @Composable
@@ -291,8 +305,8 @@ fun DurationChip(text: String, modifier: Modifier = Modifier) {
             .seamText()
             .clip(ContinuousRoundedCornerShape(6.dp))
             .background(Color.Black.copy(alpha = 0.6f))
-            .padding(horizontal = 5.dp, vertical = 1.dp),
-        style = MaterialTheme.typography.labelSmall,
+            .padding(horizontal = 5.dp, vertical = 2.dp),
+        style = MaterialTheme.typography.labelSmall.centered(),
         color = Color.White,
     )
 }
@@ -309,14 +323,18 @@ fun CoverBadge(text: String, modifier: Modifier = Modifier) {
             .seamText()
             .clip(ContinuousRoundedCornerShape(6.dp))
             .background(MaterialTheme.colorScheme.tertiary)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        style = MaterialTheme.typography.labelSmall,
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+        style = MaterialTheme.typography.labelSmall.centered(),
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.onTertiary,
     )
 }
 
-/** Inline tag next to text (UP / 置顶 / 热评…), on the accent's container by default. */
+/**
+ * Inline tag next to text (UP / LV / 关注 / 置顶 / 热评…), on the accent's container by
+ * default. The text is set tight ([centered]) with equal padding above and below, so the
+ * block is about as tall as a labelLarge name and centres on it in a CenterVertically row.
+ */
 @Composable
 fun Tag(
     text: String,
@@ -328,10 +346,39 @@ fun Tag(
         text,
         modifier = modifier
             .seamText()
-            .clip(ContinuousRoundedCornerShape(4.dp))
+            .clip(TagDefaults.Shape)
             .background(container)
-            .padding(horizontal = 4.dp, vertical = 1.dp),
-        style = MaterialTheme.typography.labelSmall,
+            .padding(horizontal = TagDefaults.HorizontalPadding, vertical = TagDefaults.VerticalPadding),
+        style = TagDefaults.textStyle,
         color = content,
+        maxLines = 1,
     )
+}
+
+/** [Tag]'s metrics, shared with tags drawn inline in text ([rememberTagPlaceholder]). */
+object TagDefaults {
+    val HorizontalPadding = 4.dp
+    val VerticalPadding = 2.dp
+    val Shape = ContinuousRoundedCornerShape(4.dp)
+    val textStyle: TextStyle
+        @Composable get() = MaterialTheme.typography.labelSmall.centered()
+}
+
+/**
+ * An inline-text placeholder exactly the size of a [Tag] showing [text], centred on the
+ * line's text: an inline tag matches the tags in a row header and sits on the text's centre.
+ */
+@Composable
+fun rememberTagPlaceholder(text: String): Placeholder {
+    val measurer = rememberTextMeasurer()
+    val style = TagDefaults.textStyle
+    val density = LocalDensity.current
+    return remember(text, style, density) {
+        val size = measurer.measure(text, style, maxLines = 1).size
+        with(density) {
+            val w = size.width + 2 * TagDefaults.HorizontalPadding.toPx()
+            val h = size.height + 2 * TagDefaults.VerticalPadding.toPx()
+            Placeholder(w.toSp(), h.toSp(), PlaceholderVerticalAlign.TextCenter)
+        }
+    }
 }
