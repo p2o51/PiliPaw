@@ -91,6 +91,7 @@ internal fun rememberReplyActions(
     onReply: (Reply) -> ComposeTarget,
     onOpenThread: ((Reply) -> Unit)?,
     onTimestampClick: ((Long) -> Unit)?,
+    threadSource: Boolean = true,
 ): ReplyActions {
     val nav = LocalNavigator.current
     val toast = rememberToast()
@@ -100,7 +101,7 @@ internal fun rememberReplyActions(
     val hasThread = onOpenThread != null
     val hasTimestamp = onTimestampClick != null
     // One instance per surface: rows skip when their host recomposes.
-    return remember(vm, ui, nav, toast, hasThread, hasTimestamp) {
+    return remember(vm, ui, nav, toast, hasThread, hasTimestamp, threadSource) {
         ReplyActions(
             likeState = { vm.likeState(it) },
             onLike = { r -> if (!vm.toggleLike(r)) requireLogin(nav, toast) },
@@ -111,6 +112,7 @@ internal fun rememberReplyActions(
             onTimestampClick = if (hasTimestamp) { s -> timestamp?.invoke(s) } else null,
             entrance = vm.entrance,
             layout = ui.layout,
+            threadSource = threadSource,
         )
     }
 }

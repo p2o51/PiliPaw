@@ -5,6 +5,7 @@ import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -83,13 +84,11 @@ import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
-import kotlinx.coroutines.launch
 
 /** Everything a reply row can trigger; hosts (list / thread page) wire it to their ViewModel. */
 @Stable
@@ -97,15 +96,17 @@ internal class ReplyActions(
     val likeState: (Reply) -> LikeState,
     val onLike: (Reply) -> Unit,
     val onReply: (Reply) -> Unit,
-    /** Opens the thread page; null on the thread page itself. */
+    /** Opens the thread (pushed page or in place); null on the thread itself. */
     val onOpenThread: ((Reply) -> Unit)?,
     val onLongPress: (Reply) -> Unit,
     val onImage: (urls: List<String>, index: Int) -> Unit,
     val onTimestampClick: ((Long) -> Unit)?,
-    /** Which rows animate in (null: none). */
+    /** The reply just sent grows in (null: nothing animates in). */
     val entrance: ReplyEntrance? = null,
     /** Rows resizing in this list (gates its placement springs). */
     val layout: ReplyLayoutMotion? = null,
+    /** The preview block is the pushed thread page's container-transform source (false: the thread opens in place). */
+    val threadSource: Boolean = true,
 )
 
 private val PictureShape = ContinuousRoundedCornerShape(10.dp)
@@ -113,10 +114,6 @@ private val PreviewShape = ContinuousRoundedCornerShape(14.dp)
 
 /** Lines a list row shows before 展开. */
 private const val ClampLines = 6
-
-/** The preview block's lines follow their row's rise. */
-private const val SubLineDelayMs = 70
-private const val SubLineStaggerMs = 40
 
 /**
  * One comment. Avatar column on the left, everything else stacked on the right:
@@ -224,7 +221,6 @@ internal fun ReplyRow(
                 SubReplyPreview(
                     reply = reply,
                     actions = actions,
-                    riseFrom = (entrance as? Entrance.Rise)?.delayMs,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
             }
@@ -253,9 +249,10 @@ private class ClampMetrics {
 
 /**
  * A list row's body: [ClampLines] lines, the last one fading out, with 展开
- * under it when there is more. The height follows one spatial spring both
- * ways (the fade lifts with it) and the label cross-fades on the same
- * progress; nothing recomposes per frame. While it moves the list's
+ * under it when there is more. The height follows the default spatial
+ * spring, critically damped, both ways (the fade lifts with it; nothing
+ * overshoots) and the label cross-fades on the same progress; nothing
+ * recomposes per frame. While it moves the list's
  * placement springs stand down, so the rows below track it exactly.
  * Short comments never compose the toggle: its slot is reserved in the very
  * layout that finds the overflow, and it fills in on the next frame.
@@ -274,7 +271,7 @@ private fun ClampedReplyText(
     var hasMore by remember(content) { mutableStateOf(false) }
     val toggleLine = MaterialTheme.typography.labelLarge.lineHeight
     val progress = remember(stateKey) { Animatable(if (expanded) 1f else 0f) }
-    val spatial = YoinMotion.defaultSpatialSpec<Float>()
+    val spatial = settledSpatialSpec<Float>()
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(expanded) {
         val target = if (expanded) 1f else 0f
@@ -462,7 +459,7 @@ private fun ActionRow(reply: Reply, actions: ReplyActions) {
             Tag("热评", container = scheme.errorContainer, content = scheme.onErrorContainer)
         }
         Spacer(Modifier.weight(1f))
-        // Keyed: a lazy slot reused for another comment must not play this one's kick / roll.
+        // Keyed: a lazy slot reused for another comment must not play this one's wash / roll.
         key(reply.rpid) {
             LikeButton(actions.likeState(reply)) {
                 actions.onLike(reply)
@@ -471,41 +468,28 @@ private fun ActionRow(reply: Reply, actions: ReplyActions) {
     }
 }
 
-/** Thumb kick on like (expressive spring, up and a little tilt), a small dip on unlike. */
-private const val LikeScaleKick = 12f
-private const val LikeTiltKick = 600f
-private const val UnlikeScaleKick = 6f
-
 /**
- * Thumb toggle: the color washes on the effects spring, the glyph gets a
- * spring kick, and only the digits that change roll (up when the count
- * grows, down when it shrinks).
+ * Thumb toggle, kept quiet: the outline and filled glyphs cross-fade while
+ * the color washes, both on the effects spring; only the digits that change
+ * roll (up when the count grows, down when it shrinks). No kick, no tilt.
  */
 @Composable
 internal fun LikeButton(state: LikeState, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
-    // Read only in draw (icon tint, digit color): the wash recomposes nothing.
+    // Read only in draw (icon tint, glyph mix, digit color): the wash recomposes nothing.
     val color = animateColorAsState(
         if (state.liked) scheme.primary else scheme.outline,
         animationSpec = YoinMotion.defaultEffectsSpec(),
         label = "likeColor",
     )
-    val thumb = rememberVectorPainter(if (state.liked) PiliSymbols.ThumbUpFilled else PiliSymbols.ThumbUp)
-    val kick = YoinMotion.fastSpatialSpec<Float>(role = YoinMotionRole.Expressive)
-    val scale = remember { Animatable(1f) }
-    val tilt = remember { Animatable(0f) }
-    val shown = remember { booleanArrayOf(state.liked) }
-    LaunchedEffect(state.liked) {
-        if (shown[0] == state.liked) return@LaunchedEffect
-        shown[0] = state.liked
-        if (state.liked) {
-            launch { tilt.animateTo(0f, kick, initialVelocity = -LikeTiltKick) }
-            scale.animateTo(1f, kick, initialVelocity = LikeScaleKick)
-        } else {
-            scale.animateTo(1f, kick, initialVelocity = -UnlikeScaleKick)
-        }
-    }
+    val filled = animateFloatAsState(
+        if (state.liked) 1f else 0f,
+        animationSpec = YoinMotion.defaultEffectsSpec(),
+        label = "likeGlyph",
+    )
+    val outline = rememberVectorPainter(PiliSymbols.ThumbUp)
+    val solid = rememberVectorPainter(PiliSymbols.ThumbUpFilled)
     Row(
         modifier = modifier
             .clip(CircleShape)
@@ -525,12 +509,12 @@ internal fun LikeButton(state: LikeState, modifier: Modifier = Modifier, onClick
                     contentDescription = label
                     role = Role.Image
                 }
-                .graphicsLayer {
-                    scaleX = scale.value
-                    scaleY = scale.value
-                    rotationZ = tilt.value
-                }
-                .drawBehind { with(thumb) { draw(size, colorFilter = ColorFilter.tint(color.value)) } },
+                .drawBehind {
+                    val mix = filled.value.coerceIn(0f, 1f)
+                    val tint = ColorFilter.tint(color.value)
+                    if (mix < 1f) with(outline) { draw(size, alpha = 1f - mix, colorFilter = tint) }
+                    if (mix > 0f) with(solid) { draw(size, alpha = mix, colorFilter = tint) }
+                },
         )
         RollingCount(state.count) { color.value }
     }
@@ -538,7 +522,8 @@ internal fun LikeButton(state: LikeState, modifier: Modifier = Modifier, onClick
 
 /**
  * Odometer count: one slot per character, keyed from the right so ones stay
- * over ones; a slot rolls only when its character changes.
+ * over ones; a slot rolls only when its character changes, on the fast
+ * spatial spring critically damped (short, no bounce).
  */
 @Composable
 private fun RollingCount(count: Long, color: ColorProducer) {
@@ -570,32 +555,34 @@ private fun RollingCount(count: Long, color: ColorProducer) {
 }
 
 /**
- * The 楼中楼 preview block. It is the thread page's container-transform
- * source (the page grows out of it). Its lines follow their row's rise in a
- * short stagger; a sub-reply just sent expands in.
+ * The 楼中楼 preview block. On phones it is the thread page's
+ * container-transform source (the page grows out of it); on wider windows
+ * the thread opens in the same pane. A sub-reply just sent grows in.
  */
 @Composable
-private fun SubReplyPreview(reply: Reply, actions: ReplyActions, riseFrom: Int?, modifier: Modifier = Modifier) {
+private fun SubReplyPreview(reply: Reply, actions: ReplyActions, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
     val open = { actions.onOpenThread?.invoke(reply) ?: Unit }
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .pageSharedSource(Route.ReplyDetail(reply.oid, reply.type, reply.rpid))
+            .then(
+                if (actions.threadSource) {
+                    Modifier.pageSharedSource(Route.ReplyDetail(reply.oid, reply.type, reply.rpid))
+                } else {
+                    Modifier
+                },
+            )
             .clip(PreviewShape)
             .background(scheme.surfaceContainer)
             .clickable(onClick = open)
             .padding(vertical = 6.dp),
     ) {
-        reply.replies.take(3).forEachIndexed { i, sub ->
+        reply.replies.take(3).forEach { sub ->
             key(sub.rpid) {
                 val lineEntrance = remember(sub.rpid) {
-                    when {
-                        actions.entrance?.claimSent(sub.rpid) == true -> Entrance.Expand()
-                        riseFrom != null -> Entrance.Rise(riseFrom + SubLineDelayMs + i * SubLineStaggerMs)
-                        else -> null
-                    }
+                    if (actions.entrance?.claimSent(sub.rpid) == true) Entrance(fade = true) else null
                 }
                 val subLongPress = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
