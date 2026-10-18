@@ -20,7 +20,7 @@ internal class FansViewModel(val mid: Long) : ViewModel() {
     val isOwner = mid > 0 && mid == BiliClient.mid
     var total by mutableStateOf(0)
         private set
-    val relation = RelationState()
+    val relation = RelationState(followsBack = isOwner)
     val pager = Pager(viewModelScope, dedupKey = { it.mid }) { cursor ->
         val pn = cursor?.toIntOrNull() ?: 1
         val ps = 20

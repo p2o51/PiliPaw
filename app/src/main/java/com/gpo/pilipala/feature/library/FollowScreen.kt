@@ -53,10 +53,17 @@ import kotlinx.coroutines.launch
 
 internal data class FollowTag(val id: Long?, val name: String, val count: Int)
 
-/** Follow state the user changed on this page (mid → following), shared by follow/fans lists. */
-internal class RelationState {
+/**
+ * Follow state the user changed on this page (mid → following), shared by follow/fans lists.
+ * [followsBack]: everyone listed follows the user (their own 粉丝 list), so following one
+ * back is 互相关注.
+ */
+internal class RelationState(private val followsBack: Boolean = false) {
     val overrides = mutableStateMapOf<Long, Boolean>()
     fun isFollowing(u: LibUser): Boolean = overrides[u.mid] ?: (u.attribute == 2 || u.attribute == 6)
+
+    /** Following each other: the toggle reads 互相关注 instead of 已关注. */
+    fun isMutual(u: LibUser): Boolean = isFollowing(u) && (u.attribute == 6 || followsBack)
 
     suspend fun toggle(u: LibUser, follow: Boolean) {
         relationModify(u.mid, if (follow) 1 else 2)
@@ -192,13 +199,20 @@ internal fun UserList(
             contentPadding = listPadding,
         ) {
             items(pager.items, key = { it.mid }) { u ->
+                val toggle = showToggle && BiliClient.isLoggedIn && u.mid != BiliClient.mid
                 UserRow(
                     u,
                     modifier = Modifier.animateItem(),
-                    badge = if (u.attribute == 6 && relation.overrides[u.mid] != false) "互关" else null,
-                    trailing = if (showToggle && BiliClient.isLoggedIn && u.mid != BiliClient.mid) {
+                    // With the toggle the button itself reads 互相关注; the tag is for lists without one.
+                    badge = if (!toggle && u.attribute == 6 && relation.overrides[u.mid] != false) "互关" else null,
+                    trailing = if (toggle) {
                         {
                             val following = relation.isFollowing(u)
+                            val label = when {
+                                following && relation.isMutual(u) -> "互相关注"
+                                following -> "已关注"
+                                else -> unfollowedLabel
+                            }
                             ToggleButton(
                                 checked = following,
                                 onCheckedChange = { follow ->
@@ -217,7 +231,14 @@ internal fun UserList(
                                     checkedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
                             ) {
-                                Text(if (following) "已关注" else unfollowedLabel, style = MaterialTheme.typography.labelLarge)
+                                val fx = YoinMotion.defaultEffectsSpec<Float>()
+                                AnimatedContent(
+                                    targetState = label,
+                                    transitionSpec = { fadeIn(fx) togetherWith fadeOut(fx) },
+                                    label = "relationToggle",
+                                ) { text ->
+                                    Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                                }
                             }
                         }
                     } else null,

@@ -113,6 +113,7 @@ internal fun rememberReplyActions(
             entrance = vm.entrance,
             layout = ui.layout,
             threadSource = threadSource,
+            relationOf = { vm.relationOf(it) },
         )
     }
 }

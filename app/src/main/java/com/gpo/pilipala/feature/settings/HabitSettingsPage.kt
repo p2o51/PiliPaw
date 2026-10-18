@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
@@ -25,6 +26,7 @@ internal fun ColumnScope.HabitBody() {
     val autoFs by AppSettings.autoFullscreenLandscape.state.collectAsState()
     val background by AppSettings.backgroundPlay.state.collectAsState()
     val replySort by AppSettings.replySort.state.collectAsState()
+    val fame by FameMode.key.state.collectAsState()
 
     SettingsGroup("启动") {
         item {
@@ -59,6 +61,15 @@ internal fun ColumnScope.HabitBody() {
                 choices = replySortChoices,
                 selected = replySort,
                 onSelect = { AppSettings.set(AppSettings.replySort, it) },
+            )
+        }
+        item {
+            SettingsSwitchItem(
+                "名声模式",
+                fame,
+                { FameMode.set(it) },
+                icon = YoinSymbols.VisibilityOff,
+                summary = "隐藏粉丝、播放、点赞等数字",
             )
         }
     }

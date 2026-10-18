@@ -1,13 +1,16 @@
 package com.gpo.pilipala.feature.reply
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -80,6 +83,8 @@ import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.CoverBadge
+import com.gpo.pilipala.ui.components.FameCount
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
@@ -107,6 +112,8 @@ internal class ReplyActions(
     val layout: ReplyLayoutMotion? = null,
     /** The preview block is the pushed thread page's container-transform source (false: the thread opens in place). */
     val threadSource: Boolean = true,
+    /** The user's relation with a commenter (2 关注, 6 互关, 0 none); read in composition, so tags follow it. */
+    val relationOf: (Long) -> Int = { 0 },
 )
 
 private val PictureShape = ContinuousRoundedCornerShape(10.dp)
@@ -177,6 +184,7 @@ internal fun ReplyRow(
                 )
                 LevelTag(reply.member.level)
                 if (reply.isUp) Tag("UP", container = scheme.primaryContainer, content = scheme.onPrimaryContainer)
+                RelationTag(actions.relationOf(reply.member.mid))
                 if (reply.isTop) Tag("置顶", container = scheme.tertiaryContainer, content = scheme.onTertiaryContainer)
             }
             Row(
@@ -418,6 +426,29 @@ private fun ExpandToggle(
     }
 }
 
+/**
+ * 关注 / 互关 next to a commenter the user follows: a tonal block like LV / UP, fading
+ * (and widening) in once the relation is known. Nothing for 0.
+ */
+@Composable
+private fun RelationTag(relation: Int) {
+    val scheme = MaterialTheme.colorScheme
+    // Keeps the last tag while it leaves (unfollowed elsewhere, list refreshed).
+    val shown = remember { intArrayOf(relation) }
+    if (relation != 0) shown[0] = relation
+    AnimatedVisibility(
+        visible = relation != 0,
+        enter = fadeIn(YoinMotion.defaultEffectsSpec()) + expandHorizontally(YoinMotion.defaultSpatialSpec(), expandFrom = Alignment.Start),
+        exit = fadeOut(YoinMotion.fastEffectsSpec()) + shrinkHorizontally(YoinMotion.defaultSpatialSpec(), shrinkTowards = Alignment.Start),
+    ) {
+        if (shown[0] == 6) {
+            Tag("互关", container = scheme.tertiaryContainer, content = scheme.onTertiaryContainer)
+        } else {
+            Tag("关注", container = scheme.surfaceContainerHighest, content = scheme.primary)
+        }
+    }
+}
+
 @Composable
 private fun LevelTag(level: Int) {
     val scheme = MaterialTheme.colorScheme
@@ -527,6 +558,11 @@ internal fun LikeButton(state: LikeState, modifier: Modifier = Modifier, onClick
  */
 @Composable
 private fun RollingCount(count: Long, color: ColorProducer) {
+    if (FameMode.on && count > 0) {
+        // 名声模式: the like count is a line; the like button keeps its tap.
+        FameCount(Fmt.count(count), style = MaterialTheme.typography.labelMedium, lineColor = color(), revealable = false)
+        return
+    }
     val motion = replyMotion()
     val text = if (count > 0) Fmt.count(count) else ""
     val last = remember { longArrayOf(count) }
@@ -590,7 +626,7 @@ private fun SubReplyPreview(reply: Reply, actions: ReplyActions, modifier: Modif
                 }
                 ReplyRichText(
                     content = sub.content,
-                    prefix = RichPrefix(sub.member.name, sub.member.mid, sub.member.face, sub.isUp),
+                    prefix = RichPrefix(sub.member.name, sub.member.mid, sub.member.face, sub.isUp, actions.relationOf(sub.member.mid)),
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 2,
                     onTimestampClick = actions.onTimestampClick,
