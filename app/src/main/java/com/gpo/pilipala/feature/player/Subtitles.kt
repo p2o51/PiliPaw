@@ -36,18 +36,20 @@ internal data class SubtitleTrack(val lan: String, val label: String, val url: S
 internal data class SubtitleLine(val fromMs: Long, val toMs: Long, val text: String)
 
 internal object SubtitleApi {
-    suspend fun tracks(target: PlayTarget): List<SubtitleTrack> {
-        if (target.bvid.isBlank() && target.aid <= 0) return emptyList()
+    /** Subtitle tracks and chapters (view points) from the player info, in one request. */
+    suspend fun playerInfo(target: PlayTarget): Pair<List<SubtitleTrack>, List<Chapter>> {
+        if (target.bvid.isBlank() && target.aid <= 0) return emptyList<SubtitleTrack>() to emptyList()
         val params = buildMap<String, Any?> {
             if (target.bvid.isNotBlank()) put("bvid", target.bvid) else put("aid", target.aid)
             put("cid", target.cid)
         }
         val data = BiliClient.getData("/x/player/wbi/v2", params, wbi = true).asObj
-        return data.obj("subtitle").arr("subtitles").objects().mapNotNull { s ->
+        val tracks = data.obj("subtitle").arr("subtitles").objects().mapNotNull { s ->
             // AI tracks sometimes only carry subtitle_url_v2; tracks without either need login.
             val url = s.str("subtitle_url").ifBlank { s.str("subtitle_url_v2") }
             if (url.isBlank()) null else SubtitleTrack(s.str("lan"), s.str("lan_doc").ifEmpty { s.str("lan") }, url)
         }
+        return tracks to parseChapters(data)
     }
 
     suspend fun lines(track: SubtitleTrack): List<SubtitleLine> {

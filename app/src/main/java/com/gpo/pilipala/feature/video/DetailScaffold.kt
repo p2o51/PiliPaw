@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -121,11 +120,11 @@ internal fun DetailScaffold(
                                 Modifier
                                     .align(Alignment.CenterHorizontally)
                                     .width(playerWidth)
-                                    .aspectRatio(16f / 9f)
                                     .clip(YoinContainerShapes.Card)
                                     .background(Color.Black),
                             ) {
-                                player(Modifier.fillMaxSize())
+                                // The player owns its height (16:9 picture + its control strip).
+                                player(Modifier.fillMaxWidth())
                             }
                             Box(Modifier.weight(1f)) {
                                 expandedMain(PaddingValues(top = 4.dp, bottom = navBottom + 16.dp))
@@ -156,9 +155,8 @@ internal fun DetailScaffold(
 
             else -> Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().background(Color.Black).statusBarsPadding()) {
-                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-                        player(Modifier.fillMaxSize())
-                    }
+                    // The player owns its height (16:9 picture + its control strip).
+                    player(Modifier.fillMaxWidth())
                 }
                 DetailTabRow(compactTabs, compactPagerState, Color.Transparent)
                 HorizontalPager(

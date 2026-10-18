@@ -178,6 +178,7 @@ internal fun DanmakuComposerSheet(
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         contentWindowInsets = { WindowInsets(0) },
+        properties = rememberPlayerSheetProperties(),
     ) {
         Column(
             Modifier

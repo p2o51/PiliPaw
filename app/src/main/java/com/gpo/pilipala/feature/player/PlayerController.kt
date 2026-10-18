@@ -139,6 +139,14 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     var subtitleLines by mutableStateOf<List<SubtitleLine>>(emptyList())
         private set
 
+    /** Chapters (view points) of the current video; empty when it has none. */
+    var chapters by mutableStateOf<List<Chapter>>(emptyList())
+        private set
+
+    /** Seek preview sprites; null until loaded or when the video has none. */
+    var shots by mutableStateOf<VideoShots?>(null)
+        private set
+
     /** Fullscreen that came from rotating the phone (so rotating back exits it). */
     var fullscreenByRotation = false
 
@@ -328,6 +336,8 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         subtitles = emptyList()
         subtitleIndex = -1
         subtitleLines = emptyList()
+        chapters = emptyList()
+        shots = null
         seekGeneration++
         exo?.stop()
         exo?.clearMediaItems()
@@ -373,8 +383,14 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         }
         if (!t.isPgc || t.bvid.isNotBlank() || t.aid > 0) {
             sideJobs += scope.launch {
-                runCatching { SubtitleApi.tracks(t) }.onSuccess { subtitles = it }
+                runCatching { SubtitleApi.playerInfo(t) }.onSuccess { (tracks, points) ->
+                    subtitles = tracks
+                    chapters = points
+                }
             }
+        }
+        sideJobs += scope.launch {
+            runCatching { VideoShotsApi.get(t) }.onSuccess { shots = it }
         }
     }
 

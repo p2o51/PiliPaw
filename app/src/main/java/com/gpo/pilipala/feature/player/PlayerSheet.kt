@@ -39,6 +39,17 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
+import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.core.view.WindowCompat
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -105,8 +116,45 @@ internal fun PlayerSheet(
     val close: () -> Unit = {
         scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        PlayerSheetPages(ctrl = ctrl, start = start, close = close, topGap = 0.dp, bottomGap = 24.dp)
+    // Edge to edge: the sheet's surface runs under the navigation bar (the pages pad
+    // themselves by its inset and scroll beneath it), and the sheet window keeps the
+    // page's status-bar icons, which sit on the black player strip (light) instead of
+    // the theme's dark ones that vanished there.
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // A tall page stops short of the status bar (which stays over the scrim, as the page
+    // has it) instead of sliding the sheet under it.
+    val density = LocalDensity.current
+    val windowHeight = with(density) { LocalWindowInfo.current.containerSize.height.toDp() }
+    val statusTop = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    val maxContent = (windowHeight - statusTop - 72.dp).coerceAtLeast(240.dp)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        contentWindowInsets = { WindowInsets(0) },
+        properties = rememberPlayerSheetProperties(),
+    ) {
+        Box(Modifier.heightIn(max = maxContent)) {
+            PlayerSheetPages(ctrl = ctrl, start = start, close = close, topGap = 0.dp, bottomGap = 24.dp + navBottom)
+        }
+    }
+}
+
+/**
+ * Sheet window properties that match the page under it: status-bar icons as the page has
+ * them (light over the black player strip), navigation-bar icons for the sheet's surface.
+ */
+@Composable
+internal fun rememberPlayerSheetProperties(): ModalBottomSheetProperties {
+    val activity = LocalActivity.current
+    val view = LocalView.current
+    val sheetIsLight = MaterialTheme.colorScheme.surfaceContainerLow.luminance() > 0.5f
+    return remember(activity, view, sheetIsLight) {
+        val window = activity?.window
+        val lightStatus = window?.let { WindowCompat.getInsetsController(it, view).isAppearanceLightStatusBars } ?: !sheetIsLight
+        ModalBottomSheetProperties(
+            isAppearanceLightStatusBars = lightStatus,
+            isAppearanceLightNavigationBars = sheetIsLight,
+        )
     }
 }
 
