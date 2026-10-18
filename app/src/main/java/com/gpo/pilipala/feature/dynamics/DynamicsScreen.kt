@@ -1,5 +1,7 @@
 package com.gpo.pilipala.feature.dynamics
 
+import androidx.compose.runtime.rememberUpdatedState
+import com.gpo.pilipala.ui.shell.LocalTabReselect
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -318,6 +320,19 @@ private fun DynamicsFeed(vm: DynamicsViewModel, onPostLanded: () -> Unit) {
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottom = LocalBottomBarInset.current + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val gridState = rememberLazyStaggeredGridState()
+    // Tapping 动态 again: back to the top, or refresh when already there.
+    val reselect = LocalTabReselect.current
+    val refresh by rememberUpdatedState(vm::refreshAll)
+    LaunchedEffect(reselect, gridState) {
+        reselect.collect {
+            if (gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0) {
+                refresh()
+            } else {
+                if (gridState.firstVisibleItemIndex > 12) gridState.scrollToItem(12)
+                gridState.animateScrollToItem(0)
+            }
+        }
+    }
     val fadeInSpec = YoinMotion.defaultEffectsSpec<Float>()
     val fadeOutSpec = YoinMotion.fastEffectsSpec<Float>()
     LoadMoreEffect(gridState) { pager.loadMore() }
