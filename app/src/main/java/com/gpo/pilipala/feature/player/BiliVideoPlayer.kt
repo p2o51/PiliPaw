@@ -354,7 +354,7 @@ fun BiliVideoPlayer(
     // Fullscreen predictive back (FullscreenBack.kt): the picture follows the finger home,
     // then lands in its inline slot; the landing scales a TextureView too.
     val back = remember { FullscreenBackState() }
-    val landing by remember { derivedStateOf { back.settle.isRunning || back.settle.value != 0f } }
+    val landing by remember { derivedStateOf { back.landing } }
     val surfaceType = if (turned || turning || cardFrame || landing) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
     val view = LocalView.current
     val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
@@ -403,10 +403,14 @@ fun BiliVideoPlayer(
     val controls = full && !inPip
     val inline = controls && !fullscreen
     val fill = !inline
-    val shown = controls && ui.visible && !ui.locked && !pipEntering
+    // Nothing of the chrome is shown while the picture lands (the inline strip and corners are
+    // not even composed, so the player keeps the picture's height under the landing).
+    val shown = controls && ui.visible && !ui.locked && !pipEntering && !landing
+    // Whether the controls were up when an animated exit let go (see the restore below).
+    var chromeAfterLanding by remember { mutableStateOf(false) }
 
-    // Back exits fullscreen. With the full chrome the picture follows the finger home and the
-    // chrome is gone by the time it lands (the inline strip must not unfold under it).
+    // Back exits fullscreen. With the full chrome the picture follows the finger home, the
+    // chrome fading with it, and the chrome stays hidden until the picture rests in its slot.
     FullscreenBackHandler(
         state = back,
         enabled = fullscreen && !inPip,
@@ -416,17 +420,27 @@ fun BiliVideoPlayer(
         windowSize = windowSize,
         onExit = { animated ->
             if (animated) {
+                chromeAfterLanding = ui.visible
                 ui.visible = false
-                back.snapChrome = true
             }
             onFullscreenChange(false)
         },
     )
+    // Raised by the commit; lowered once the reveal has had a frame to snap shut.
     LaunchedEffect(back.snapChrome) {
         if (!back.snapChrome) return@LaunchedEffect
         withFrameNanos { }
         withFrameNanos { }
         back.snapChrome = false
+    }
+    // The controls that were up when the finger let go come back once the picture rests, so
+    // the strip unfolds under the landed picture rather than under the flying one. Only on a
+    // picture that is not playing (ChromeAutoHide keeps them up there and nothing else would
+    // bring them back); a playing one would fold them away again moments later.
+    LaunchedEffect(chromeAfterLanding, landing, back.snapChrome) {
+        if (!chromeAfterLanding || landing || back.snapChrome) return@LaunchedEffect
+        chromeAfterLanding = false
+        if (!ctrl.isPlaying) ui.visible = true
     }
     LaunchedEffect(pipEntering) {
         if (!pipEntering) return@LaunchedEffect
@@ -444,7 +458,7 @@ fun BiliVideoPlayer(
     )
     val reveal: () -> Float = remember(revealState) { { revealState.value } }
     val hairline: () -> Float = remember(revealState) { { 1f - revealState.value.coerceIn(0f, 1f) } }
-    val revealing by remember(revealState) { derivedStateOf { revealState.value > 0.004f } }
+    val revealing by remember(revealState) { derivedStateOf { revealState.value > 0.004f && !back.landing } }
     // Fullscreen bands the shrunken picture leaves free (shorter on a phone held sideways).
     val frameHeightDp = if (turned) configuration.screenWidthDp else configuration.screenHeightDp
     val shortFrame = frameHeightDp < 480
@@ -477,11 +491,17 @@ fun BiliVideoPlayer(
     val pictureRadius = remember(pictureShape, density) {
         (pictureShape as? CornerBasedShape)?.topStart?.toPx(Size(1600f, 900f), density) ?: 0f
     }
-    // The controls fade with the finger while the picture flies home.
+    // The controls fade with the finger while the picture flies home and stay invisible from
+    // the release until it rests (the commit raises snapChrome before the progress drops to 0,
+    // and settle is already at 1 by then, so no frame shows them back at full strength).
     val chromeAlpha: () -> Float = remember(back) {
         {
             val g = back.progress.value
-            if (g > 0f) (1f - 3f * g).coerceIn(0f, 1f) else 1f
+            when {
+                back.snapChrome || back.landing -> 0f
+                g > 0f -> (1f - 3f * g).coerceIn(0f, 1f)
+                else -> 1f
+            }
         }
     }
     Box(
