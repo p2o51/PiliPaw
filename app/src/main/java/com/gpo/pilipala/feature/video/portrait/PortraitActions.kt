@@ -21,7 +21,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -69,6 +71,7 @@ import com.gpo.pilipala.feature.video.drawTripleBloom
 import com.gpo.pilipala.feature.video.drawTripleSparks
 import com.gpo.pilipala.feature.video.rememberTripleBurst
 import com.gpo.pilipala.ui.components.Avatar
+import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.pilipala.ui.theme.rememberRichHaptics
@@ -145,7 +148,9 @@ internal fun ActionColumn(
     onQuickFav: () -> Unit,
     onShare: () -> Unit,
     modifier: Modifier = Modifier,
+    dense: Boolean = false,
 ) {
+    val glyph = if (dense) 28.dp else 34.dp
     // 三连 landed: 点赞, 投币 and 收藏 bloom one after another (the same burst as the detail page's row).
     val burst = rememberTripleBurst(state.tripleCelebration)
     // Holding 点赞 charges 三连 down the column (the landscape row's gesture, TripleCharge in
@@ -157,16 +162,18 @@ internal fun ActionColumn(
     Column(
         modifier.width(ActionColumnWidth),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        // Dense (a phone held sideways): tighter, so the column fits the short window.
+        verticalArrangement = Arrangement.spacedBy(if (dense) 0.dp else 8.dp),
     ) {
         UpAvatar(state.face, state.showFollow, state.following, state.mutual, onAvatar, onFollow)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(if (dense) 2.dp else 10.dp))
         ActionButton(
             icon = if (state.liked) PiliSymbols.ThumbUpFilled else PiliSymbols.ThumbUp,
             description = "点赞",
             label = state.likeLabel,
             checked = state.liked,
             onClick = onLike,
+            glyphSize = glyph,
             burst = burst,
             slot = 0,
             charge = charge,
@@ -179,6 +186,7 @@ internal fun ActionColumn(
             label = state.coinLabel,
             checked = state.coined,
             onClick = onCoin,
+            glyphSize = glyph,
             burst = burst,
             slot = 1,
             fill = fill(1),
@@ -189,6 +197,7 @@ internal fun ActionColumn(
             label = state.replyLabel,
             checked = false,
             onClick = onComments,
+            glyphSize = glyph,
         )
         ActionButton(
             icon = if (state.favored) YoinSymbols.StarFilled else YoinSymbols.Star,
@@ -196,6 +205,7 @@ internal fun ActionColumn(
             label = state.favLabel,
             checked = state.favored,
             onClick = onFav,
+            glyphSize = glyph,
             onLongClick = onQuickFav,
             burst = burst,
             slot = 2,
@@ -207,6 +217,7 @@ internal fun ActionColumn(
             label = state.shareLabel,
             checked = false,
             onClick = onShare,
+            glyphSize = glyph,
         )
     }
 }
@@ -236,6 +247,7 @@ private fun ActionButton(
     charge: Animatable<Float, AnimationVector1D>? = null,
     onCharged: (() -> Unit)? = null,
     fill: (() -> Float)? = null,
+    glyphSize: Dp = 34.dp,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -385,7 +397,7 @@ private fun ActionButton(
                     },
                     contentAlignment = Alignment.Center,
                 ) {
-                    ShadowedIcon(glyph, contentDescription = description, tint = tint, size = 34.dp)
+                    ShadowedIcon(glyph, contentDescription = description, tint = tint, size = glyphSize)
                     if (fill != null) {
                         // The glyph turns to the accent's on-colour exactly as the cookie covers it.
                         Icon(
@@ -393,7 +405,7 @@ private fun ActionButton(
                             contentDescription = null,
                             tint = onAccent,
                             modifier = Modifier
-                                .size(34.dp)
+                                .size(glyphSize)
                                 .graphicsLayer { alpha = fill().coerceIn(0f, 1f) },
                         )
                     }
@@ -509,5 +521,37 @@ private fun UpAvatar(face: String, showFollow: Boolean, following: Boolean, mutu
                 }
             }
         }
+    }
+}
+
+/**
+ * 缩小: leaves the immersive pager for the classic video page (same video, same position). A
+ * small translucent pill by the action column, squashing on a spring when pressed.
+ */
+@Composable
+internal fun CollapseButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val press by animateFloatAsState(if (pressed) 0.88f else 1f, YoinMotion.fastSpatialSpec(), label = "collapsePress")
+    val haptic = LocalHapticFeedback.current
+    Row(
+        modifier
+            .graphicsLayer {
+                scaleX = press
+                scaleY = press
+            }
+            .clip(ContinuousRoundedCornerShape(18.dp))
+            .background(Color.Black.copy(alpha = 0.32f))
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button) {
+                haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                onClick()
+            }
+            .heightIn(min = 36.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(YoinSymbols.CloseFullscreen, contentDescription = null, tint = OnPicture, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("缩小", style = MaterialTheme.typography.labelLarge, color = OnPicture)
     }
 }

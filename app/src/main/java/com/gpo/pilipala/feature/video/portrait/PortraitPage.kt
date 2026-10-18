@@ -35,6 +35,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
@@ -71,7 +76,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.util.Fmt
@@ -116,15 +120,21 @@ internal class PortraitCallbacks(
     val onFollow: () -> Unit,
     val onComments: () -> Unit,
     val onScrubbingChange: (Boolean) -> Unit,
+    /** 缩小: the classic video page for the same video. */
+    val onCollapse: () -> Unit,
     /** 0 → 1 as the layout first appears: the overlay springs in over the picture. */
     val reveal: () -> Float,
 )
 
 /**
- * One video of the immersive pager. Compact: the picture fills the page (crop-fill or centered
- * on the blurred cover) with the info bottom-left and the action column at the right edge.
- * Medium / Expanded ([column] set): the picture sits in a phone-like column centered on the
- * blurred cover, the action column beside it.
+ * One video of the immersive pager, laid out for the window's [mode]:
+ * - [PortraitMode.Phone]: the picture fills the page (crop-fill or centered on the blurred
+ *   cover) with the info bottom-left, the action column and 缩小 at the right edge.
+ * - [PortraitMode.PhoneLandscape]: the picture at full height, centered, the action column
+ *   beside it, 缩小 in the window's bottom-right corner.
+ * - [PortraitMode.Column] / [PortraitMode.Panel]: the picture in a phone-like column on the
+ *   blurred cover, the action column and 缩小 beside it ([PortraitMode.Panel]: the layout draws
+ *   the backdrop and the side panel; [showInfo] off while the panel carries the info).
  *
  * Only the [host] page (the settled one) carries the player, the seek bar and the gestures;
  * the others show the cover.
@@ -135,7 +145,8 @@ internal fun PortraitPage(
     item: VideoItem,
     aspect: Float,
     host: Boolean,
-    column: DpSize?,
+    mode: PortraitMode,
+    showInfo: Boolean,
     statusTop: Dp,
     navBottom: Dp,
     playerState: BiliPlayerState,
@@ -219,6 +230,7 @@ internal fun PortraitPage(
             onQuickFav = { if (acts) gate { a.quickFav() } },
             onShare = { shareText(context, title, "https://www.bilibili.com/video/${item.bvid}") },
             modifier = m,
+            dense = mode == PortraitMode.PhoneLandscape,
         )
     }
 
@@ -283,7 +295,9 @@ internal fun PortraitPage(
         }
     }
 
-    /** Picture + gestures + text + seek bar in a [w] × [h] frame; [inside] puts the actions in it too. */
+    val framed = mode == PortraitMode.Column || mode == PortraitMode.Panel
+
+    /** Picture + gestures + text + seek bar in a [w] × [h] frame; [inside] puts the actions (and 缩小) in it too. */
     val stage: @Composable (Modifier, Dp, Dp, Dp, Boolean) -> Unit = { m, w, h, bottom, inside ->
         Box(m.clipToBounds()) {
             val pic = pictureSize(w, h, aspect)
@@ -304,6 +318,7 @@ internal fun PortraitPage(
             val scrimAlpha by animateFloatAsState(
                 when {
                     pipEntering -> 0f
+                    !showInfo -> 0.3f
                     expanded -> 0.8f
                     else -> 0.5f
                 },
@@ -318,7 +333,7 @@ internal fun PortraitPage(
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = scrimAlpha)))),
             )
             Box(Modifier.matchParentSize().revealed(callbacks.reveal) { overlayAlpha }) {
-                InfoBlock(
+                if (showInfo) InfoBlock(
                     ownerName = ownerName,
                     onOwner = openOwner,
                     title = title,
@@ -332,12 +347,19 @@ internal fun PortraitPage(
                         .align(Alignment.BottomStart)
                         .padding(
                             start = 16.dp,
-                            end = if (inside) ActionColumnWidth + 12.dp else 16.dp,
+                            end = if (inside) ActionColumnWidth + 28.dp else 16.dp,
                             bottom = bottom + SeekZone + 6.dp,
                         ),
                 )
                 if (inside) {
-                    actions(Modifier.align(Alignment.BottomEnd).padding(end = 6.dp, bottom = bottom + SeekZone + 16.dp))
+                    Column(
+                        Modifier.align(Alignment.BottomEnd).padding(end = 6.dp, bottom = bottom + SeekZone + 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        actions(Modifier)
+                        Spacer(Modifier.height(14.dp))
+                        CollapseButton(callbacks.onCollapse)
+                    }
                 }
             }
             if (host) {
@@ -347,7 +369,7 @@ internal fun PortraitPage(
                         ctrl = ctrl,
                         feedback = hold,
                         big = false,
-                        modifier = Modifier.align(Alignment.TopCenter).padding(top = if (inside) statusTop + 60.dp else 48.dp),
+                        modifier = Modifier.align(Alignment.TopCenter).padding(top = if (!framed) statusTop + 60.dp else 48.dp),
                     )
                 }
                 Box(Modifier.matchParentSize()) {
@@ -367,37 +389,95 @@ internal fun PortraitPage(
                         .fillMaxWidth()
                         .padding(bottom = bottom)
                         .graphicsLayer { alpha = if (pipEntering) 0f else 1f },
-                    horizontalPadding = if (inside) 0.dp else 12.dp,
+                    horizontalPadding = if (framed) 12.dp else 0.dp,
                 )
             }
         }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
-        CoverBackdrop(item.cover, Modifier.matchParentSize())
-        if (column == null) {
-            stage(Modifier.fillMaxSize(), maxWidth, maxHeight, navBottom, true)
-        } else {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(top = statusTop + ColumnVerticalMargin, bottom = navBottom + ColumnVerticalMargin),
-                contentAlignment = Alignment.Center,
-            ) {
-                Row(verticalAlignment = Alignment.Bottom) {
+        // Panel: the layout's one backdrop shows through.
+        if (mode != PortraitMode.Panel) CoverBackdrop(item.cover, Modifier.matchParentSize())
+        val sideActions: @Composable (Modifier) -> Unit = { m ->
+            Column(m.revealed(callbacks.reveal) { overlayAlpha }, horizontalAlignment = Alignment.CenterHorizontally) {
+                actions(Modifier)
+                Spacer(Modifier.height(16.dp))
+                CollapseButton(callbacks.onCollapse)
+            }
+        }
+        when (mode) {
+            PortraitMode.Phone -> stage(Modifier.fillMaxSize(), maxWidth, maxHeight, navBottom, true)
+            PortraitMode.PhoneLandscape -> {
+                val frame = landscapeFrameSize(maxWidth, maxHeight, aspect)
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
                     // Balances the action column so the picture stays centered.
                     Spacer(Modifier.width(ActionColumnWidth + ColumnGap))
-                    stage(
-                        Modifier
-                            .size(column)
-                            .background(Color.Black.copy(alpha = 0.3f), YoinContainerShapes.Panel),
-                        column.width,
-                        column.height,
-                        0.dp,
-                        false,
-                    )
+                    stage(Modifier.size(frame), frame.width, frame.height, navBottom, false)
                     Spacer(Modifier.width(ColumnGap))
-                    actions(Modifier.padding(bottom = 24.dp).revealed(callbacks.reveal) { overlayAlpha })
+                    actions(
+                        Modifier
+                            .padding(bottom = navBottom + 12.dp)
+                            .revealed(callbacks.reveal) { overlayAlpha },
+                    )
+                }
+                // 缩小 in the window's bottom-right corner, clear of the column.
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.End))
+                        .padding(end = 16.dp, bottom = navBottom + 16.dp)
+                        .revealed(callbacks.reveal) { overlayAlpha },
+                ) {
+                    CollapseButton(callbacks.onCollapse)
+                }
+            }
+            PortraitMode.Column -> {
+                val column = columnSize(maxWidth, maxHeight, statusTop, navBottom)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(top = statusTop + ColumnVerticalMargin, bottom = navBottom + ColumnVerticalMargin),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        // Balances the action column so the picture stays centered.
+                        Spacer(Modifier.width(ActionColumnWidth + ColumnGap))
+                        stage(
+                            Modifier
+                                .size(column)
+                                .background(Color.Black.copy(alpha = 0.3f), YoinContainerShapes.Panel),
+                            column.width,
+                            column.height,
+                            0.dp,
+                            false,
+                        )
+                        Spacer(Modifier.width(ColumnGap))
+                        sideActions(Modifier.padding(bottom = 12.dp))
+                    }
+                }
+            }
+            PortraitMode.Panel -> {
+                val column = panelColumnSize(maxWidth, maxHeight, statusTop, navBottom)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(top = statusTop + ColumnVerticalMargin, bottom = navBottom + ColumnVerticalMargin),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // Picture and its actions as one group, centered in the pager's part.
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        stage(
+                            Modifier
+                                .size(column)
+                                .background(Color.Black.copy(alpha = 0.3f), YoinContainerShapes.Panel),
+                            column.width,
+                            column.height,
+                            0.dp,
+                            false,
+                        )
+                        Spacer(Modifier.width(ColumnGap))
+                        sideActions(Modifier.padding(bottom = 12.dp))
+                    }
                 }
             }
         }

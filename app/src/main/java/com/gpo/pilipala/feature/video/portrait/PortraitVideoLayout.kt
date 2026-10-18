@@ -1,6 +1,15 @@
 package com.gpo.pilipala.feature.video.portrait
 
-import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.text.style.TextOverflow
+import com.gpo.pilipala.feature.video.StaffRow
+import com.gpo.pilipala.feature.video.TagChips
+import com.gpo.pilipala.feature.video.UpCard
+import com.gpo.pilipala.feature.video.VideoHeader
+import com.gpo.pilipala.ui.components.ErrorState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.expandHorizontally
@@ -56,19 +65,14 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.feature.player.BiliPlayerState
-import com.gpo.pilipala.feature.player.BiliVideoPlayer
 import com.gpo.pilipala.feature.player.PiliPlayerController
-import com.gpo.pilipala.feature.player.PlayerChrome
 import com.gpo.pilipala.feature.player.PlayerSheet
 import com.gpo.pilipala.feature.player.SheetPage
 import com.gpo.pilipala.feature.reply.ReplyList
 import com.gpo.pilipala.feature.video.VideoDetailViewModel
 import com.gpo.pilipala.feature.video.findActivity
-import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.transition.LocalPageSettled
 import com.gpo.pilipala.ui.components.VideoItem
-import com.gpo.pilipala.ui.components.WidthClass
-import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.ExpressiveColorSchemeFactory
 import com.gpo.pilipala.ui.theme.LocalPiliDark
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
@@ -77,9 +81,18 @@ import com.gpo.yoin.symbols.YoinSymbols
 
 /**
  * Douyin-style immersive layout for a portrait video (VideoDetailScreen picks it once the
- * detail says the picture is taller than wide). A vertical pager over the opened video and its
- * related videos: swiping up / down plays the next / previous one in place (the page's target,
- * intro and relation follow); system back still leaves the page.
+ * detail says the picture is taller than wide, or when 全屏 is tapped on one). A vertical pager
+ * over the opened video and its related videos: swiping up / down plays the next / previous one
+ * in place (the page's target, intro and relation follow); back leaves the page, or returns to
+ * the classic layout when the pager was opened from it; 缩小 goes to the classic layout.
+ *
+ * Window shapes ([PortraitMode]): a phone held upright gets the full-bleed picture; a phone
+ * held sideways the picture at full height, centered, with the actions beside it; a tablet
+ * upright the phone-like column; a landscape window with room (tablet landscape) the column,
+ * its actions and a side panel with the video's info and comments, following the pager.
+ *
+ * [player] is the page's one player (moved here from the classic slot, never reloaded): the
+ * settled page puts it in its picture.
  *
  * The coin / fav / triple sheets and the unfollow confirmation stay on the video page, reached
  * through [onCoin] / [onFav] / [onTriple] / [onFollow] (already login-gated there).
@@ -88,21 +101,26 @@ import com.gpo.yoin.symbols.YoinSymbols
 internal fun PortraitVideoLayout(
     vm: VideoDetailViewModel,
     playerState: BiliPlayerState,
+    player: @Composable (Modifier) -> Unit,
     gate: (() -> Unit) -> Unit,
+    onBack: () -> Unit,
+    onCollapse: () -> Unit,
     onCoin: () -> Unit,
     onFav: () -> Unit,
     onTriple: () -> Unit,
     onFollow: () -> Unit,
 ) {
-    val nav = LocalNavigator.current
     val ctrl = playerState as? PiliPlayerController
     val model: PortraitFeedModel = viewModel { PortraitFeedModel(headItem(vm)) }
+    // Back from the classic layout: the pager opens on the video the page shows now.
+    remember(model) { model.focus(headItem(vm)) }
     val settled = LocalPageSettled.current
-    val width = widthClass()
-    val sidePane = width == WidthClass.Expanded
     var commentsOpen by rememberSaveable { mutableStateOf(false) }
+    // The side panel (landscape windows with room) shows by default; 评论 folds it away and back.
+    var panelOpen by rememberSaveable { mutableStateOf(true) }
     var moreOpen by remember { mutableStateOf(false) }
     var scrubbing by remember { mutableStateOf(false) }
+    var mode by remember { mutableStateOf(PortraitMode.Phone) }
 
     ImmersiveSystemBars()
     // Douyin loops a video; restored when the layout goes away.
@@ -139,35 +157,23 @@ internal fun PortraitVideoLayout(
     val commentCount = currentDetail?.reply ?: 0L
     val seek: (Long) -> Unit = { s -> playerState.seekTo(s * 1000) }
 
-    val playerContent: @Composable (Modifier) -> Unit = { m ->
-        BiliVideoPlayer(
-            target = vm.target,
-            state = playerState,
-            // Only PiP (or turning the phone with a landscape video) asks for it.
-            fullscreen = vm.fullscreen,
-            onFullscreenChange = { vm.fullscreen = it },
-            onBack = { if (vm.fullscreen) vm.fullscreen = false else nav.pop() },
-            modifier = m,
-            chrome = PlayerChrome.Minimal,
-        )
-    }
-
-    // The picture takes over from the stacked player as is; the overlay springs in over it.
+    // The picture takes over from the classic layout's; the overlay springs in over it.
     val reveal = remember { Animatable(0f) }
     val revealSpec = YoinMotion.defaultSpatialSpec<Float>()
     LaunchedEffect(reveal) { reveal.animateTo(1f, revealSpec) }
 
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val callbacks = remember(gate, onCoin, onFav, onTriple, onFollow) {
+    val callbacks = remember(gate, onCoin, onFav, onTriple, onFollow, onCollapse) {
         PortraitCallbacks(
             gate = gate,
             onCoin = onCoin,
             onFav = onFav,
             onTriple = onTriple,
             onFollow = onFollow,
-            onComments = { commentsOpen = true },
+            onComments = { if (mode == PortraitMode.Panel) panelOpen = !panelOpen else commentsOpen = true },
             onScrubbingChange = { scrubbing = it },
+            onCollapse = onCollapse,
             reveal = { reveal.value.coerceIn(0f, 1f) },
         )
     }
@@ -175,12 +181,26 @@ internal fun PortraitVideoLayout(
     ImmersiveTheme {
         if (vm.fullscreen) {
             Box(Modifier.fillMaxSize().background(Color.Black)) {
-                playerContent(Modifier.fillMaxSize())
+                player(Modifier.fillMaxSize())
             }
         } else {
             BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
-                val column = if (width == WidthClass.Compact) null else columnSize(maxWidth, maxHeight, statusTop, navBottom)
-                val paneWidth = minOf(420.dp, maxWidth * 0.38f)
+                val m = portraitMode(maxWidth, maxHeight, statusTop, navBottom)
+                SideEffect { mode = m }
+                val withPanel = m == PortraitMode.Panel
+                val panelShown = withPanel && panelOpen
+                val panelWidth = if (withPanel) panelWidth(maxWidth, maxHeight, statusTop, navBottom) else 0.dp
+                if (withPanel) {
+                    // One backdrop for the whole window: the pages' columns slide over it and it
+                    // follows the settled video.
+                    val effects = YoinMotion.slowEffectsSpec<Float>()
+                    AnimatedContent(
+                        targetState = current?.cover.orEmpty(),
+                        transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
+                        modifier = Modifier.matchParentSize(),
+                        label = "panelBackdrop",
+                    ) { cover -> CoverBackdrop(cover, Modifier.fillMaxSize()) }
+                }
                 Row(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f).fillMaxHeight()) {
                         VerticalPager(
@@ -200,42 +220,45 @@ internal fun PortraitVideoLayout(
                                 item = item,
                                 aspect = aspectOf(vm, item, ctrl, host),
                                 host = host,
-                                column = column,
+                                mode = m,
+                                // With the side panel open the info lives there, not over the picture.
+                                showInfo = !panelShown,
                                 statusTop = statusTop,
                                 navBottom = navBottom,
                                 playerState = playerState,
                                 ctrl = ctrl,
-                                player = playerContent,
+                                player = player,
                                 callbacks = callbacks,
                             )
                         }
                         TopChrome(
                             modifier = Modifier.revealed({ reveal.value.coerceIn(0f, 1f) }),
                             statusTop = statusTop,
-                            onBack = { nav.pop() },
+                            onBack = onBack,
                             onMore = { moreOpen = true },
                             showMore = ctrl != null,
-                            scrim = column == null,
+                            scrim = m == PortraitMode.Phone,
                         )
                     }
-                    if (sidePane) {
+                    if (withPanel) {
                         AnimatedVisibility(
-                            visible = commentsOpen,
+                            visible = panelOpen,
                             enter = expandHorizontally(YoinMotion.defaultSpatialSpec(), expandFrom = Alignment.Start) +
                                 fadeIn(YoinMotion.defaultEffectsSpec()),
                             exit = shrinkHorizontally(YoinMotion.defaultSpatialSpec(), shrinkTowards = Alignment.Start) +
                                 fadeOut(YoinMotion.fastEffectsSpec()),
                         ) {
-                            CommentsPane(
-                                aid = commentAid,
-                                count = commentCount,
+                            InfoPanel(
+                                vm = vm,
+                                item = current,
                                 onSeek = seek,
-                                onClose = { commentsOpen = false },
+                                onFollow = onFollow,
+                                onClose = { panelOpen = false },
                                 modifier = Modifier
-                                    .width(paneWidth)
+                                    .width(panelWidth)
                                     .fillMaxHeight()
-                                    .padding(top = statusTop + 12.dp, end = 12.dp, bottom = 12.dp),
-                                bottomPadding = navBottom,
+                                    .padding(top = statusTop + ColumnVerticalMargin, end = PanelEndMargin, bottom = navBottom + ColumnVerticalMargin)
+                                    .revealed({ reveal.value.coerceIn(0f, 1f) }),
                             )
                         }
                     }
@@ -244,8 +267,7 @@ internal fun PortraitVideoLayout(
         }
     }
 
-    BackHandler(enabled = sidePane && commentsOpen) { commentsOpen = false }
-    if (!sidePane && commentsOpen) {
+    if (mode != PortraitMode.Panel && commentsOpen) {
         CommentsSheet(aid = commentAid, count = commentCount, onSeek = seek, onDismiss = { commentsOpen = false })
     }
     if (moreOpen && ctrl != null) {
@@ -335,32 +357,105 @@ private fun CommentsSheet(aid: Long, count: Long, onSeek: (Long) -> Unit, onDism
     }
 }
 
-/** Expanded: comments in a pane beside the picture (follows the playing video). */
+/**
+ * Landscape windows with room: the settled video's info (UP, title, numbers, description,
+ * tags) and its comments in one list, on a surface panel beside the pager.
+ */
 @Composable
-private fun CommentsPane(
-    aid: Long,
-    count: Long,
+private fun InfoPanel(
+    vm: VideoDetailViewModel,
+    item: VideoItem?,
     onSeek: (Long) -> Unit,
+    onFollow: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
-    Column(
+    val detail = vm.detail?.takeIf { item != null && it.bvid == item.bvid }
+    val aid = detail?.aid ?: 0L
+    val effects = YoinMotion.defaultEffectsSpec<Float>()
+    Box(
         modifier
             .clip(YoinContainerShapes.Panel)
             .background(MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
-        CommentsHeader(count, onClose = onClose)
-        if (aid > 0) {
-            key(aid) {
-                ReplyList(
-                    oid = aid,
-                    type = 1,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(bottom = bottomPadding + 16.dp),
-                    onTimestampClick = onSeek,
-                )
+        AnimatedContent(
+            targetState = aid,
+            transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
+            modifier = Modifier.fillMaxSize(),
+            label = "infoPanel",
+        ) { id ->
+            val d = vm.detail?.takeIf { it.aid == id && id > 0 }
+            if (d == null) {
+                Column(Modifier.fillMaxSize()) {
+                    PanelTopRow(onClose) {
+                        Text(
+                            item?.title.orEmpty(),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 16.dp),
+                        )
+                    }
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        val error = vm.error
+                        if (error != null) ErrorState(error, onRetry = { vm.load() }) else LoadingIndicator()
+                    }
+                }
+            } else {
+                val up = vm.up
+                val known = up.mid == d.ownerMid && d.ownerMid > 0
+                key(id) {
+                    ReplyList(
+                        oid = id,
+                        type = 1,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 16.dp),
+                        onTimestampClick = onSeek,
+                        header = {
+                            item("panelUp") {
+                                PanelTopRow(onClose) {
+                                    if (d.staff.size > 1) {
+                                        StaffRow(d.staff)
+                                    } else {
+                                        UpCard(
+                                            mid = d.ownerMid,
+                                            name = d.ownerName,
+                                            face = d.ownerFace,
+                                            fans = if (known) up.fans else -1L,
+                                            following = known && up.following,
+                                            busy = !known || up.busy,
+                                            onFollow = onFollow,
+                                            mutual = known && up.mutual,
+                                        )
+                                    }
+                                }
+                            }
+                            item("panelHeader") { VideoHeader(d, onSeek, Modifier.padding(top = 4.dp)) }
+                            if (vm.tags.isNotEmpty()) {
+                                item("panelTags") { TagChips(vm.tags, Modifier.padding(top = 4.dp)) }
+                            }
+                            item("panelComments") {
+                                Spacer(Modifier.height(8.dp))
+                                CommentsHeader(d.reply, onClose = null)
+                            }
+                        },
+                    )
+                }
             }
+        }
+    }
+}
+
+/** The panel's first row: [content] (UP or title) with 关闭 at the end, which folds the panel. */
+@Composable
+private fun PanelTopRow(onClose: () -> Unit, content: @Composable () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.weight(1f)) { content() }
+        IconButton(onClick = onClose, shapes = IconButtonDefaults.shapes()) {
+            Icon(YoinSymbols.Close, contentDescription = "关闭")
         }
     }
 }

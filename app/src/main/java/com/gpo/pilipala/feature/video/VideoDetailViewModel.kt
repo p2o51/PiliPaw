@@ -84,6 +84,15 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
     var immersive by mutableStateOf<Boolean?>(null)
         private set
 
+    /**
+     * The user's own switch for this page visit: 缩小 leaves the immersive pager for the classic
+     * page, 全屏 on a portrait video goes back. Never remembered past the page.
+     */
+    fun showImmersive(on: Boolean) {
+        if (on && queue != null) return
+        immersive = on
+    }
+
     /** Set when the archive is really a bangumi episode → the screen replaces itself. */
     var redirect by mutableStateOf<Route?>(null)
         private set

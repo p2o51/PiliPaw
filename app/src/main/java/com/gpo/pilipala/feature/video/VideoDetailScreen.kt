@@ -1,6 +1,20 @@
 package com.gpo.pilipala.feature.video
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import com.gpo.pilipala.feature.player.LocalPlayerPictureShape
+import com.gpo.pilipala.feature.player.PiliPlayerController
+import com.gpo.pilipala.feature.player.PlayerChrome
+import com.gpo.pilipala.feature.video.portrait.PlayerFlightLayer
+import com.gpo.pilipala.feature.video.portrait.PlayerHandoff
+import com.gpo.pilipala.feature.video.portrait.reportWindowRect
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -119,17 +133,55 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     )
 
     val seek: (Long) -> Unit = remember(playerState) { { s -> playerState.seekTo(s * 1000) } }
+    val ctrl = playerState as? PiliPlayerController
+    // The picture's trip between the classic page and the immersive pager (PlayerHandoff.kt).
+    val handoff = remember { PlayerHandoff() }
+    val immersiveOn = vm.immersive == true
+    // 缩小 (immersive → classic) and 全屏 on a portrait picture (classic → immersive), for this visit only.
+    val toImmersive: () -> Unit = {
+        if (vm.immersive != true && vm.queue == null) {
+            handoff.fromClassic = true
+            handoff.toImmersive()
+            vm.showImmersive(true)
+        }
+    }
+    val toClassic: () -> Unit = {
+        if (vm.immersive == true) {
+            handoff.fromClassic = false
+            handoff.toClassic()
+            vm.showImmersive(false)
+        }
+    }
+    // The stream's own aspect once it shows (a 分P may differ), else the detail's.
+    val portraitPicture: () -> Boolean = {
+        val a = if (ctrl != null && ctrl.firstFrameRendered) ctrl.videoAspect else vm.videoAspect
+        a > 0f && a < 1f
+    }
+    // A portrait picture's 全屏 is the immersive pager (no rotation, no pillarboxed black);
+    // PiP still asks for the plain fullscreen layout.
+    val onFullscreenChange: (Boolean) -> Unit = { fs ->
+        if (fs && vm.immersive != true && vm.queue == null && ctrl?.pipForcedFullscreen != true && portraitPicture()) {
+            toImmersive()
+        } else {
+            vm.fullscreen = fs
+        }
+    }
+    val latestFullscreenChange by rememberUpdatedState(onFullscreenChange)
+    // The one player of the page: it moves between the classic slot, the immersive pager's
+    // current page and the flight between them, so playback never reloads.
     val player = remember(vm, playerState) {
-        movableContentOf { m: Modifier ->
+        movableContentOf { m: Modifier, chrome: PlayerChrome ->
             BiliVideoPlayer(
                 target = vm.target,
                 state = playerState,
                 fullscreen = vm.fullscreen,
-                onFullscreenChange = { vm.fullscreen = it },
+                onFullscreenChange = { latestFullscreenChange(it) },
                 onBack = { if (vm.fullscreen) vm.fullscreen = false else nav.pop() },
                 modifier = m,
                 // With a queue the player steps it itself; pages / season only without one.
+                // (The immersive pager loops a video and steps nothing.)
                 onCompleted = { if (AppSettings.autoPlayNext.value && vm.queue == null) vm.playNext() },
+                chrome = chrome,
             )
         }
     }
@@ -139,53 +191,89 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     val onFollow: () -> Unit = {
         gate { if (vm.up.following) confirmUnfollow = true else vm.up.toggle() }
     }
+    val compactPagerState = rememberPagerState { 2 }
 
-    // Portrait videos: the Douyin-style immersive pager (feature/video/portrait); the choice is
-    // made once the detail arrives and then sticks for the page.
-    if (vm.immersive == true) {
-        PortraitVideoLayout(
-            vm = vm,
-            playerState = playerState,
-            gate = gate,
-            onCoin = { gate { sheet = VideoSheet.Coin } },
-            onFav = { gate { sheet = VideoSheet.Fav } },
-            onTriple = { gate { sheet = VideoSheet.Triple } },
-            onFollow = onFollow,
-        )
-    } else DetailScaffold(
-        fullscreen = vm.fullscreen,
-        onExitFullscreen = { vm.fullscreen = false },
-        player = player,
-        compactTabs = listOf(DetailTab("简介"), DetailTab("评论", replyCount)),
-        compactPagerState = rememberPagerState { 2 },
-        compactPage = { page, pad ->
-            if (page == 0) {
-                IntroPane(
-                    vm, pad, includeRelated = true, onSeek = seek, gate = gate, onSheet = openSheet, onFollow = onFollow, context = context,
-                    queue = queue, player = playerState,
+    // Back from an immersive pager opened on this page returns to the classic layout.
+    BackHandler(enabled = immersiveOn && handoff.fromClassic && !vm.fullscreen) { toClassic() }
+
+    Box(Modifier.fillMaxSize()) {
+        // Portrait videos: the Douyin-style immersive pager (feature/video/portrait); the choice
+        // is made once the detail arrives, then only the user's 缩小 / 全屏 changes it.
+        val effects = YoinMotion.defaultEffectsSpec<Float>()
+        AnimatedContent(
+            targetState = immersiveOn,
+            transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
+            label = "videoLayout",
+        ) { on ->
+            // Only the layout being shown carries the player, and neither while it flies.
+            val hosts = on == (vm.immersive == true) && handoff.flight == null
+            if (on) {
+                PortraitVideoLayout(
+                    vm = vm,
+                    playerState = playerState,
+                    player = { m ->
+                        val report = m.reportWindowRect { handoff.immersiveRect = it }
+                        if (hosts) player(report, PlayerChrome.Minimal) else Box(report.background(Color.Black))
+                    },
+                    gate = gate,
+                    onBack = { if (handoff.fromClassic) toClassic() else nav.pop() },
+                    onCollapse = toClassic,
+                    onCoin = { gate { sheet = VideoSheet.Coin } },
+                    onFav = { gate { sheet = VideoSheet.Fav } },
+                    onTriple = { gate { sheet = VideoSheet.Triple } },
+                    onFollow = onFollow,
                 )
             } else {
-                CommentsPane(vm, pad, seek)
+                DetailScaffold(
+                    fullscreen = vm.fullscreen,
+                    onExitFullscreen = { vm.fullscreen = false },
+                    player = { m ->
+                        // Only the 16:9 picture is the flight's slot (the control strip under it is not).
+                        val report = m.reportWindowRect { r ->
+                            handoff.classicRect = if (vm.fullscreen) null else Rect(r.topLeft, Size(r.width, r.width * 9f / 16f))
+                        }
+                        if (hosts) player(report, PlayerChrome.Full) else PlayerSlot(report)
+                    },
+                    compactTabs = listOf(DetailTab("简介"), DetailTab("评论", replyCount)),
+                    compactPagerState = compactPagerState,
+                    compactPage = { page, pad ->
+                        if (page == 0) {
+                            IntroPane(
+                                vm, pad, includeRelated = true, onSeek = seek, gate = gate, onSheet = openSheet, onFollow = onFollow, context = context,
+                                queue = queue, player = playerState,
+                            )
+                        } else {
+                            CommentsPane(vm, pad, seek)
+                        }
+                    },
+                    expandedMain = { pad ->
+                        IntroPane(vm, pad, includeRelated = false, onSeek = seek, gate = gate, onSheet = openSheet, onFollow = onFollow, context = context)
+                    },
+                    sideTabs = buildList {
+                        add(DetailTab("评论", replyCount))
+                        add(DetailTab("相关"))
+                        if (queue != null) add(DetailTab("播放列表", "${queue.size}"))
+                    },
+                    sidePage = { page, pad ->
+                        when {
+                            page == 0 -> CommentsPane(vm, pad, seek)
+                            page == 2 && queue != null -> QueueTab(queue, playerState, pad)
+                            else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
+                                relatedItems(vm)
+                            }
+                        }
+                    },
+                )
             }
-        },
-        expandedMain = { pad ->
-            IntroPane(vm, pad, includeRelated = false, onSeek = seek, gate = gate, onSheet = openSheet, onFollow = onFollow, context = context)
-        },
-        sideTabs = buildList {
-            add(DetailTab("评论", replyCount))
-            add(DetailTab("相关"))
-            if (queue != null) add(DetailTab("播放列表", "${queue.size}"))
-        },
-        sidePage = { page, pad ->
-            when {
-                page == 0 -> CommentsPane(vm, pad, seek)
-                page == 2 && queue != null -> QueueTab(queue, playerState, pad)
-                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
-                    relatedItems(vm)
-                }
-            }
-        },
-    )
+        }
+        handoff.flight?.let { f ->
+            PlayerFlightLayer(
+                flight = f,
+                target = if (f.toImmersive) handoff.immersiveRect else handoff.classicRect,
+                onLanded = { if (handoff.flight === f) handoff.flight = null },
+            ) { m -> player(m, PlayerChrome.Minimal) }
+        }
+    }
 
     val d = vm.detail
     val a = vm.actions
@@ -255,6 +343,17 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
             dismissButton = { TextButton(onClick = { confirmUnfollow = false }) { Text("保留") } },
         )
     }
+}
+
+/** The classic player's empty 16:9 picture while the player is elsewhere (flying, or the other layout). */
+@Composable
+private fun PlayerSlot(modifier: Modifier) {
+    Box(
+        modifier
+            .aspectRatio(16f / 9f)
+            .clip(LocalPlayerPictureShape.current)
+            .background(Color.Black),
+    )
 }
 
 private fun VideoPage.toEntry() = EpisodeEntry(key = cid, index = "P$page", title = part, duration = duration)

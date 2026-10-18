@@ -31,13 +31,30 @@ internal class PortraitFeedModel(head: VideoItem) : ViewModel() {
         seen += fresh.map { it.bvid }
         items += portrait + rest
     }
+
+    /**
+     * Points [page] at [item] (the video the page shows as the pager opens again after the
+     * classic layout): its own entry when listed, else it joins right after the last page.
+     */
+    fun focus(item: VideoItem) {
+        if (item.bvid.isEmpty()) return
+        val i = items.indexOfFirst { it.bvid == item.bvid }
+        if (i >= 0) {
+            page = i
+            return
+        }
+        val at = (page + 1).coerceIn(0, items.size)
+        items.add(at, item)
+        seen += item.bvid
+        page = at
+    }
 }
 
 internal fun isPortrait(aspect: Float) = aspect > 0f && aspect < 1f
 
 /** The opened video as the feed's first entry (from the detail, which is loaded once immersive is chosen). */
 internal fun headItem(vm: VideoDetailViewModel): VideoItem {
-    val d = vm.detail ?: return VideoItem(bvid = vm.bvid, cid = vm.cid, title = vm.target?.title.orEmpty(), cover = vm.cover)
+    val d = vm.detail?.takeIf { vm.bvid.isEmpty() || it.bvid == vm.bvid } ?: return VideoItem(bvid = vm.bvid, cid = vm.cid, title = vm.target?.title.orEmpty(), cover = vm.cover)
     return VideoItem(
         bvid = d.bvid,
         aid = d.aid,
@@ -93,3 +110,53 @@ internal fun columnSize(windowW: Dp, windowH: Dp, top: Dp, bottom: Dp): DpSize {
 
 internal val ColumnGap = 12.dp
 internal val ColumnVerticalMargin = 12.dp
+
+/**
+ * How the pager uses the window.
+ * - [Phone]: a phone held upright, the picture full-bleed with everything over it.
+ * - [PhoneLandscape]: a short landscape window (a phone held sideways), the picture at full
+ *   height, centered, the action column beside it, no panel.
+ * - [Column]: the phone-like column centered on the blurred cover (tablet upright).
+ * - [Panel]: a landscape window with room (tablet landscape): the column and its actions, and a
+ *   side panel with the info and comments.
+ */
+internal enum class PortraitMode { Phone, PhoneLandscape, Column, Panel }
+
+internal fun portraitMode(w: Dp, h: Dp, top: Dp, bottom: Dp): PortraitMode = when {
+    w > h && h < 480.dp -> PortraitMode.PhoneLandscape
+    w < 600.dp -> PortraitMode.Phone
+    w > h && panelWidth(w, h, top, bottom) >= PanelMinWidth -> PortraitMode.Panel
+    else -> PortraitMode.Column
+}
+
+/** The side panel's width in [PortraitMode.Panel]: what the column and its actions leave, capped. */
+internal fun panelWidth(w: Dp, h: Dp, top: Dp, bottom: Dp): Dp {
+    val colH = (h - top - bottom - ColumnVerticalMargin * 2).coerceAtLeast(240.dp)
+    val left = colH * (9f / 16f) + ColumnGap + ActionColumnWidth + PanelSideMargin * 2
+    return minOf(PanelMaxWidth, w - left - PanelEndMargin)
+}
+
+/** [PortraitMode.Panel]: the column in the pager's part of the window ([pageW] × [pageH]). */
+internal fun panelColumnSize(pageW: Dp, pageH: Dp, top: Dp, bottom: Dp): DpSize {
+    val h = (pageH - top - bottom - ColumnVerticalMargin * 2).coerceAtLeast(240.dp)
+    val w = minOf(h * (9f / 16f), pageW - ActionColumnWidth - ColumnGap - PanelSideMargin * 2).coerceAtLeast(160.dp)
+    return DpSize(w, h)
+}
+
+/**
+ * [PortraitMode.PhoneLandscape]: the picture's frame at the window's full height, as wide as
+ * its own aspect asks (a landscape video in the feed gets the width it needs), leaving room for
+ * the action column on both sides.
+ */
+internal fun landscapeFrameSize(pageW: Dp, pageH: Dp, aspect: Float): DpSize {
+    val a = aspect.takeIf { it > 0f } ?: DefaultAspect
+    // Both sides also keep clear of 缩小 in the bottom-right corner.
+    val roomW = pageW - (ActionColumnWidth + ColumnGap) * 2 - LandscapeCornerRoom * 2
+    return DpSize(minOf(pageH * a, roomW).coerceAtLeast(160.dp), pageH)
+}
+
+private val LandscapeCornerRoom = 104.dp
+internal val PanelSideMargin = 24.dp
+internal val PanelEndMargin = 12.dp
+private val PanelMinWidth = 320.dp
+private val PanelMaxWidth = 600.dp
