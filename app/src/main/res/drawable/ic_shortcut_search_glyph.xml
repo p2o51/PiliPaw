@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- YoinSymbols.Search on the 108dp adaptive canvas (46dp glyph, centred). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="31" android:translateY="31" android:scaleX="1.9167" android:scaleY="1.9167">
+        <path android:fillColor="#00000000" android:strokeColor="@color/shortcut_on_container" android:strokeWidth="1.8"
+            android:strokeLineCap="round" android:strokeLineJoin="round"
+            android:pathData="M10.6,4.5 C13.969,4.5 16.7,7.231 16.7,10.6 C16.7,13.969 13.969,16.7 10.6,16.7 C7.231,16.7 4.5,13.969 4.5,10.6 C4.5,7.231 7.231,4.5 10.6,4.5 Z" />
+        <path android:fillColor="#00000000" android:strokeColor="@color/shortcut_on_container" android:strokeWidth="1.8"
+            android:strokeLineCap="round" android:strokeLineJoin="round"
+            android:pathData="M14.913,14.913 L19.5,19.5" />
+    </group>
+</vector>

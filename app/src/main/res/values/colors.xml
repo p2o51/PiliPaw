@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FB7299</color>
+    <!-- Launcher shortcut icons (稍后再看 / 历史记录 / 搜索): a container tone and its on-colour.
+         Android 12+ takes the wallpaper's accent tones instead (values-v31). -->
+    <color name="shortcut_container">#FFD9E2</color>
+    <color name="shortcut_on_container">#5C1130</color>
 </resources>

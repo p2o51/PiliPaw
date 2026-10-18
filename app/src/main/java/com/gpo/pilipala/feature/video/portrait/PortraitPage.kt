@@ -6,6 +6,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import com.gpo.pilipala.feature.player.PipSignals
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -147,7 +149,14 @@ internal fun PortraitPage(
         }
     }
     BackHandler(enabled = host && expanded) { expanded = false }
-    val overlayAlpha by animateFloatAsState(if (scrubbing) 0f else 1f, YoinMotion.defaultEffectsSpec(), label = "overlayAlpha")
+    // On its way into PiP: the text, actions, scrim and seek bar leave at once so only the
+    // picture flies into the floating window.
+    val pipEntering = host && PipSignals.entering
+    val overlayAlpha by animateFloatAsState(
+        if (scrubbing || pipEntering) 0f else 1f,
+        if (pipEntering) snap() else YoinMotion.defaultEffectsSpec(),
+        label = "overlayAlpha",
+    )
 
     val ownerMid = detail?.ownerMid ?: item.ownerMid
     val ownerName = detail?.ownerName?.ifEmpty { null } ?: item.ownerName
@@ -168,6 +177,8 @@ internal fun PortraitPage(
         favored = acts && a.favored,
         favLabel = label(if (acts) a.favCount else 0, "收藏"),
         shareLabel = label(if (acts) a.shareCount else 0, "分享"),
+        // Only the page whose video the actions are bound to celebrates (and buzzes).
+        tripleCelebration = if (acts && host) a.tripleCelebration else -1,
     )
     val openOwner = { if (ownerMid > 0) nav.push(Route.Member(ownerMid, face = face, name = ownerName)) }
     val seek: (Long) -> Unit = { s -> playerState.seekTo(s * 1000) }
@@ -254,7 +265,15 @@ internal fun PortraitPage(
                 }
             }
             Box(Modifier.matchParentSize().then(gestures))
-            val scrimAlpha by animateFloatAsState(if (expanded) 0.8f else 0.5f, YoinMotion.defaultEffectsSpec(), label = "scrim")
+            val scrimAlpha by animateFloatAsState(
+                when {
+                    pipEntering -> 0f
+                    expanded -> 0.8f
+                    else -> 0.5f
+                },
+                if (pipEntering) snap() else YoinMotion.defaultEffectsSpec(),
+                label = "scrim",
+            )
             Box(
                 Modifier
                     .align(Alignment.BottomCenter)
@@ -302,7 +321,8 @@ internal fun PortraitPage(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .padding(bottom = bottom),
+                        .padding(bottom = bottom)
+                        .graphicsLayer { alpha = if (pipEntering) 0f else 1f },
                     horizontalPadding = if (inside) 0.dp else 12.dp,
                 )
             }
