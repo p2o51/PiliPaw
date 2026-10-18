@@ -67,6 +67,15 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.YoinSymbols
 
 /**
+ * How much UI the player draws over the picture. CONTRACT:
+ * - [Full]: the standard controls (top bar, seek bar, buttons, settings, gestures).
+ * - [Minimal]: picture + danmaku + subtitles + gestures only (tap = play/pause, long-press =
+ *   fast speed, horizontal drag = seek, double-tap reported to the host). The host draws its
+ *   own overlay (the immersive portrait mode) and reads progress from the [BiliPlayerState].
+ */
+enum class PlayerChrome { Full, Minimal }
+
+/**
  * What to play. UGC: bvid/aid + cid. PGC (bangumi): epId + cid with isPgc = true.
  */
 data class PlayTarget(
@@ -131,6 +140,7 @@ fun BiliVideoPlayer(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     onCompleted: () -> Unit = {},
+    chrome: PlayerChrome = PlayerChrome.Full,
 ) {
     val context = LocalContext.current
     val ctrl: PiliPlayerController = (state as? PiliPlayerController) ?: run {

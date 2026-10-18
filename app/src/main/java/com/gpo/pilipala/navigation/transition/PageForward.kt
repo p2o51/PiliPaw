@@ -285,11 +285,21 @@ internal fun PageEntryFrame(
                     // backdrop never shows through an entering page.
                     .background(MaterialTheme.colorScheme.surface),
             ) {
-                content()
+                androidx.compose.runtime.CompositionLocalProvider(LocalPageSettled provides !entering) {
+                    content()
+                }
             }
         }
     }
 }
+
+/**
+ * False while this page is still entering (container transform / forward slide);
+ * true once it has landed. Pages hold back things the transition can't carry —
+ * a video SurfaceView ignores the container's rounded clip — until it is true.
+ * CONTRACT for feature code; navigation/transition owns how it is driven.
+ */
+val LocalPageSettled = androidx.compose.runtime.staticCompositionLocalOf { true }
 
 /** The container at growth s: where the full-size page is drawn and which part of it shows. */
 private class ContainerGeometry(
