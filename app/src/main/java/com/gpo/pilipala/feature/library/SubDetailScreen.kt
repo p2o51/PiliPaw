@@ -44,6 +44,7 @@ import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.LoadMoreEffect
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Page
@@ -67,6 +68,8 @@ internal data class SubInfo(
     val upperName: String = "",
     val mediaCount: Int = 0,
     val plays: Long = -1,
+    /** The owner's mid (名声模式 只隐藏自己的); 0 when unknown. */
+    val upperMid: Long = 0,
 )
 
 internal class SubDetailViewModel(val id: Long, val type: Int) : ViewModel() {
@@ -95,6 +98,7 @@ internal class SubDetailViewModel(val id: Long, val type: Int) : ViewModel() {
                 upperName = i.obj("upper").str("name"),
                 mediaCount = i.int("media_count"),
                 plays = i.obj("cnt_info")?.long("play") ?: -1,
+                upperMid = i.obj("upper").long("mid"),
             )
         }
         val list = data.arr("medias").objects().map { it.favMediaToVideo() }
@@ -218,7 +222,7 @@ private fun SubHeader(info: SubInfo, cover: String, showUnsub: Boolean, onUnsub:
                 Text(info.upperName, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (info.plays >= 0) Stat(PiliSymbols.Views, Fmt.count(info.plays))
+                if (info.plays >= 0) Stat(PiliSymbols.Views, Fmt.count(info.plays), self = FameMode.isSelf(info.upperMid))
                 if (info.mediaCount > 0) Stat(PiliSymbols.Video, info.mediaCount.toString())
             }
             if (info.intro.isNotBlank()) {

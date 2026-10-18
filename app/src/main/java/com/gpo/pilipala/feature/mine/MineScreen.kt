@@ -367,7 +367,8 @@ private fun StatCell(value: String, label: String, modifier: Modifier, fame: Boo
     ) {
         val enterFade = YoinMotion.defaultEffectsSpec<Float>()
         val exitFade = YoinMotion.fastEffectsSpec<Float>()
-        val hidden = fame && FameMode.on
+        // The signed-in user's own numbers: 只隐藏自己的 hides them too.
+        val hidden = fame && FameMode.hides(self = true)
         AnimatedContent(
             targetState = value,
             transitionSpec = { fadeIn(enterFade) togetherWith fadeOut(exitFade) },
@@ -375,7 +376,7 @@ private fun StatCell(value: String, label: String, modifier: Modifier, fame: Boo
             contentKey = { v -> if (hidden) "" else v },
             label = "stat",
         ) { v ->
-            FameCount(v, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, revealable = false, hide = fame)
+            FameCount(v, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, revealable = false, hide = fame, self = true)
         }
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

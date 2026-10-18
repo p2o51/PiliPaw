@@ -50,6 +50,8 @@ internal data class LiveRoomItem(
     /** "1.2万" style watched count, already formatted by the API. */
     val watched: String,
     val online: Long,
+    /** The streamer's mid (名声模式 只隐藏自己的); 0 when the list omits it. */
+    val uid: Long = 0,
 )
 
 @Immutable
@@ -356,6 +358,7 @@ internal object HomeApi {
                 area = o.str("area_v2_name").ifEmpty { o.str("area_name") },
                 watched = if (watched.bool("switch", true)) watched.str("text_small") else "",
                 online = o.long("online"),
+                uid = o.long("uid"),
             )
         }.filter { it.roomId > 0 }
         val hasMore = if (data?.containsKey("has_more") == true) data.int("has_more") == 1 || data.bool("has_more") else list.isNotEmpty()

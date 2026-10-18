@@ -43,6 +43,7 @@ import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.DurationChip
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.VideoItem
@@ -186,9 +187,10 @@ internal fun PodiumCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 maxLines = 1,
             ) {
-                if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views), tint = meta)
-                if (item.likes >= 0) Stat(PiliSymbols.ThumbUp, Fmt.count(item.likes), tint = meta)
-                if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku), tint = meta)
+                val self = FameMode.isSelf(item.ownerMid)
+                if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views), tint = meta, self = self)
+                if (item.likes >= 0) Stat(PiliSymbols.ThumbUp, Fmt.count(item.likes), tint = meta, self = self)
+                if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku), tint = meta, self = self)
             }
         }
     }
@@ -300,9 +302,10 @@ internal fun RankRow(
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views))
-                    if (item.likes >= 0) Stat(PiliSymbols.ThumbUp, Fmt.count(item.likes))
-                    if (wide && item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku))
+                    val self = FameMode.isSelf(item.ownerMid)
+                    if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views), self = self)
+                    if (item.likes >= 0) Stat(PiliSymbols.ThumbUp, Fmt.count(item.likes), self = self)
+                    if (wide && item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku), self = self)
                 }
             }
         }

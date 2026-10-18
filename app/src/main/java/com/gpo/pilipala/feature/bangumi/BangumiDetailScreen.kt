@@ -290,7 +290,8 @@ private fun BangumiActions(
 ) {
     val a = vm.actions
     // 名声模式: the group takes plain labels, so a hidden count falls back to the action's name.
-    val fame = FameMode.on
+    // A bangumi has no uploader, so it is never the user's own (只隐藏自己的 keeps its counts).
+    val fame = FameMode.hides(self = false)
     fun label(n: Long, fallback: String) = if (n > 0 && !fame) Fmt.count(n) else fallback
     ConnectedActionGroup(
         listOf(

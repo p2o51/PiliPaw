@@ -88,6 +88,7 @@ import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.feature.player.PlayerPhase
 import com.gpo.pilipala.feature.video.VideoDetail
 import com.gpo.pilipala.feature.video.VideoDetailViewModel
+import com.gpo.pilipala.feature.video.isFameSelf
 import com.gpo.pilipala.feature.video.rememberRichText
 import com.gpo.pilipala.feature.video.shareText
 import com.gpo.pilipala.navigation.LocalNavigator
@@ -177,7 +178,7 @@ internal fun PortraitPage(
     val up = vm.up
     val relationKnown = up.mid == ownerMid && ownerMid > 0
     // 名声模式: popularity counts give way to the action word (the 评论 count is not popularity).
-    val fame = FameMode.on
+    val fame = FameMode.hides(detail?.isFameSelf ?: FameMode.isSelf(item.ownerMid))
     fun label(n: Long, fallback: String, popular: Boolean = true) = if (n > 0 && !(popular && fame)) Fmt.count(n) else fallback
     val actionState = ActionState(
         face = face,
@@ -492,8 +493,9 @@ private fun ExpandedInfo(d: VideoDetail, tags: List<String>, onSeek: (Long) -> U
     val nav = LocalNavigator.current
     Column(Modifier.padding(top = 10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconCount(PiliSymbols.Views, Fmt.count(d.view))
-            IconCount(PiliSymbols.Danmaku, Fmt.count(d.danmaku))
+            val self = d.isFameSelf
+            IconCount(PiliSymbols.Views, Fmt.count(d.view), self)
+            IconCount(PiliSymbols.Danmaku, Fmt.count(d.danmaku), self)
             val time = Fmt.relativeTime(d.pubdate)
             if (time.isNotEmpty()) {
                 Text(time, style = MaterialTheme.typography.labelMedium.onPicture(), color = OnPicture.copy(alpha = 0.72f))
@@ -524,14 +526,17 @@ private fun ExpandedInfo(d: VideoDetail, tags: List<String>, onSeek: (Long) -> U
     }
 }
 
-/** 播放 / 弹幕 under the expanded title: a line under 名声模式, never tapped open (the block folds on tap). */
+/**
+ * 播放 / 弹幕 under the expanded title: a line under 名声模式 ([self]: the user's own
+ * video), never tapped open (the block folds on tap).
+ */
 @Composable
-private fun IconCount(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+private fun IconCount(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, self: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         val tint = OnPicture.copy(alpha = 0.72f)
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(4.dp))
-        FameCount(text, style = MaterialTheme.typography.labelMedium.onPicture(), color = tint, lineColor = tint, revealable = false)
+        FameCount(text, style = MaterialTheme.typography.labelMedium.onPicture(), color = tint, lineColor = tint, revealable = false, self = self)
     }
 }
 

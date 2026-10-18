@@ -84,6 +84,8 @@ internal data class LiveHit(
     val online: Long,
     val area: String,
     val living: Boolean,
+    /** The streamer's mid (名声模式 只隐藏自己的); 0 when the result omits it. */
+    val uid: Long = 0,
 ) : SearchHit {
     override val key: String get() = "l$roomId"
 }
@@ -115,6 +117,8 @@ internal data class ArticleHit(
     val likes: Long,
     val replies: Long,
     val pubTime: Long,
+    /** The author's mid (名声模式 只隐藏自己的); 0 when the result omits it. */
+    val mid: Long = 0,
 ) : SearchHit {
     override val key: String get() = "a$id"
 }
@@ -369,6 +373,7 @@ internal object SearchApi {
         online = o.long("online"),
         area = Fmt.stripTags(o.str("cate_name")),
         living = o.int("live_status", 1) == 1,
+        uid = o.long("uid"),
     )
 
     private fun parseUser(o: JsonObject): UserHit {
@@ -397,6 +402,7 @@ internal object SearchApi {
         likes = o.long("like"),
         replies = o.long("reply"),
         pubTime = o.long("pub_time").takeIf { it > 0 } ?: o.long("pubdate"),
+        mid = o.long("mid"),
     )
 }
 

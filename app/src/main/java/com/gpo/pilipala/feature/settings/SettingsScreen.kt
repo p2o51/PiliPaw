@@ -270,7 +270,10 @@ private fun AccountStats(u: UserInfo) {
     }
 }
 
-/** Number over label. [fame] (粉丝): a line under 名声模式, kept a line since the block opens the list. */
+/**
+ * Number over label. [fame] (粉丝): a line under 名声模式 (the signed-in user's own, so
+ * 只隐藏自己的 too), kept a line since the block opens the list.
+ */
 @Composable
 private fun Stat(value: String, label: String, fame: Boolean = false, onClick: (() -> Unit)?) {
     Column(
@@ -283,7 +286,7 @@ private fun Stat(value: String, label: String, fame: Boolean = false, onClick: (
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         if (fame) {
-            FameCount(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, revealable = false)
+            FameCount(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, revealable = false, self = true)
         } else {
             Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }

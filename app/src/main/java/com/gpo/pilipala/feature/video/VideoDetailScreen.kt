@@ -378,7 +378,7 @@ private fun VideoActions(
 ) {
     val a = vm.actions
     // 名声模式: the group takes plain labels, so a hidden count falls back to the action's name.
-    val fame = FameMode.on
+    val fame = FameMode.hides(d.isFameSelf)
     fun label(n: Long, fallback: String) = if (n > 0 && !fame) Fmt.count(n) else fallback
     ConnectedActionGroup(
         listOf(

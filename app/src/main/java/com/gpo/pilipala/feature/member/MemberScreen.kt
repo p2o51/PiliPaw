@@ -117,6 +117,7 @@ import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.ErrorState
 import com.gpo.pilipala.ui.components.ExpressivePageBackground
 import com.gpo.pilipala.ui.components.FameCount
+import com.gpo.pilipala.ui.components.FameSelf
 import com.gpo.pilipala.ui.components.LoadMoreEffect
 import com.gpo.pilipala.ui.components.LoadingFooter
 import com.gpo.pilipala.ui.components.LoadingState
@@ -317,7 +318,11 @@ private val Tabs = listOf("主页", "投稿", "动态", "合集")
 fun MemberScreen(route: Route.Member) {
     val vm = viewModel { MemberViewModel(route.mid, route.face, route.name) }
     CoverTheme(vm.profile?.face ?: vm.initFace) {
-        MemberContent(vm)
+        // The user's own space: 粉丝 / 获赞 / 播放 and the counts on their uploads count as
+        // their own for 名声模式 (cards that name another owner decide for themselves).
+        FameSelf(vm.mid) {
+            MemberContent(vm)
+        }
     }
 }
 

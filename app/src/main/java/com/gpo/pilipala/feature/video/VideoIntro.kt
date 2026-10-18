@@ -69,6 +69,13 @@ import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
 /**
+ * The video is the signed-in user's own (uploader, or one of the staff): under
+ * 只隐藏自己的 its 播放 / 弹幕 / 点赞 / 投币 / 收藏 / 分享 counts are hidden. Snapshot-read.
+ */
+internal val VideoDetail.isFameSelf: Boolean
+    get() = FameMode.isSelf(ownerMid) || staff.any { FameMode.isSelf(it.mid) }
+
+/**
  * Title (folds to two lines, unfolds with the spatial spring), stat pairs,
  * honor tags, and the description block that unfolds together with the title.
  */
@@ -115,8 +122,9 @@ internal fun VideoHeader(d: VideoDetail, onSeek: ((Long) -> Unit)?, modifier: Mo
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Stat(PiliSymbols.Views, Fmt.count(d.view), revealable = true)
-            Stat(PiliSymbols.Danmaku, Fmt.count(d.danmaku), revealable = true)
+            val self = d.isFameSelf
+            Stat(PiliSymbols.Views, Fmt.count(d.view), revealable = true, self = self)
+            Stat(PiliSymbols.Danmaku, Fmt.count(d.danmaku), revealable = true, self = self)
             Text(
                 Fmt.date(d.pubdate, "yyyy-MM-dd HH:mm"),
                 style = MaterialTheme.typography.labelSmall,
@@ -227,7 +235,8 @@ internal fun UpCard(
             Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val effects = YoinMotion.defaultEffectsSpec<Float>()
             val size = YoinMotion.defaultSpatialSpec<IntSize>()
-            val fame = FameMode.on
+            val self = FameMode.isSelf(mid)
+            val fame = FameMode.hides(self)
             AnimatedContent(
                 targetState = fans,
                 transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) using SizeTransform { _, _ -> size } },
@@ -243,6 +252,7 @@ internal fun UpCard(
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             revealable = false,
+                            self = self,
                         )
                         Spacer(Modifier.width(3.dp))
                         Text("粉丝", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

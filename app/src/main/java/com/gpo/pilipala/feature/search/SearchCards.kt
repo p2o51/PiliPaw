@@ -50,6 +50,7 @@ import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.CoverBadge
 import com.gpo.pilipala.ui.components.FameCount
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.Tag
@@ -203,7 +204,7 @@ internal fun LiveCard(hit: LiveHit, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Stat(PiliSymbols.Live, Fmt.count(hit.online), tint = Color.White)
+                Stat(PiliSymbols.Live, Fmt.count(hit.online), tint = Color.White, self = FameMode.isSelf(hit.uid))
                 Spacer(Modifier.weight(1f))
                 if (hit.area.isNotEmpty()) {
                     Text(
@@ -317,7 +318,7 @@ internal fun UserRow(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                CountPair(hit.fans, "粉丝", fame = true)
+                CountPair(hit.fans, "粉丝", fame = true, self = FameMode.isSelf(hit.mid))
                 CountPair(hit.videos, "视频")
             }
             if (hit.sign.isNotEmpty()) {
@@ -369,9 +370,12 @@ private fun AddToFeedButton(inFeed: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** [fame] (粉丝): a line under 名声模式; the row's tap keeps opening the space. */
+/**
+ * [fame] (粉丝): a line under 名声模式 ([self]: the row is the signed-in user); the
+ * row's tap keeps opening the space.
+ */
 @Composable
-private fun CountPair(n: Long, label: String, fame: Boolean = false) {
+private fun CountPair(n: Long, label: String, fame: Boolean = false, self: Boolean = false) {
     Row(verticalAlignment = Alignment.Bottom) {
         FameCount(
             Fmt.count(n),
@@ -380,6 +384,7 @@ private fun CountPair(n: Long, label: String, fame: Boolean = false) {
             color = MaterialTheme.colorScheme.onSurface,
             revealable = false,
             hide = fame,
+            self = self,
         )
         Spacer(Modifier.width(3.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -487,9 +492,10 @@ internal fun ArticleRow(hit: ArticleHit, modifier: Modifier = Modifier) {
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Stat(PiliSymbols.Views, Fmt.count(hit.views))
-                    Stat(PiliSymbols.ThumbUp, Fmt.count(hit.likes))
-                    Stat(PiliSymbols.Comment, Fmt.count(hit.replies))
+                    val self = FameMode.isSelf(hit.mid)
+                    Stat(PiliSymbols.Views, Fmt.count(hit.views), self = self)
+                    Stat(PiliSymbols.ThumbUp, Fmt.count(hit.likes), self = self)
+                    Stat(PiliSymbols.Comment, Fmt.count(hit.replies), self = self)
                     if (hit.pubTime > 0) {
                         Text(
                             Fmt.relativeTime(hit.pubTime),

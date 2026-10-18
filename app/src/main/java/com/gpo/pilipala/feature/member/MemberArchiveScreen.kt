@@ -21,6 +21,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.ui.components.FameSelf
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.PiliLargeTopBar
 import com.gpo.pilipala.ui.components.VideoItem
@@ -65,13 +66,16 @@ fun MemberArchiveScreen(route: Route.MemberArchive) {
             )
         },
     ) { padding ->
-        MemberVideoGrid(
-            pager = vm.pager,
-            modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
-            contentPadding = PaddingValues(top = 4.dp, bottom = navBottom + 16.dp),
-            emptyLabel = "暂无投稿",
-        ) {
-            archiveSortHeader(vm.order, vm.total, vm::changeOrder)
+        // The user's own uploads count as their own for 名声模式.
+        FameSelf(route.mid) {
+            MemberVideoGrid(
+                pager = vm.pager,
+                modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
+                contentPadding = PaddingValues(top = 4.dp, bottom = navBottom + 16.dp),
+                emptyLabel = "暂无投稿",
+            ) {
+                archiveSortHeader(vm.order, vm.total, vm::changeOrder)
+            }
         }
     }
 }

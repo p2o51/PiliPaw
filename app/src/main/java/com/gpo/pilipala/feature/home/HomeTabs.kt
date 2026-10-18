@@ -49,6 +49,7 @@ import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.CoverBadge
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.VideoCardH
@@ -229,7 +230,7 @@ private fun LiveCard(room: LiveRoomItem) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val watched = room.watched.ifEmpty { if (room.online > 0) Fmt.count(room.online) else "" }
-                if (watched.isNotEmpty()) Stat(PiliSymbols.Views, watched, tint = Color.White)
+                if (watched.isNotEmpty()) Stat(PiliSymbols.Views, watched, tint = Color.White, self = FameMode.isSelf(room.uid))
                 Spacer(Modifier.weight(1f))
                 if (room.area.isNotEmpty()) {
                     Text(

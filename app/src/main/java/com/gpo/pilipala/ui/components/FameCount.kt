@@ -16,7 +16,9 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +48,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.sp
+import com.gpo.pilipala.core.account.Account
+import com.gpo.pilipala.core.account.UserInfo
+import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
@@ -53,29 +58,114 @@ import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
+/** What 名声模式 hides: nothing, only the signed-in user's own numbers, or everyone's. */
+enum class FameScope(val key: String, val label: String) {
+    Off("off", "关闭"),
+    Self("self", "只隐藏自己的"),
+    All("all", "全部隐藏"),
+    ;
+
+    companion object {
+        fun of(key: String): FameScope = entries.firstOrNull { it.key == key } ?: Off
+    }
+}
+
 /**
  * 名声模式 (设置 › 习惯): popularity numbers draw as a short line ([FameCount]) —
  * 粉丝 and 获赞 for people; 播放, 弹幕, 点赞 / 投币 / 收藏 / 分享 for content; comment likes.
  * Counts that are not popularity (关注, 投稿, 评论数) stay.
+ *
+ * [scope]: [FameScope.All] hides every such number; [FameScope.Self] only the ones
+ * that measure the signed-in user (their 粉丝 / 获赞, the counts on their own videos,
+ * dynamics, articles and comments); logged out it hides nothing. Whether a number is
+ * the user's own comes from [LocalFameSelf] (set with [FameSelf]) or an owner mid
+ * passed to [hides] / [fameHides]. The scope logic lives only here.
  */
 object FameMode {
-    val key: AppSettings.Key<Boolean> = AppSettings.register("fame_mode", false)
+    /** off | self | all ([FameScope.key]). Empty until the one-time migration below runs. */
+    val scopeKey: AppSettings.Key<String> = AppSettings.register("fame_scope", "")
 
-    // A snapshot mirror of the setting, so every row reads it without a collector of its own.
-    private val mirror = mutableStateOf(key.value)
+    // The old on/off switch: read once to seed fame_scope, then ignored.
+    private val legacyKey: AppSettings.Key<Boolean> = AppSettings.register("fame_mode", false)
+
+    // Snapshot mirrors, so every row reads them without a collector of its own.
+    private val scopeMirror: MutableState<FameScope>
+    private val selfMirror = mutableStateOf(currentSelfMid(Account.user.value))
 
     init {
-        MainScope().launch { key.state.collect { mirror.value = it } }
+        if (scopeKey.value.isEmpty()) {
+            AppSettings.set(scopeKey, if (legacyKey.value) FameScope.All.key else FameScope.Off.key)
+        }
+        scopeMirror = mutableStateOf(FameScope.of(scopeKey.value))
+        MainScope().launch { scopeKey.state.collect { scopeMirror.value = FameScope.of(it) } }
+        MainScope().launch { Account.user.collect { selfMirror.value = currentSelfMid(it) } }
     }
 
-    /** Snapshot-readable: a composable reading it recomposes when the setting flips. */
-    val on: Boolean get() = mirror.value
+    private fun currentSelfMid(user: UserInfo?): Long =
+        user?.mid?.takeIf { it > 0 } ?: BiliClient.mid.takeIf { BiliClient.isLoggedIn } ?: 0L
 
-    fun set(value: Boolean) {
-        AppSettings.set(key, value)
-        mirror.value = value
+    /** Snapshot-readable: a composable reading it recomposes when the setting changes. */
+    val scope: FameScope get() = scopeMirror.value
+
+    /** The signed-in user's mid, 0 when logged out. Snapshot-readable. */
+    val selfMid: Long get() = selfMirror.value
+
+    /** True when [mid] is the signed-in user. */
+    fun isSelf(mid: Long?): Boolean {
+        val me = selfMid
+        return me > 0 && mid != null && mid == me
+    }
+
+    /** Whether a popularity number is hidden; [self]: the number measures the signed-in user. */
+    fun hides(self: Boolean): Boolean = when (scope) {
+        FameScope.Off -> false
+        FameScope.Self -> self && selfMid > 0
+        FameScope.All -> true
+    }
+
+    /** Whether a popularity number on content owned by [ownerMid] is hidden. */
+    fun hides(ownerMid: Long?): Boolean = hides(isSelf(ownerMid))
+
+    fun select(value: FameScope) {
+        AppSettings.set(scopeKey, value.key)
+        scopeMirror.value = value
     }
 }
+
+/**
+ * True inside content that belongs to the signed-in user (their own space, their
+ * video's stats, their dynamic or comment): [FameCount] and [Stat] there count as
+ * the user's own for [FameScope.Self].
+ */
+val LocalFameSelf = compositionLocalOf { false }
+
+/**
+ * Marks [content] as owned by [ownerMid] for 名声模式. A known owner (> 0) decides on
+ * its own (someone else's card inside the user's space is not the user's); an unknown
+ * one (null / 0) keeps what the parent says.
+ */
+@Composable
+fun FameSelf(ownerMid: Long?, content: @Composable () -> Unit) {
+    if (ownerMid == null || ownerMid <= 0L) {
+        content()
+        return
+    }
+    CompositionLocalProvider(LocalFameSelf provides FameMode.isSelf(ownerMid), content = content)
+}
+
+/** Marks [content] as the user's own ([self]) or not, whatever the parent says. */
+@Composable
+fun FameSelf(self: Boolean, content: @Composable () -> Unit) {
+    CompositionLocalProvider(LocalFameSelf provides self, content = content)
+}
+
+/**
+ * Whether a popularity number here is hidden: by [ownerMid] when the caller knows it
+ * (> 0), else by [LocalFameSelf].
+ */
+@Composable
+fun fameHides(ownerMid: Long? = null): Boolean =
+    FameMode.hides(if (ownerMid != null && ownerMid > 0L) FameMode.isSelf(ownerMid) else LocalFameSelf.current)
 
 /** [Stat] glyphs whose numbers are popularity: 名声模式 hides them by default. */
 private val PopularityGlyphs: List<ImageVector> by lazy {
@@ -112,7 +202,8 @@ fun ImageVector.isPopularityGlyph(): Boolean = PopularityGlyphs.any { it === thi
  * and the text next to it. [hide] false keeps the number (not a popularity count).
  * [lineColor] defaults to onSurfaceVariant. [revealState] hoists the revealed flag for
  * a caller that swaps this composable out when the number changes (an AnimatedContent
- * keyed on the value), so a shown number stays shown.
+ * keyed on the value), so a shown number stays shown. [self]: the number measures the
+ * signed-in user (for [FameScope.Self]); [LocalFameSelf] by default.
  */
 @Composable
 fun FameCount(
@@ -125,8 +216,9 @@ fun FameCount(
     revealable: Boolean = true,
     hide: Boolean = true,
     revealState: MutableState<Boolean>? = null,
+    self: Boolean = LocalFameSelf.current,
 ) {
-    if (!hide || !FameMode.on || text.isBlank()) {
+    if (!hide || !FameMode.hides(self) || text.isBlank()) {
         Text(text, modifier, color = color, style = style, fontWeight = fontWeight, maxLines = 1)
         return
     }

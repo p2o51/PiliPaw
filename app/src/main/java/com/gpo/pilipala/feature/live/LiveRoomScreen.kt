@@ -89,6 +89,7 @@ import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.ErrorState
 import com.gpo.pilipala.ui.components.ExpressivePageBackground
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.PiliTopBar
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.Tag
@@ -279,8 +280,10 @@ private fun AnchorBlock(vm: LiveRoomViewModel, route: Route.LiveRoom, modifier: 
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     val watched = info?.watchedText.orEmpty()
-                    if (watched.isNotEmpty()) Stat(PiliSymbols.Views, watched)
-                    if ((info?.attention ?: 0) > 0) Stat(PiliSymbols.PersonFilled, Fmt.count(info!!.attention))
+                    // 名声模式: the user's own room counts as their own.
+                    val self = FameMode.isSelf(info?.uid)
+                    if (watched.isNotEmpty()) Stat(PiliSymbols.Views, watched, self = self)
+                    if ((info?.attention ?: 0) > 0) Stat(PiliSymbols.PersonFilled, Fmt.count(info!!.attention), self = self)
                     val area = info?.areaName.orEmpty()
                     if (area.isNotEmpty()) Tag(area)
                 }

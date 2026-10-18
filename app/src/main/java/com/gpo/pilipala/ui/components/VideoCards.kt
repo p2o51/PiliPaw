@@ -178,15 +178,17 @@ fun VideoCardH(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views))
-                    if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku))
-                    if (item.pubdate > 0) {
-                        Text(
-                            Fmt.relativeTime(item.pubdate),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                FameSelf(item.ownerMid) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views))
+                        if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku))
+                        if (item.pubdate > 0) {
+                            Text(
+                                Fmt.relativeTime(item.pubdate),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
@@ -202,6 +204,8 @@ fun VideoCardH(
  * Under 名声模式 a popularity number ([fame]: 播放, 弹幕, 点赞… glyphs by default) draws
  * as [FameCount]'s line in [tint]; [revealable] lets a tap on it show the number
  * (only where the pair is not inside a bigger clickable — cards keep their tap).
+ * [self]: the number measures the signed-in user ([LocalFameSelf] by default, see
+ * [FameSelf]); 只隐藏自己的 hides only those.
  */
 @Composable
 fun Stat(
@@ -211,6 +215,7 @@ fun Stat(
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     fame: Boolean = icon.isPopularityGlyph(),
     revealable: Boolean = false,
+    self: Boolean = LocalFameSelf.current,
 ) {
     Row(modifier.seamText(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         Icon(icon, null, Modifier.size(14.dp), tint = tint)
@@ -221,6 +226,7 @@ fun Stat(
             lineColor = tint,
             revealable = revealable,
             hide = fame,
+            self = self,
         )
     }
 }
@@ -228,12 +234,14 @@ fun Stat(
 @Composable
 private fun CoverStats(item: VideoItem, modifier: Modifier) {
     if (item.views < 0 && item.danmaku < 0 && item.duration <= 0) return
-    CoverScrim(modifier) {
-        if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views), tint = Color.White)
-        if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku), tint = Color.White)
-        Spacer(Modifier.weight(1f))
-        if (item.duration > 0) {
-            Text(Fmt.duration(item.duration), style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.seamText())
+    FameSelf(item.ownerMid) {
+        CoverScrim(modifier) {
+            if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views), tint = Color.White)
+            if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku), tint = Color.White)
+            Spacer(Modifier.weight(1f))
+            if (item.duration > 0) {
+                Text(Fmt.duration(item.duration), style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.seamText())
+            }
         }
     }
 }

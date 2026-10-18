@@ -24,6 +24,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.EmptyState
+import com.gpo.pilipala.ui.components.FameSelf
 import com.gpo.pilipala.ui.components.LoadMoreEffect
 import com.gpo.pilipala.ui.components.LoadingState
 import com.gpo.pilipala.ui.components.Pager
@@ -76,7 +77,8 @@ fun MemberArticleScreen(route: Route.MemberArticle) {
                             EmptyState("暂无专栏", Modifier.height(360.dp), icon = PiliSymbols.Article)
                         }
                         else -> {
-                            items(items, key = { it.id }) { ArticleRow(it) }
+                            // The user's own articles count as their own for 名声模式.
+                            items(items, key = { it.id }) { FameSelf(route.mid) { ArticleRow(it) } }
                             pagerFooter(pager)
                         }
                     }

@@ -77,6 +77,9 @@ import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.CoverBadge
 import com.gpo.pilipala.ui.components.DurationChip
 import com.gpo.pilipala.ui.components.FameMode
+import com.gpo.pilipala.ui.components.FameSelf
+import com.gpo.pilipala.ui.components.LocalFameSelf
+import com.gpo.pilipala.ui.components.fameHides
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.Tag
@@ -113,7 +116,11 @@ internal fun DynamicCard(
     val route = item.route
     val handler = remember(nav, viewer) { CardUriHandler(nav, viewer) }
 
-    CompositionLocalProvider(LocalUriHandler provides handler) {
+    CompositionLocalProvider(
+        LocalUriHandler provides handler,
+        // 名声模式: the user's own dynamic (转发 / 点赞, a video it posts) counts as their own.
+        LocalFameSelf provides FameMode.isSelf(item.json.author.long("mid")),
+    ) {
         Column(
             modifier
                 .fillMaxWidth()
@@ -520,13 +527,16 @@ private fun ForwardBlock(orig: DynItem, viewer: ImageViewerState) {
                 Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        DynamicBody(
-            item = orig,
-            nested = true,
-            detail = false,
-            blockColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            viewer = viewer,
-        )
+        // The original belongs to its own author, not to whoever forwarded it.
+        FameSelf(FameMode.isSelf(a.long("mid"))) {
+            DynamicBody(
+                item = orig,
+                nested = true,
+                detail = false,
+                blockColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                viewer = viewer,
+            )
+        }
     }
 }
 
@@ -807,7 +817,7 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
             }
             Spacer(Modifier.width(6.dp))
             AnimatedContent(
-                targetState = countText(like.count, "点赞", fame = true),
+                targetState = countText(like.count, "点赞", hidden = fameHides()),
                 transitionSpec = { fadeIn(fadeInSpec).togetherWith(fadeOut(fadeOutSpec)) },
                 label = "likeCount",
             ) { text ->
@@ -822,16 +832,16 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
 private fun ActionLabel(icon: ImageVector, count: Long, label: String, fame: Boolean = true) {
     Icon(icon, null, Modifier.size(18.dp))
     Spacer(Modifier.width(6.dp))
-    Text(countText(count, label, fame), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    Text(countText(count, label, hidden = fame && fameHides()), style = MaterialTheme.typography.labelLarge, maxLines = 1)
 }
 
 /**
  * A button's count, or its action word at zero. Under 名声模式 a popularity count
- * ([fame]: 转发, 点赞) gives way to the word as well: a button shows nothing that
- * looks like a line to tap open, since a tap there is the button's own action.
+ * (转发, 点赞; [hidden] from [fameHides]) gives way to the word as well: a button shows
+ * nothing that looks like a line to tap open, since a tap there is the button's own action.
  */
-private fun countText(count: Long, label: String, fame: Boolean): String =
-    if (count > 0 && !(fame && FameMode.on)) Fmt.count(count) else label
+private fun countText(count: Long, label: String, hidden: Boolean): String =
+    if (count > 0 && !hidden) Fmt.count(count) else label
 
 // ── Sheets ──────────────────────────────────────────────────────────────────
 

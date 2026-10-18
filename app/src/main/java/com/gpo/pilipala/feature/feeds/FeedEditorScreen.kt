@@ -97,6 +97,7 @@ import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.BackButton
 import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.FameCount
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.VideoCardV
 import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.components.WidthClass
@@ -809,7 +810,7 @@ private fun UpPickRow(hit: UserHit, added: Boolean, enabled: Boolean, onToggle: 
                 overflow = TextOverflow.Ellipsis,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                CountLabelLong(hit.fans, "粉丝")
+                CountLabelLong(hit.fans, "粉丝", self = FameMode.isSelf(hit.mid))
                 CountLabelLong(hit.videos, "视频")
             }
         }
@@ -834,9 +835,12 @@ private fun UpPickRow(hit: UserHit, added: Boolean, enabled: Boolean, onToggle: 
     }
 }
 
-/** Number then label; 粉丝 is a line under 名声模式 (inside the row's tap, so never tapped open). */
+/**
+ * Number then label; 粉丝 is a line under 名声模式 ([self]: the row is the signed-in
+ * user), inside the row's tap, so never tapped open.
+ */
 @Composable
-private fun CountLabelLong(n: Long, label: String) {
+private fun CountLabelLong(n: Long, label: String, self: Boolean = false) {
     Row(verticalAlignment = Alignment.Bottom) {
         FameCount(
             com.gpo.pilipala.core.util.Fmt.count(n),
@@ -844,6 +848,7 @@ private fun CountLabelLong(n: Long, label: String) {
             fontWeight = FontWeight.SemiBold,
             revealable = false,
             hide = label == "粉丝",
+            self = self,
         )
         Spacer(Modifier.width(3.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

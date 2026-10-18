@@ -84,7 +84,8 @@ import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.CoverBadge
-import com.gpo.pilipala.ui.components.FameMode
+import com.gpo.pilipala.ui.components.FameSelf
+import com.gpo.pilipala.ui.components.fameHides
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
@@ -492,8 +493,11 @@ private fun ActionRow(reply: Reply, actions: ReplyActions) {
         Spacer(Modifier.weight(1f))
         // Keyed: a lazy slot reused for another comment must not play this one's wash / roll.
         key(reply.rpid) {
-            LikeButton(actions.likeState(reply)) {
-                actions.onLike(reply)
+            // 名声模式: the likes on the user's own comment count as their own.
+            FameSelf(reply.member.mid) {
+                LikeButton(actions.likeState(reply)) {
+                    actions.onLike(reply)
+                }
             }
         }
     }
@@ -561,7 +565,7 @@ internal fun LikeButton(state: LikeState, modifier: Modifier = Modifier, onClick
 @Composable
 private fun RollingCount(count: Long, color: ColorProducer) {
     val motion = replyMotion()
-    val text = if (count > 0 && !FameMode.on) Fmt.count(count) else ""
+    val text = if (count > 0 && !fameHides()) Fmt.count(count) else ""
     val last = remember { longArrayOf(count) }
     val up = count >= last[0]
     SideEffect { last[0] = count }

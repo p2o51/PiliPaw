@@ -51,6 +51,7 @@ import com.gpo.pilipala.feature.dynamics.RichContent
 import com.gpo.pilipala.feature.dynamics.normalizeUrl
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.ui.components.Avatar
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.Tag
@@ -642,7 +643,9 @@ internal fun ArticleMeta(h: ArticleHeaderData, modifier: Modifier = Modifier) {
         val stats = h.stats.filter { it.second > 0 }
         if (stats.isNotEmpty() || h.collection.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                stats.forEach { (icon, n) -> Stat(icon, Fmt.count(n)) }
+                // 名声模式: the user's own article counts as their own.
+                val self = FameMode.isSelf(h.authorMid)
+                stats.forEach { (icon, n) -> Stat(icon, Fmt.count(n), self = self) }
                 if (h.collection.isNotEmpty()) Tag(h.collection)
             }
         }

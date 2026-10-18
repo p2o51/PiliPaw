@@ -6,6 +6,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.components.FameMode
+import com.gpo.pilipala.ui.components.FameScope
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
@@ -13,6 +14,15 @@ private val replySortChoices = listOf(
     Choice(1, "最热"),
     Choice(0, "最新"),
 )
+
+private val fameScopeChoices = FameScope.entries.map { Choice(it, it.label) }
+
+/** 名声模式's quiet second line: what the chosen scope covers. */
+private fun fameScopeSummary(scope: FameScope): String = when (scope) {
+    FameScope.Off -> "粉丝、获赞、播放等数字"
+    FameScope.Self -> "自己的粉丝、获赞、播放等数字"
+    FameScope.All -> "所有人的粉丝、获赞、播放等数字"
+}
 
 /**
  * 习惯: everyday-behaviour preferences in one place. Reserved page — the
@@ -26,7 +36,8 @@ internal fun ColumnScope.HabitBody() {
     val autoFs by AppSettings.autoFullscreenLandscape.state.collectAsState()
     val background by AppSettings.backgroundPlay.state.collectAsState()
     val replySort by AppSettings.replySort.state.collectAsState()
-    val fame by FameMode.key.state.collectAsState()
+    val fameKey by FameMode.scopeKey.state.collectAsState()
+    val fame = FameScope.of(fameKey)
 
     SettingsGroup("启动") {
         item {
@@ -64,12 +75,13 @@ internal fun ColumnScope.HabitBody() {
             )
         }
         item {
-            SettingsSwitchItem(
-                "名声模式",
-                fame,
-                { FameMode.set(it) },
+            SettingsChoiceItem(
+                title = "名声模式",
                 icon = YoinSymbols.VisibilityOff,
-                summary = "隐藏粉丝、播放、点赞等数字",
+                choices = fameScopeChoices,
+                selected = fame,
+                onSelect = { FameMode.select(it) },
+                summary = fameScopeSummary(fame),
             )
         }
     }
