@@ -57,6 +57,8 @@ sealed interface Route : NavKey {
     @Serializable data class ReplyDetail(val oid: Long, val type: Int, val rpid: Long) : Route
     @Serializable data class Opus(val id: String, val title: String = "") : Route
     @Serializable data class Read(val cvid: Long, val title: String = "") : Route
+    /** Native vote page (t.bilibili.com/vote links, the vote block of a dynamic). */
+    @Serializable data class Vote(val voteId: Long, val dynamicId: String = "", val title: String = "") : Route
 
     // ── Library (mine) ──────────────────────────────────────────────────────
     @Serializable data class Fav(val mid: Long = 0) : Route
