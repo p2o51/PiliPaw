@@ -11,6 +11,6 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#FF0E4430"
+        android:fillColor="@color/splash_background"
         android:pathData="M0,0H108V108H0Z"/>
 </vector>

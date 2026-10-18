@@ -73,14 +73,6 @@ internal fun AboutContent(showBack: Boolean) {
                     trailing = { LaunchGlyph() },
                 )
             }
-            item {
-                SettingsItem(
-                    title = "开源许可",
-                    icon = PiliSymbols.Article,
-                    onClick = { open(LicenseUrl) },
-                    trailing = { ValueLabel("GPL-3.0") },
-                )
-            }
         }
         SettingsGroup("设计") {
             item {
@@ -106,6 +98,14 @@ internal fun AboutContent(showBack: Boolean) {
                     title = "版本",
                     icon = YoinSymbols.Info,
                     trailing = { ValueLabel("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})") },
+                )
+            }
+            item {
+                SettingsItem(
+                    title = "开源许可",
+                    icon = PiliSymbols.Article,
+                    onClick = { open(LicenseUrl) },
+                    trailing = { ValueLabel("GPL-3.0") },
                 )
             }
         }

@@ -1,10 +1,10 @@
 # PiliPaw
 
-PiliPaw (霹雳啵) is a Jetpack Compose rewrite of PiliPala, the Flutter Bilibili client by [guozhigq/pilipala](https://github.com/guozhigq/pilipala); it is not related to PiliPawa (噼哩啪哇).
+PiliPaw (霹雳啵) is a Jetpack Compose rewrite of PiliPala, the Flutter Bilibili client by guozhigq ([guozhigq/pilipala](https://github.com/guozhigq/pilipala)); it is not related to PiliPawa (噼哩啪哇).
 
 A third-party Bilibili client in the Yoin design language: Material 3 Expressive, system dynamic color with cover-driven palettes on detail pages, Google Sans Flex, continuous corners, spring motion, Yoin Symbols.
 
-基于 [guozhigq/pilipala](https://github.com/guozhigq/pilipala)（PiliPala）重写，GPL-3.0.
+基于 [guozhigq/pilipala](https://github.com/guozhigq/pilipala)（PiliPala）重写。PiliPaw 以 GPL-3.0 发布，见 [LICENSE](LICENSE)。
 
 ## Build
 

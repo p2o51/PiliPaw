@@ -61,6 +61,9 @@ class MainActivity : ComponentActivity() {
     /** Compose has laid out its first frame: the splash may go. */
     private var firstLayout = false
 
+    private var handoff: SplashHandoff? = null
+    private var giveUp: Runnable? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         enableEdgeToEdge(
@@ -68,8 +71,8 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
-        window.isNavigationBarContrastEnforced = false
-        val handoff = SplashHandoff(window)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
+        val handoff = SplashHandoff(window).also { this.handoff = it }
         installHandoff(splash, handoff, savedInstanceState)
         lifecycleScope.launch {
             BiliClient.ensureBuvid()
@@ -136,7 +139,7 @@ class MainActivity : ComponentActivity() {
         // Below 12 the compat splash draws inside this window, under the app's bar appearance.
         if (savedInstanceState == null && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) handoff.coverBars()
         // Android 12+ calls the exit listener only for a splash it actually showed.
-        window.decorView.postDelayed(handoff::abandonIfWaiting, SplashGiveUpMs)
+        giveUp = Runnable(handoff::abandonIfWaiting).also { window.decorView.postDelayed(it, SplashGiveUpMs) }
         splash.setOnExitAnimationListener { provider ->
             if (savedInstanceState != null || !ValueAnimator.areAnimatorsEnabled()) {
                 handoff.skip(provider::remove)
@@ -210,12 +213,20 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
+    override fun onDestroy() {
+        giveUp?.let(window.decorView::removeCallbacks)
+        giveUp = null
+        super.onDestroy()
+    }
+
     private fun handleIntent(intent: Intent?) {
         // The launcher, the live notification and the widget's open-the-app tap just bring the
         // app forward. Glance stamps a data-less intent with a glance-action: URI, which is no link.
         if (intent == null || intent.action == Intent.ACTION_MAIN) return
         if (intent.data?.scheme == GlanceActionScheme) return
         val data = intent.dataString ?: return
+        // A page is about to cover the home: the handoff fades instead of flying to its avatar.
+        handoff?.divert()
         AppShortcuts.route(this, intent)?.let { route ->
             deepLinks.trySend(DeepLink(route, resume = false, shortcut = true))
             return

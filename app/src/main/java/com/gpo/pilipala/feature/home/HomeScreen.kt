@@ -178,7 +178,11 @@ fun HomeScreen() {
             onLongClick = { i -> tabs.getOrNull(i)?.feedId?.let { managing = it } },
             longClickable = { i -> tabs.getOrNull(i)?.feedId != null },
             trailing = if (feeds.size < MaxFeeds) {
-                { SegmentIconChip(YoinSymbols.Add, contentDescription = "新建 Feed", onClick = { nav.push(Route.FeedEditor()) }) }
+                {
+                    Box(Modifier.splashReveal()) {
+                        SegmentIconChip(YoinSymbols.Add, contentDescription = "新建 Feed", onClick = { nav.push(Route.FeedEditor()) })
+                    }
+                }
             } else {
                 null
             },

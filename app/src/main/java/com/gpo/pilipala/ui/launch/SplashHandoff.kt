@@ -1,5 +1,9 @@
 package com.gpo.pilipala.ui.launch
 
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import android.os.SystemClock
 import android.view.Window
 import androidx.compose.animation.core.Animatable
@@ -124,6 +128,7 @@ class SplashHandoff(window: Window) {
     fun begin(fly: Boolean, iconCenter: Offset, iconUnit: Float, windowSize: Size, density: Float, remove: () -> Unit) {
         if (phase != Phase.Waiting) {
             remove()
+            bars.releaseAll()
             return
         }
         this.iconCenter = iconCenter
@@ -142,7 +147,29 @@ class SplashHandoff(window: Window) {
                 remove()
             }
         }
-        phase = if (fly && iconUnit > 0f) Phase.Flying else Phase.Fading
+        phase = if (fly && !diverted && iconUnit > 0f) Phase.Flying else Phase.Fading
+    }
+
+    private var diverted = false
+
+    /** A link is opening a page over the home: a handoff that has not started yet only fades. */
+    fun divert() {
+        diverted = true
+    }
+
+    /**
+     * The window changed size (rotation, resize) while the overlay is up: the iris starts from
+     * whatever covers the new window, so no corner of the home shows.
+     */
+    internal fun fitTo(size: Size, density: Float) {
+        if (size == windowSize || size.width <= 0f) return
+        windowSize = size
+        r0 = maxOf(
+            hypot(iconCenter.x, iconCenter.y),
+            hypot(size.width - iconCenter.x, iconCenter.y),
+            hypot(iconCenter.x, size.height - iconCenter.y),
+            hypot(size.width - iconCenter.x, size.height - iconCenter.y),
+        ) + IrisMargin.value * density
     }
 
     /** No handoff (animations are off, or the activity came back): straight to the end state. */
@@ -161,6 +188,7 @@ class SplashHandoff(window: Window) {
 
     private fun finish() {
         removeSplash?.invoke()
+        removeSplash = null
         bars.releaseAll()
         phase = Phase.Done
     }
@@ -264,31 +292,28 @@ class SplashHandoff(window: Window) {
         return 1f - exp(-zw * t) * (cos(wd * t) + zw / wd * sin(wd * t))
     }
 
-    /** Light bar icons while the forest field covers that bar; the app's own appearance after. */
+    /**
+     * Light bar icons while the forest field covers that bar; the app's own appearance after.
+     * The app's appearance is read once, at construction (after enableEdgeToEdge, before any
+     * splash callback): on Android 12/12L core-splashscreen rewrites it from the window theme
+     * when the splash goes, so it cannot be read back later. Every release writes it back.
+     */
     private class BarTint(window: Window) {
         private val controller = WindowCompat.getInsetsController(window, window.decorView)
-        private var status: Boolean? = null
-        private var navigation: Boolean? = null
+        private val appStatus = controller.isAppearanceLightStatusBars
+        private val appNavigation = controller.isAppearanceLightNavigationBars
 
         fun cover() {
-            if (status == null) {
-                status = controller.isAppearanceLightStatusBars
-                controller.isAppearanceLightStatusBars = false
-            }
-            if (navigation == null) {
-                navigation = controller.isAppearanceLightNavigationBars
-                controller.isAppearanceLightNavigationBars = false
-            }
+            controller.isAppearanceLightStatusBars = false
+            controller.isAppearanceLightNavigationBars = false
         }
 
         fun releaseStatus() {
-            status?.let { controller.isAppearanceLightStatusBars = it }
-            status = null
+            controller.isAppearanceLightStatusBars = appStatus
         }
 
         fun releaseNavigation() {
-            navigation?.let { controller.isAppearanceLightNavigationBars = it }
-            navigation = null
+            controller.isAppearanceLightNavigationBars = appNavigation
         }
 
         fun releaseAll() {
@@ -336,7 +361,19 @@ fun SplashHandoffOverlay(handoff: SplashHandoff) {
     val fastEffects = YoinMotion.fastEffectsSpec<Float>()
     val defaultEffects = YoinMotion.defaultEffectsSpec<Float>()
     LaunchedEffect(handoff) { handoff.run(fastEffects, defaultEffects) }
-    Canvas(Modifier.fillMaxSize().onGloballyPositioned { origin.value = it.positionInWindow() }) {
+    val density = LocalDensity.current.density
+    Canvas(
+        Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { origin.value = it.positionInWindow() }
+            .onSizeChanged { handoff.fitTo(Size(it.width.toFloat(), it.height.toFloat()), density) }
+            // Under the green the home is hidden but live: taps must not reach it (under a second).
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                }
+            },
+    ) {
         val o = origin.value
         val slot = if (handoff.flightStarted) handoff.avatarBounds ?: handoff.target else null
         if (slot == null) {
