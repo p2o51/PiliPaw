@@ -3,6 +3,7 @@ package com.gpo.pilipala.feature.live
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.Animatable
@@ -43,10 +44,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.ui.compose.ContentFrame
 import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
+import com.gpo.pilipala.feature.player.PipSignals
 import com.gpo.pilipala.feature.player.rememberLandscapeTurn
 import com.gpo.pilipala.feature.player.turnedContent
 import com.gpo.pilipala.ui.components.NetImage
@@ -80,8 +85,12 @@ internal fun LivePlayerView(
     modifier: Modifier = Modifier,
     pip: Boolean = false,
     onPip: (() -> Unit)? = null,
+    /** Where the picture's frame sits in the window (null while it is turned by hand), for the PiP hint. */
+    onPictureBounds: ((Rect?) -> Unit)? = null,
 ) {
     val info = vm.info
+    // On its way into PiP (or there): only the clean picture, no chrome or danmaku.
+    val pipClean = pip || PipSignals.entering
     val haptic = LocalHapticFeedback.current
     var chromeVisible by remember { mutableStateOf(true) }
     var tapCount by remember { mutableStateOf(0) }
@@ -128,7 +137,20 @@ internal fun LivePlayerView(
                 tapCount++
             },
     ) {
-        Box(Modifier.fillMaxSize().turnedContent(turned) { turnAngle.value }) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .then(
+                    if (onPictureBounds != null) {
+                        Modifier.onGloballyPositioned { c ->
+                            if (!pip) onPictureBounds(if (turned || turnAngle.value != 0f) null else c.boundsInWindow())
+                        }
+                    } else {
+                        Modifier
+                    },
+                )
+                .turnedContent(turned) { turnAngle.value },
+        ) {
             if (live) {
                 // The video view is rebuilt whenever its frame changes size (inline ⇄ fullscreen,
                 // window resize). On some devices a resized SurfaceView keeps its old size and the
@@ -142,7 +164,7 @@ internal fun LivePlayerView(
                         contentScale = ContentScale.Fit,
                     )
                 }
-                LiveDanmakuLayer(vm.incoming, enabled = vm.danmakuOn && !pip, big = fullscreen, modifier = Modifier.fillMaxSize())
+                LiveDanmakuLayer(vm.incoming, enabled = vm.danmakuOn && !pipClean, big = fullscreen, modifier = Modifier.fillMaxSize())
             } else {
                 val cover = info?.cover?.ifEmpty { info.background }.orEmpty()
                 NetImage(
@@ -179,9 +201,10 @@ internal fun LivePlayerView(
             }
 
             AnimatedVisibility(
-                visible = chromeVisible && !pip,
+                visible = chromeVisible && !pipClean,
                 enter = fadeIn(YoinMotion.defaultEffectsSpec()),
-                exit = fadeOut(YoinMotion.defaultEffectsSpec()),
+                // Into PiP the chrome leaves at once, so the flight carries only the picture.
+                exit = if (pipClean) ExitTransition.None else fadeOut(YoinMotion.defaultEffectsSpec()),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 Box(Modifier.fillMaxSize()) {

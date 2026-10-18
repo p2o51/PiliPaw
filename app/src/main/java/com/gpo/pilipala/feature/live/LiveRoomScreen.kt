@@ -99,8 +99,14 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.CoverTheme
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
+import com.gpo.pilipala.ui.theme.rememberRichHaptics
+import com.gpo.pilipala.feature.player.PipSignals
+import com.gpo.pilipala.feature.player.pipHintRect
+import com.gpo.pilipala.feature.player.pipSupported
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -120,19 +126,42 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
     val wc = widthClass()
     val activity = LocalActivity.current
     val pip = rememberIsInPip()
-    val enterPip: (() -> Unit)? = activity?.takeIf {
-        it.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
-    }?.let { act ->
+    // Where the picture sits in the window (reported by LivePlayerView), for the PiP flight.
+    val pipBox = remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val rich = rememberRichHaptics()
+    val pipScope = rememberCoroutineScope()
+    val onPip: (() -> Unit)? = activity?.takeIf { pipSupported(it) }?.let { act ->
         {
-            runCatching {
-                act.enterPictureInPictureMode(
-                    android.app.PictureInPictureParams.Builder()
-                        .setAspectRatio(if (vm.isPortraitStream) android.util.Rational(9, 16) else android.util.Rational(16, 9))
-                        .build(),
+            // Like the video player: the chrome and danmaku leave first, two frames later the
+            // system gets the clean picture's rect (it flies exactly that out of the page) and
+            // the room's title and anchor to name the window.
+            rich.liftOff()
+            PipSignals.entering = true
+            pipScope.launch {
+                withFrameNanos { }
+                withFrameNanos { }
+                val aspect = liveAspect(vm)
+                val ok = com.gpo.pilipala.feature.player.enterPip(
+                    act,
+                    aspect,
+                    hint = pipBox.value?.let { pipHintRect(it, aspect) },
+                    title = vm.info?.title?.ifBlank { null } ?: route.title.ifBlank { null },
+                    subtitle = vm.info?.anchorName?.ifBlank { null },
                 )
+                if (!ok) PipSignals.entering = false
             }
         }
     }
+    LaunchedEffect(pip, PipSignals.entering) {
+        if (pip) {
+            PipSignals.entering = false
+        } else if (PipSignals.entering) {
+            // A flight that never reports landing (or was called off) must not leave the chrome hidden.
+            delay(PipEnteringTimeoutMs)
+            if (activity?.isInPictureInPictureMode != true) PipSignals.entering = false
+        }
+    }
+    val onPictureBounds: (androidx.compose.ui.geometry.Rect?) -> Unit = { if (!pip) pipBox.value = it }
 
     FullscreenEffect(fullscreen, portrait = vm.isPortraitStream)
     DarkStatusBarEffect(enabled = !fullscreen && wc != WidthClass.Expanded)
@@ -164,7 +193,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
         val toggleFs: () -> Unit = { fullscreen = !fullscreen }
         when {
             pip -> LivePlayerView(vm, true, toggleFs, onBack, Modifier.fillMaxSize(), pip = true)
-            fullscreen -> LivePlayerView(vm, true, toggleFs, onBack, Modifier.fillMaxSize(), onPip = enterPip)
+            fullscreen -> LivePlayerView(vm, true, toggleFs, onBack, Modifier.fillMaxSize(), onPip = onPip, onPictureBounds = onPictureBounds)
             wc == WidthClass.Expanded -> Row(
                 Modifier
                     .fillMaxSize()
@@ -179,7 +208,8 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
                             .clip(YoinContainerShapes.Card),
-                        onPip = enterPip,
+                        onPip = onPip,
+                        onPictureBounds = onPictureBounds,
                     )
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         AnchorBlock(vm, route, Modifier.padding(top = 8.dp))
@@ -199,7 +229,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
             }
             else -> Column(Modifier.fillMaxSize()) {
                 Box(Modifier.background(Color.Black).statusBarsPadding()) {
-                    LivePlayerView(vm, false, toggleFs, onBack, Modifier.fillMaxWidth().aspectRatio(16f / 9f), onPip = enterPip)
+                    LivePlayerView(vm, false, toggleFs, onBack, Modifier.fillMaxWidth().aspectRatio(16f / 9f), onPip = onPip, onPictureBounds = onPictureBounds)
                 }
                 AnchorBlock(vm, route)
                 Box(
@@ -537,6 +567,18 @@ private fun rememberIsInPip(): Boolean {
         onDispose { activity.removeOnPictureInPictureModeChangedListener(listener) }
     }
     return pip
+}
+
+/** How long the chrome stays down for a PiP flight that never reports landing. */
+private const val PipEnteringTimeoutMs = 2500L
+
+/** The stream's picture aspect (from the decoder once it knows), for the PiP window and its hint. */
+private fun liveAspect(vm: LiveRoomViewModel): Float {
+    val size = runCatching { vm.player.videoSize }.getOrNull()
+    if (size != null && size.width > 0 && size.height > 0) {
+        return size.width * size.pixelWidthHeightRatio / size.height
+    }
+    return if (vm.isPortraitStream) 9f / 16f else 16f / 9f
 }
 
 /**
