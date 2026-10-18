@@ -49,6 +49,7 @@ import com.gpo.pilipala.feature.player.PlayerPageHooks
 import com.gpo.pilipala.feature.player.attachQueue
 import com.gpo.pilipala.feature.player.rememberBiliPlayerState
 import com.gpo.pilipala.feature.reply.ReplyList
+import com.gpo.pilipala.feature.video.portrait.PortraitVideoLayout
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.EmptyState
@@ -136,7 +137,19 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         gate { if (vm.up.following) confirmUnfollow = true else vm.up.toggle() }
     }
 
-    DetailScaffold(
+    // Portrait videos: the Douyin-style immersive pager (feature/video/portrait); the choice is
+    // made once the detail arrives and then sticks for the page.
+    if (vm.immersive == true) {
+        PortraitVideoLayout(
+            vm = vm,
+            playerState = playerState,
+            gate = gate,
+            onCoin = { gate { sheet = VideoSheet.Coin } },
+            onFav = { gate { sheet = VideoSheet.Fav } },
+            onTriple = { gate { sheet = VideoSheet.Triple } },
+            onFollow = onFollow,
+        )
+    } else DetailScaffold(
         fullscreen = vm.fullscreen,
         onExitFullscreen = { vm.fullscreen = false },
         player = player,

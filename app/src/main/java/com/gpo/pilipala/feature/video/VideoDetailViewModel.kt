@@ -1,6 +1,7 @@
 package com.gpo.pilipala.feature.video
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -9,6 +10,9 @@ import androidx.lifecycle.viewModelScope
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.asArr
 import com.gpo.pilipala.core.net.asObj
+import com.gpo.pilipala.core.net.int
+import com.gpo.pilipala.core.net.long
+import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.IdUtils
@@ -23,6 +27,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 
 class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
     var bvid by mutableStateOf(route.bvid.ifEmpty { if (route.aid > 0) IdUtils.av2bv(route.aid) else "" })
@@ -57,6 +62,26 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
     var relatedLoading by mutableStateOf(true)
         private set
     var tags by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    /** Width / height of the current video's picture (view API `dimension`, rotate applied); 0 = unknown. */
+    var videoAspect by mutableFloatStateOf(0f)
+        private set
+
+    /** The same aspect for each related video, by bvid. */
+    var relatedAspects by mutableStateOf<Map<String, Float>>(emptyMap())
+        private set
+
+    /** The bvid [related] was loaded for. */
+    var relatedFor by mutableStateOf("")
+        private set
+
+    /**
+     * The page's layout: null until the first detail decides, then sticky. True for a portrait
+     * video outside a play queue → the immersive vertical player (feature/video/portrait), which
+     * keeps it while the user pages through other videos (landscape ones included).
+     */
+    var immersive by mutableStateOf<Boolean?>(null)
         private set
 
     /** Set when the archive is really a bangumi episode → the screen replaces itself. */
@@ -104,13 +129,20 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
             val params = if (bvid.isNotEmpty()) mapOf("bvid" to bvid) else mapOf("aid" to route.aid)
             val relatedJob = async { loadRelated() }
             val tagsJob = async { loadTags() }
-            runCatching { parseVideoDetail(BiliClient.getData("/x/web-interface/wbi/view", params, wbi = true).asObj!!) }
+            var aspect = 0f
+            runCatching {
+                val obj = BiliClient.getData("/x/web-interface/wbi/view", params, wbi = true).asObj!!
+                aspect = obj.obj("dimension").pictureAspect()
+                parseVideoDetail(obj)
+            }
                 .onSuccess { d ->
                     val ep = Regex("""/bangumi/play/ep(\d+)""").find(d.redirectUrl)?.groupValues?.get(1)?.toLongOrNull()
                     if (ep != null) {
                         redirect = Route.Bangumi(epId = ep, cover = d.pic)
                         return@launch
                     }
+                    videoAspect = aspect
+                    if (immersive == null) immersive = queue == null && aspect > 0f && aspect < 1f
                     detail = d
                     if (bvid.isEmpty()) bvid = d.bvid
                     val knownCid = cid.takeIf { c -> c > 0 && (d.pages.any { it.cid == c } || d.season?.episodes?.any { it.cid == c } == true) }
@@ -141,9 +173,33 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
 
     private suspend fun loadRelated() {
         relatedLoading = true
+        val forBvid = bvid
         runCatching { BiliClient.getData("/x/web-interface/archive/related", mapOf("bvid" to bvid.ifEmpty { null }, "aid" to route.aid.takeIf { bvid.isEmpty() })) }
-            .onSuccess { el -> related = el.asArr?.objects()?.map { it.toVideoItem() }?.filter { it.bvid.isNotEmpty() }.orEmpty() }
+            .onSuccess { el ->
+                val objs = el.asArr?.objects().orEmpty().filter { it.str("bvid").isNotEmpty() }
+                relatedAspects = relatedAspects + objs.associate { it.str("bvid") to it.obj("dimension").pictureAspect() }
+                related = objs.map { it.toVideoItem() }
+                relatedFor = forBvid
+            }
         relatedLoading = false
+    }
+
+    /**
+     * Immersive paging: make [item] the page's video in place (player target, intro, relation,
+     * related). The page stays; system back still leaves it.
+     */
+    fun openInPlace(item: VideoItem) {
+        if (item.bvid.isEmpty() || item.bvid == bvid) return
+        bvid = item.bvid
+        cid = item.cid.coerceAtLeast(0)
+        // Unknown cid: no target until the detail resolves it (the layout pauses the last video).
+        target = if (item.cid > 0) {
+            PlayTarget(bvid = item.bvid, aid = item.aid, cid = item.cid, title = item.title, cover = item.cover)
+        } else {
+            null
+        }
+        tags = emptyList()
+        load(keepContent = true)
     }
 
     private suspend fun loadTags() {
@@ -196,6 +252,7 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
 
     private fun step(delta: Int, apply: Boolean): Boolean {
         if (queue != null) return false // the queue decides (the player steps it)
+        if (immersive == true) return false // the immersive pager decides (it loops a video)
         val d = detail ?: return false
         if (d.pages.size > 1) {
             val i = d.pages.indexOfFirst { it.cid == cid }
@@ -214,4 +271,12 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
         }
         return false
     }
+}
+
+/** Width / height from a view `dimension` object ({width, height, rotate}); 0 when unknown. */
+private fun JsonObject?.pictureAspect(): Float {
+    val w = long("width")
+    val h = long("height")
+    if (w <= 0 || h <= 0) return 0f
+    return if (int("rotate") == 1) h.toFloat() / w else w.toFloat() / h
 }
