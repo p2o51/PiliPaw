@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 继续看 (feature/widget/WatchWidget): default 4x2; resizes from 2x2 (继续看 alone) up to tall
+     (继续看 over 稍后再看). The layout follows the size bucket (SizeMode.Responsive). Hourly
+     refresh keeps the 稍后再看 rows current while the app is closed. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_watch_description"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:previewLayout="@layout/widget_watch_preview"
+    android:previewImage="@drawable/widget_watch_preview_image"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
+    android:maxResizeWidth="900dp"
+    android:maxResizeHeight="900dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="3600000"
+    android:widgetCategory="home_screen" />

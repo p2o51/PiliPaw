@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 继续看 home-screen widget (feature/widget). -->
+    <string name="widget_watch_label">继续看</string>
+    <string name="widget_watch_description">继续看和稍后再看</string>
+    <string name="widget_preview_title">继续看</string>
+    <string name="widget_preview_later">稍后再看</string>
+
+    <!-- The picker's preview layout; Android 12+ takes the wallpaper's tones instead (values-v31). -->
+    <color name="widget_preview_surface">#FFF7EEF0</color>
+    <color name="widget_preview_block">#FFFFD9E2</color>
+    <color name="widget_preview_cover">#FFE2BDC6</color>
+    <color name="widget_preview_on_surface">#FF22191C</color>
+    <color name="widget_preview_on_block">#FF5C1130</color>
+    <color name="widget_preview_primary">#FF8E4957</color>
+</resources>

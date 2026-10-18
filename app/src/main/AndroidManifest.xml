@@ -67,6 +67,19 @@
             </intent-filter>
         </service>
 
+        <!-- 继续看 home-screen widget (feature/widget, Glance). -->
+        <receiver
+            android:name=".feature.widget.WatchWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_watch_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_watch_info" />
+        </receiver>
+
         <!-- Live room background audio (feature/live); media3 action only, nothing to resume from SystemUI. -->
         <service
             android:name=".feature.live.LivePlaybackService"
