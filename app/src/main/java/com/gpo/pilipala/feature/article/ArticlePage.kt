@@ -110,7 +110,8 @@ internal object ArticleApi {
 // ── State ───────────────────────────────────────────────────────────────────
 
 internal sealed interface ArticleBody {
-    class Paragraphs(val json: JsonArray) : ArticleBody
+    /** [dynamicId]: the opus id when the paragraphs come from an opus (vote cards cast with it). */
+    class Paragraphs(val json: JsonArray, val dynamicId: String = "") : ArticleBody
     class Html(val html: String) : ArticleBody
 }
 
@@ -129,7 +130,7 @@ internal sealed interface ArticleState {
 
 internal fun OpusDoc.toDocument(fallbackOid: Long = 0, fallbackType: Int = 12) = ArticleDocument(
     header = header,
-    body = ArticleBody.Paragraphs(paragraphs),
+    body = ArticleBody.Paragraphs(paragraphs, dynamicId = id),
     commentOid = commentOid.takeIf { it > 0 } ?: fallbackOid,
     commentType = if (commentOid > 0) commentType else fallbackType,
 )
@@ -229,7 +230,7 @@ private fun ArticleBodyView(doc: ArticleDocument) {
             val style = ParseStyle(primary, bodySize)
             runCatching {
                 when (val b = doc.body) {
-                    is ArticleBody.Paragraphs -> parseOpusParagraphs(b.json, style)
+                    is ArticleBody.Paragraphs -> parseOpusParagraphs(b.json, style, b.dynamicId)
                     is ArticleBody.Html -> parseHtml(b.html, style)
                 }
             }.getOrElse { ParsedArticle(emptyList(), emptyList()) }

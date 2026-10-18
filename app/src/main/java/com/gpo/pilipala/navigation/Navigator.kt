@@ -58,9 +58,10 @@ object LinkRouter {
         val path = uri.path.orEmpty()
         val segs = uri.pathSegments
         IdUtils.findBvid(url)?.let { if (host.contains("bilibili") || uri.scheme == "bilibili" || host.contains("b23")) return Route.Video(it) }
-        // Votes: t.bilibili.com/vote/h5/index/#/result?vote_id=…, or any bilibili link carrying
-        // vote_id in its query or fragment, open the native vote page.
-        if (host.contains("bilibili.com") || uri.scheme == "bilibili") {
+        // Votes: the web vote page t.bilibili.com/vote/h5/index/#/result?vote_id=… (also what inline
+        // RICH_TEXT_NODE_TYPE_VOTE links point at) opens the native vote page. Other pages that
+        // merely carry a vote_id (activity pages in the WebView) stay where they are.
+        if (host.equals("t.bilibili.com", ignoreCase = true) && path.startsWith("/vote/")) {
             VoteIdRegex.find(url)?.groupValues?.get(1)?.toLongOrNull()?.takeIf { it > 0 }?.let { voteId ->
                 val dynId = DynamicIdRegex.find(url)?.groupValues?.get(1).orEmpty()
                 return Route.Vote(voteId, dynamicId = dynId.takeIf { it.isDigitId() }.orEmpty(), title = title)

@@ -182,6 +182,7 @@ internal class DynamicsViewModel : ViewModel() {
     }
 
     fun refreshAll() {
+        VoteStore.invalidate()
         pager.refresh()
         viewModelScope.launch { runCatching { DynamicsApi.portal() }.onSuccess { portal = it } }
     }
