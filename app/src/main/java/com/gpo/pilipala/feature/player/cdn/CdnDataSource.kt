@@ -16,7 +16,9 @@ class CdnSwitchException : IOException("CDN line switched")
  */
 class CdnDataSource(private val upstream: DataSource) : DataSource {
     private companion object {
-        const val BusyGapNanos = 100_000_000L
+        const val BusyGapNanos = 250_000_000L
+        const val MinMeasureNanos = 300_000_000L
+        const val MinMeasureBytes = 512L * 1024
     }
 
     class Factory(private val upstream: DataSource.Factory) : DataSource.Factory {
@@ -71,7 +73,6 @@ class CdnDataSource(private val upstream: DataSource) : DataSource {
             generation = CdnRouter.abortGeneration()
             if (next != host) throw CdnSwitchException()
         }
-        val t0 = System.nanoTime()
         val n = try {
             upstream.read(buffer, offset, length)
         } catch (e: IOException) {
@@ -81,14 +82,19 @@ class CdnDataSource(private val upstream: DataSource) : DataSource {
         if (n > 0) {
             bytes += n
             if (isVideo) {
-                val end = System.nanoTime()
-                val gap = if (lastReadEnd == 0L) Long.MAX_VALUE else t0 - lastReadEnd
-                activeNanos += if (gap in 0 until BusyGapNanos) end - lastReadEnd else end - t0
-                lastReadEnd = end
+                // Goodput = bytes over wall time while the loader keeps asking for data.
+                // A pause longer than BusyGapNanos means ExoPlayer stopped loading (buffer
+                // full) — that idle time is cut out. Time inside read() alone can't be used:
+                // OkHttp fills its buffer in the background and read() drains it at memory
+                // speed, which reported 300–900 Mbps.
+                val now = System.nanoTime()
+                val gap = if (lastReadEnd == 0L) Long.MAX_VALUE else now - lastReadEnd
+                if (gap < BusyGapNanos) activeNanos += gap
+                lastReadEnd = now
                 windowBytes += n
-                val now = System.currentTimeMillis()
-                if (now - lastReportAt >= 1_000) {
-                    lastReportAt = now
+                val nowMs = System.currentTimeMillis()
+                if (nowMs - lastReportAt >= 1_000) {
+                    lastReportAt = nowMs
                     samples.addLast(longArrayOf(windowBytes, activeNanos))
                     windowBytes = 0
                     activeNanos = 0
@@ -104,7 +110,10 @@ class CdnDataSource(private val upstream: DataSource) : DataSource {
                     }
                     samples.clear()
                     samples.addAll(keep)
-                    if (t > 0) CdnRouter.onVideoProgress(original, host, position + bytes, b, t / 1_000_000)
+                    // Only judge a window with real transfer behind it.
+                    if (t >= MinMeasureNanos && b >= MinMeasureBytes) {
+                        CdnRouter.onVideoProgress(original, host, position + bytes, b, t / 1_000_000)
+                    }
                 }
             }
         }
