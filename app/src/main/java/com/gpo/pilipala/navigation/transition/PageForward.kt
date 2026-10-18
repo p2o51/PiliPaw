@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -43,16 +44,20 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.node.LayoutAwareModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.requireDensity
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.toSize
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.gpo.pilipala.navigation.Route
@@ -74,30 +79,48 @@ private const val ContainerScrimAlpha = 0.32f
  * (container transform). Only registers the card and keeps a reference to
  * its layout — its bounds are resolved at the push, not on every scroll
  * frame — inert when the route has no shared key or outside the NavDisplay.
+ *
+ * [solidColor] marks a source that is a colour block with a glyph (a FAB):
+ * the container then starts as that colour, easing to the page surface, not
+ * as the source's pixels blown up to the window; its corner opens from
+ * [shape]'s (a [CornerBasedShape]) instead of the card's 12dp.
  */
 @Composable
-fun Modifier.pageSharedSource(route: Route): Modifier {
+fun Modifier.pageSharedSource(
+    route: Route,
+    solidColor: Color = Color.Unspecified,
+    shape: Shape? = null,
+): Modifier {
     val key = route.sharedKey() ?: return this
     val transitions = LocalPageTransitions.current ?: return this
-    return this then PageSharedSourceElement(transitions, key)
+    return this then PageSharedSourceElement(transitions, key, solidColor, shape)
 }
 
 private class PageSharedSourceElement(
     val transitions: PageTransitions,
     val key: String,
+    val solid: Color,
+    val shape: Shape?,
 ) : ModifierNodeElement<PageSharedSourceNode>() {
-    override fun create() = PageSharedSourceNode(transitions, key)
+    override fun create() = PageSharedSourceNode(transitions, key, solid, shape)
 
-    override fun update(node: PageSharedSourceNode) = node.update(transitions, key)
+    override fun update(node: PageSharedSourceNode) = node.update(transitions, key, solid, shape)
 
     override fun equals(other: Any?): Boolean =
-        other is PageSharedSourceElement && other.transitions === transitions && other.key == key
+        other is PageSharedSourceElement && other.transitions === transitions && other.key == key &&
+            other.solid == solid && other.shape == shape
 
-    override fun hashCode(): Int = 31 * System.identityHashCode(transitions) + key.hashCode()
+    override fun hashCode(): Int {
+        var h = 31 * System.identityHashCode(transitions) + key.hashCode()
+        h = 31 * h + solid.hashCode()
+        return 31 * h + (shape?.hashCode() ?: 0)
+    }
 
     override fun InspectorInfo.inspectableProperties() {
         name = "pageSharedSource"
         properties["key"] = key
+        properties["solidColor"] = solid
+        properties["shape"] = shape
     }
 }
 
@@ -109,6 +132,8 @@ private class PageSharedSourceElement(
 private class PageSharedSourceNode(
     private var transitions: PageTransitions,
     private var key: String,
+    private var solid: Color,
+    private var shape: Shape?,
 ) : Modifier.Node(), LayoutAwareModifierNode {
     private var coordinates: LayoutCoordinates? = null
 
@@ -123,16 +148,35 @@ private class PageSharedSourceNode(
     override fun onPlaced(coordinates: LayoutCoordinates) {
         this.coordinates = coordinates
         transitions.noteSourceCoordinates(key, coordinates)
+        noteLook(coordinates)
     }
 
-    fun update(transitions: PageTransitions, key: String) {
-        if (transitions === this.transitions && key == this.key) return
+    /** Solid sources only (a FAB, not list cards): their colour and corner, px. */
+    private fun noteLook(coordinates: LayoutCoordinates) {
+        if (!solid.isSpecified) return
+        val corner = (shape as? CornerBasedShape)?.topStart
+            ?.toPx(coordinates.size.toSize(), requireDensity())
+            ?: Float.NaN
+        transitions.noteSourceLook(key, solid, corner)
+    }
+
+    fun update(transitions: PageTransitions, key: String, solid: Color, shape: Shape?) {
+        val lookChanged = solid != this.solid || shape != this.shape
+        this.solid = solid
+        this.shape = shape
+        if (transitions === this.transitions && key == this.key) {
+            if (lookChanged && isAttached) coordinates?.let { noteLook(it) }
+            return
+        }
         if (isAttached) this.transitions.unregisterSource(this.key, coordinates)
         this.transitions = transitions
         this.key = key
         if (isAttached) {
             transitions.registerSource(key)
-            coordinates?.let { transitions.noteSourceCoordinates(key, it) }
+            coordinates?.let {
+                transitions.noteSourceCoordinates(key, it)
+                noteLook(it)
+            }
         }
     }
 }
@@ -213,6 +257,7 @@ internal fun PageEntryFrame(
     }
 
     val scrimColor = MaterialTheme.colorScheme.scrim
+    val surfaceColor = MaterialTheme.colorScheme.surface
 
     Box(Modifier.fillMaxSize().voteHighFrameRate(entering)) {
         if (entering && enter != null) {
@@ -262,11 +307,9 @@ internal fun PageEntryFrame(
                     scaleY = geometry.scale
                     translationX = geometry.translationX
                     translationY = geometry.translationY
-                    val corner = containerCornerPx(
-                        s,
-                        BackMotionTokens.ContainerSourceCorner.toPx(),
-                        EnterCorner.toPx(),
-                    )
+                    val sourceCorner = enter.sourceCornerPx.takeUnless { it.isNaN() }
+                        ?: BackMotionTokens.ContainerSourceCorner.toPx()
+                    val corner = containerCornerPx(s, sourceCorner, EnterCorner.toPx())
                     // The clip lives in the page's own (unscaled) coordinates.
                     shape = LocalRectShape(geometry.local, corner / geometry.scale)
                     clip = true
@@ -278,6 +321,18 @@ internal fun PageEntryFrame(
                     val cardAlpha = 1f - fade.value.coerceIn(0f, 1f)
                     if (s >= GrowthDone || cardAlpha <= 0f) return@drawWithContent
                     val geometry = containerGeometry(transitions, enter.source, s, size) ?: return@drawWithContent
+                    if (enter.solid.isSpecified) {
+                        // A solid source (a FAB) starts as its colour, easing to the
+                        // page surface as it fades: its glyph is never blown up.
+                        val f = fade.value.coerceIn(0f, 1f)
+                        drawRect(
+                            color = lerp(enter.solid, surfaceColor, f),
+                            topLeft = geometry.local.topLeft,
+                            size = geometry.local.size,
+                            alpha = cardAlpha,
+                        )
+                        return@drawWithContent
+                    }
                     // The container starts as the card itself — its pixels,
                     // scaled to fill — and they fade off the opaque page.
                     // (Fading the page in instead needs a full-window

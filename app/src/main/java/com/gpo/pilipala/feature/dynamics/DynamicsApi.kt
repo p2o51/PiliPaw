@@ -10,6 +10,7 @@ import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.mutableStateMapOf
 import com.gpo.pilipala.core.net.BiliClient
@@ -29,29 +30,42 @@ import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.core.util.IdUtils
-import com.gpo.pilipala.feature.reply.EmoteCache
 import com.gpo.pilipala.navigation.LinkRouter
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Page
-import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
+import java.io.File
+import java.io.FileNotFoundException
+import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resumeWithException
 import kotlin.math.max
+import kotlin.math.sqrt
+import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import kotlin.random.Random
+import okhttp3.Response
+import okio.BufferedSink
+import okio.source
 
 // ── Endpoints (mirrors http/dynamics.dart + http/member.dart) ───────────────
 
@@ -207,143 +221,178 @@ internal object DynamicsApi {
 
     /**
      * Uploads one picture for a new dynamic (multipart `file_up`, biz new_dyn).
-     * HEIF/AVIF and oversized files are re-encoded as JPEG first.
+     * A JPEG/PNG/GIF/WebP within the size limit streams straight from the
+     * picker's URI; anything else (HEIF, AVIF, oversized) is re-encoded to a
+     * JPEG temp file first. Cancelling the caller cancels the request.
      */
-    suspend fun uploadImage(resolver: ContentResolver, uri: Uri): UploadedPic = withContext(Dispatchers.IO) {
-        val file = readForUpload(resolver, uri)
-        val body = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("file_up", file.name, file.bytes.toRequestBody(file.mime.toMediaType()))
-            .addFormDataPart("category", "daily")
-            .addFormDataPart("biz", "new_dyn")
-            .addFormDataPart("csrf", BiliClient.csrf)
-            .build()
-        val req = Request.Builder().url(UPLOAD_URL).post(body).build()
-        val envelope = uploadClient.newCall(req).execute().use { resp ->
-            val text = resp.body.string()
-            if (!resp.isSuccessful && text.isBlank()) throw BiliException(resp.code, "图片上传失败 (${resp.code})")
-            BiliClient.parseEnvelope(text)
+    suspend fun uploadImage(resolver: ContentResolver, cacheDir: File, uri: Uri): UploadedPic =
+        withContext(Dispatchers.IO) {
+            val file = prepareUpload(resolver, cacheDir, uri)
+            try {
+                val body = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("file_up", file.name, file.body)
+                    .addFormDataPart("category", "daily")
+                    .addFormDataPart("biz", "new_dyn")
+                    .addFormDataPart("csrf", BiliClient.csrf)
+                    .build()
+                val req = Request.Builder().url(UPLOAD_URL).post(body).build()
+                val (status, text) = uploadClient.newCall(req).await().use { it.code to it.body.string() }
+                val root = runCatching { BiliJson.parseToJsonElement(text) as? JsonObject }.getOrNull()
+                if (status !in 200..299) {
+                    // An error page (413, 5xx …) is not a risk-control block: say what failed.
+                    val server = root?.takeIf { it.int("code", 0) != 0 }?.str("message")?.takeIf { it.isNotBlank() }
+                    throw BiliException(status, server ?: if (status == 413) "图片过大" else "图片上传失败")
+                }
+                if (root == null) throw BiliException(-1, "图片上传失败")
+                val data = BiliClient.unwrap(root).asObj
+                val url = data.str("image_url")
+                if (url.isEmpty()) throw BiliException(-1, "图片上传失败")
+                val kb = data.double("img_size").takeIf { it > 0 }
+                    ?: data.double("size").takeIf { it > 0 }
+                    ?: (file.length / 1024.0)
+                UploadedPic(url = url, width = data.int("image_width"), height = data.int("image_height"), sizeKb = kb)
+            } finally {
+                file.temp?.delete()
+            }
         }
-        val data = BiliClient.unwrap(envelope).asObj
-        val url = data.str("image_url")
-        if (url.isEmpty()) throw BiliException(-1, "图片上传失败")
-        val kb = data.double("img_size").takeIf { it > 0 }
-            ?: data.double("size").takeIf { it > 0 }
-            ?: (file.bytes.size / 1024.0)
-        UploadedPic(url = url, width = data.int("image_width"), height = data.int("image_height"), sizeKb = kb)
-    }
 
     /**
      * Publishes a new dynamic: scene 1 (text) or 2 (with [pics], uploaded first by
-     * [uploadImage]). Returns the new dynamic's id. Only ever called from the
-     * composer's send button.
+     * [uploadImage]). [uploadId] is the draft's own, reused by every retry of the
+     * same content. Returns the new dynamic's id. Only ever called from the
+     * composer's send.
+     *
+     * Throws [BiliException] when the server answered with an error (nothing was
+     * posted) and [PublishUnknownException] when no answer came back (timeout,
+     * dropped connection, an error page): the post may or may not exist.
      */
-    suspend fun createDynamic(text: String, pics: List<UploadedPic>): String {
-        val uploadId = "${BiliClient.mid}_${System.currentTimeMillis() / 1000}_${Random.nextInt(1000, 10000)}"
-        val body = buildJsonObject {
-            put(
-                "dyn_req",
-                buildJsonObject {
-                    put("content", buildJsonObject { put("contents", dynContents(text)) })
-                    put("scene", if (pics.isEmpty()) 1 else 2)
-                    if (pics.isNotEmpty()) {
+    suspend fun createDynamic(text: String, pics: List<UploadedPic>, uploadId: String): String =
+        withContext(Dispatchers.IO) {
+            val body = buildJsonObject {
+                put(
+                    "dyn_req",
+                    buildJsonObject {
+                        // One plain text segment, like the Flutter client: the server
+                        // parses the [emote] codes in it itself.
                         put(
-                            "pics",
-                            buildJsonArray {
-                                pics.forEach { p ->
-                                    add(
-                                        buildJsonObject {
-                                            put("img_src", p.url)
-                                            put("img_width", p.width)
-                                            put("img_height", p.height)
-                                            put("img_size", p.sizeKb)
-                                        },
-                                    )
-                                }
+                            "content",
+                            buildJsonObject {
+                                put(
+                                    "contents",
+                                    buildJsonArray {
+                                        add(
+                                            buildJsonObject {
+                                                put("raw_text", text)
+                                                put("type", 1)
+                                                put("biz_id", "")
+                                            },
+                                        )
+                                    },
+                                )
                             },
                         )
-                    }
-                    put("upload_id", uploadId)
-                    put(
-                        "meta",
-                        buildJsonObject {
+                        put("scene", if (pics.isEmpty()) 1 else 2)
+                        if (pics.isNotEmpty()) {
                             put(
-                                "app_meta",
-                                buildJsonObject {
-                                    put("from", "create.dynamic.web")
-                                    put("mobi_app", "web")
+                                "pics",
+                                buildJsonArray {
+                                    pics.forEach { p ->
+                                        add(
+                                            buildJsonObject {
+                                                put("img_src", p.url)
+                                                put("img_width", p.width)
+                                                put("img_height", p.height)
+                                                put("img_size", p.sizeKb)
+                                            },
+                                        )
+                                    }
                                 },
                             )
-                        },
-                    )
-                },
-            )
-        }.toString()
-        val data = BiliClient.unwrap(
-            BiliClient.postJson(
-                "/x/dynamic/feed/create/dyn",
-                body,
-                params = mapOf("platform" to "web", "csrf" to BiliClient.csrf),
-            ),
-        ).asObj
-        return data.str("dyn_id_str").ifEmpty { data.long("dyn_id").takeIf { it > 0 }?.toString().orEmpty() }
-    }
+                        }
+                        put("attach_card", JsonNull)
+                        put("upload_id", uploadId)
+                        put(
+                            "meta",
+                            buildJsonObject {
+                                put(
+                                    "app_meta",
+                                    buildJsonObject {
+                                        put("from", "create.dynamic.web")
+                                        put("mobi_app", "web")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            }.toString()
+            val url = BiliClient.resolve("/x/dynamic/feed/create/dyn").toHttpUrl().newBuilder()
+                .addQueryParameter("platform", "web")
+                .addQueryParameter("csrf", BiliClient.csrf)
+                .addQueryParameter("x-bili-device-req-json", """{"platform":"web","device":"pc"}""")
+                .addQueryParameter("x-bili-web-req-json", """{"spm_id":"333.999"}""")
+                .build()
+            val req = Request.Builder().url(url).post(body.toRequestBody("application/json".toMediaType())).build()
+            val (status, raw) = try {
+                publishClient.newCall(req).await().use { it.code to it.body.string() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IOException) {
+                throw PublishUnknownException(e)
+            }
+            val root = runCatching { BiliJson.parseToJsonElement(raw) as? JsonObject }.getOrNull()
+            if (root == null || !root.has("code")) {
+                // The risk-control page answers before anything is created; any other page is a guess.
+                if (status == 412) throw BiliException(-412, "请求被拦截，稍后再试")
+                throw PublishUnknownException(null)
+            }
+            val data = BiliClient.unwrap(root).asObj
+            data.str("dyn_id_str").ifEmpty { data.long("dyn_id").takeIf { it > 0 }?.toString().orEmpty() }
+        }
 
     /**
-     * `content.contents` of a new dynamic: plain text segments (type 1) with the
-     * panel's image emotes (`[doge]`) split out as type 9, the way the web editor
-     * sends them. Unknown bracketed text stays plain text.
+     * The account's own latest dynamics (read only), to tell whether a create
+     * that never answered went through: its space feed, else the followed feed
+     * (which carries the account's own posts) filtered to it. Throws when
+     * neither could be read.
      */
-    private fun dynContents(text: String): JsonArray {
-        val emotes = EmoteCache.packages.orEmpty()
-            .filter { it.type != 4 }
-            .flatMap { p -> p.emotes.filter { it.url.isNotEmpty() }.map { it.text } }
-            .toSet()
-        return buildJsonArray {
-            fun segment(raw: String, type: Int) {
-                if (raw.isEmpty()) return
-                add(
-                    buildJsonObject {
-                        put("raw_text", raw)
-                        put("type", type)
-                        put("biz_id", "")
-                    },
-                )
-            }
-            var last = 0
-            var segments = 0
-            if (emotes.isNotEmpty()) {
-                EmoteToken.findAll(text).forEach { m ->
-                    if (m.value !in emotes) return@forEach
-                    if (m.range.first > last) {
-                        segment(text.substring(last, m.range.first), 1)
-                        segments++
-                    }
-                    segment(m.value, 9)
-                    segments++
-                    last = m.range.last + 1
-                }
-            }
-            // Pictures with no text still carry one (empty) text segment, as other clients send it.
-            if (last < text.length || segments == 0) {
-                add(
-                    buildJsonObject {
-                        put("raw_text", text.substring(last))
-                        put("type", 1)
-                        put("biz_id", "")
-                    },
-                )
-            }
+    suspend fun ownRecent(mid: Long): List<DynItem> {
+        val fromSpace = try {
+            space(mid, null).items
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
         }
+        if (!fromSpace.isNullOrEmpty()) return fromSpace.take(OwnRecentCount)
+        val fromFeed = feed("all", null, "", null).first.items
+        return fromFeed.filter { it.json.author.long("mid") == mid }.take(OwnRecentCount)
     }
+
+    private const val OwnRecentCount = 6
 
     private const val UPLOAD_URL = "https://api.bilibili.com/x/dynamic/feed/draw/upload_bfs"
 
-    /** The shared client (cookies, UA, referer) with room for a multi-MB body on a slow link. */
+    /**
+     * The shared client (cookies, UA, referer) with room for a multi-MB body on
+     * a slow link, and a whole-call cap so a half-dead link can't hold one
+     * picture for minutes.
+     */
     private val uploadClient by lazy {
         BiliClient.http.newBuilder()
             .writeTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
+            .callTimeout(90, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /** The create call: longer than the shared 15s read, capped as a whole. */
+    private val publishClient by lazy {
+        BiliClient.http.newBuilder()
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(45, TimeUnit.SECONDS)
+            .callTimeout(60, TimeUnit.SECONDS)
             .build()
     }
 
@@ -404,50 +453,183 @@ internal object DynamicsApi {
 // ── Publishing ──────────────────────────────────────────────────────────────
 
 /** A picture on bilibili's image host, ready for `dyn_req.pics`. */
+@Serializable
 internal data class UploadedPic(val url: String, val width: Int, val height: Int, val sizeKb: Double)
 
-/** A bracketed emote code in composer text: `[doge]`, `[tv_微笑]`. */
-private val EmoteToken = Regex("""\[[^\[\]\n]{1,32}]""")
+/** The create request got no answer: the dynamic may exist. */
+internal class PublishUnknownException(cause: Throwable?) : IOException("发布结果未知", cause)
 
 /** Sent as they are; anything else (HEIF, AVIF …) is re-encoded as JPEG. */
 private val DirectUploadTypes = setOf("image/jpeg", "image/png", "image/gif", "image/webp")
-private const val MaxDirectUploadBytes = 20 * 1024 * 1024
-private const val MaxEncodeEdge = 4096
+private const val MaxDirectUploadBytes = 20L * 1024 * 1024
 
-private class UploadFile(val bytes: ByteArray, val mime: String, val name: String)
+/** Re-encoded pictures keep at most this many pixels (a long screenshot keeps its width). */
+private const val MaxEncodePixels = 16_000_000L
 
-private fun readForUpload(resolver: ContentResolver, uri: Uri): UploadFile {
+private class UploadFile(val body: RequestBody, val length: Long, val name: String, val temp: File?)
+
+/**
+ * What goes up for [uri]: the file itself, streamed from the resolver, when
+ * its type is accepted and its size is known to be within the limit; else a
+ * re-encoded JPEG in [cacheDir]. Nothing larger than the limit is read into
+ * memory whole.
+ */
+private fun prepareUpload(resolver: ContentResolver, cacheDir: File, uri: Uri): UploadFile {
     val mime = resolver.getType(uri)?.lowercase().orEmpty().ifEmpty { "image/jpeg" }
-    val raw = resolver.openInputStream(uri)?.use { it.readBytes() }
-        ?: throw BiliException(-1, "图片读取失败")
-    if (mime in DirectUploadTypes && raw.size <= MaxDirectUploadBytes) {
-        return UploadFile(raw, mime, "image." + mime.substringAfter('/').replace("jpeg", "jpg"))
+    // Fails here, on the caller's thread, when the grant is gone.
+    (resolver.openInputStream(uri) ?: throw BiliException(-1, "图片读取失败")).close()
+    if (mime in DirectUploadTypes) {
+        val name = "image." + mime.substringAfter('/').replace("jpeg", "jpg")
+        val size = sizeOf(resolver, uri)
+        if (size in 1..MaxDirectUploadBytes) {
+            return UploadFile(UriRequestBody(resolver, uri, mime.toMediaType(), size), size, name, null)
+        }
+        if (size <= 0) {
+            // Size unknown: read up to the limit, re-encode past it.
+            val bytes = resolver.openInputStream(uri)?.use { readAtMost(it, MaxDirectUploadBytes) }
+            if (bytes != null) return UploadFile(bytes.toRequestBody(mime.toMediaType()), bytes.size.toLong(), name, null)
+        }
     }
-    val bitmap = decodeScaled(raw) ?: throw BiliException(-1, "图片格式不支持")
-    val out = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-    bitmap.recycle()
-    return UploadFile(out.toByteArray(), "image/jpeg", "image.jpg")
+    val jpeg = reencode(resolver, cacheDir, uri)
+    return UploadFile(jpeg.asRequestBody("image/jpeg".toMediaType()), jpeg.length(), "image.jpg", jpeg)
 }
 
-/** Decodes [raw] with its longest edge at most [MaxEncodeEdge]; ImageDecoder applies EXIF rotation. */
-private fun decodeScaled(raw: ByteArray): Bitmap? = runCatching {
+/** The content's size in bytes, or -1 when the provider doesn't say. */
+private fun sizeOf(resolver: ContentResolver, uri: Uri): Long {
+    runCatching {
+        resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst() && !c.isNull(0)) {
+                val size = c.getLong(0)
+                if (size > 0) return size
+            }
+        }
+    }
+    runCatching {
+        resolver.openAssetFileDescriptor(uri, "r")?.use { fd ->
+            if (fd.length > 0) return fd.length
+        }
+    }
+    return -1
+}
+
+/** The whole stream when it is at most [limit] bytes, else null. */
+private fun readAtMost(input: java.io.InputStream, limit: Long): ByteArray? {
+    val out = java.io.ByteArrayOutputStream()
+    val buf = ByteArray(64 * 1024)
+    var total = 0L
+    while (true) {
+        val n = input.read(buf)
+        if (n < 0) return out.toByteArray()
+        total += n
+        if (total > limit) return null
+        out.write(buf, 0, n)
+    }
+}
+
+/**
+ * Streams the picture from the resolver on every write (OkHttp may write a
+ * body twice on a retried connection). Any failure surfaces as an
+ * IOException: anything else thrown on OkHttp's thread would crash the app.
+ */
+private class UriRequestBody(
+    private val resolver: ContentResolver,
+    private val uri: Uri,
+    private val type: MediaType,
+    private val length: Long,
+) : RequestBody() {
+    override fun contentType(): MediaType = type
+
+    override fun contentLength(): Long = length
+
+    override fun writeTo(sink: BufferedSink) {
+        try {
+            val input = resolver.openInputStream(uri) ?: throw IOException("图片读取失败")
+            input.source().use { sink.writeAll(it) }
+        } catch (e: IOException) {
+            throw e
+        } catch (e: Exception) {
+            throw IOException("图片读取失败", e)
+        }
+    }
+}
+
+/** Decodes [uri] within [MaxEncodePixels] and writes it as a JPEG temp file. */
+private fun reencode(resolver: ContentResolver, cacheDir: File, uri: Uri): File {
+    val bitmap = try {
+        decodeForUpload(resolver, uri)
+    } catch (e: OutOfMemoryError) {
+        throw BiliException(-1, "图片过大")
+    } catch (e: FileNotFoundException) {
+        throw BiliException(-1, "图片读取失败")
+    } catch (e: IOException) {
+        throw BiliException(-1, "图片格式不支持")
+    } ?: throw BiliException(-1, "图片格式不支持")
+    val out = File.createTempFile("dyn_upload_", ".jpg", cacheDir)
+    try {
+        val written = out.outputStream().buffered().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+        if (!written) throw BiliException(-1, "图片格式不支持")
+    } catch (e: Throwable) {
+        out.delete()
+        throw e
+    } finally {
+        bitmap.recycle()
+    }
+    return out
+}
+
+/**
+ * Streams [uri] into a bitmap of at most [MaxEncodePixels], by total pixels
+ * rather than the longest edge. ImageDecoder (API 28+) applies EXIF rotation.
+ */
+private fun decodeForUpload(resolver: ContentResolver, uri: Uri): Bitmap? =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(raw))) { decoder, info, _ ->
+        ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, uri)) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-            val edge = max(info.size.width, info.size.height)
-            var sample = 1
-            while (edge / sample > MaxEncodeEdge) sample *= 2
-            if (sample > 1) decoder.setTargetSampleSize(sample)
+            val w = info.size.width
+            val h = info.size.height
+            val pixels = w.toLong() * h
+            if (w > 0 && h > 0 && pixels > MaxEncodePixels) {
+                val scale = sqrt(MaxEncodePixels.toDouble() / pixels)
+                decoder.setTargetSize(max(1, (w * scale).toInt()), max(1, (h * scale).toInt()))
+            }
         }
     } else {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
         var sample = 1
-        while (max(bounds.outWidth, bounds.outHeight) / sample > MaxEncodeEdge) sample *= 2
-        BitmapFactory.decodeByteArray(raw, 0, raw.size, BitmapFactory.Options().apply { inSampleSize = sample })
+        while (bounds.outWidth.toLong() * bounds.outHeight / (sample.toLong() * sample) > MaxEncodePixels) sample *= 2
+        resolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+        }
     }
-}.getOrNull()
+
+/** The call, cancelled with the coroutine (a blocking execute() ignores cancellation). */
+private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
+    cont.invokeOnCancellation { runCatching { cancel() } }
+    enqueue(
+        object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                if (cont.isActive) cont.resumeWithException(e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                cont.resume(response) { _, value, _ -> value.close() }
+            }
+        },
+    )
+}
+
+/** The text a published dynamic shows (rich nodes joined back to what was typed). */
+internal fun DynItem.postedText(): String {
+    val nodes = richSource(json).second
+    if (!nodes.isNullOrEmpty()) {
+        return nodes.objects().joinToString("") { it.str("orig_text").ifEmpty { it.str("text") } }
+    }
+    return json.dynModule.obj("desc").str("text").ifEmpty { json.major.obj("opus").obj("summary").str("text") }
+}
+
+/** Publish time, server seconds (0 when absent). */
+internal val DynItem.pubTs: Long get() = json.author.long("pub_ts")
 
 /** Feed-wide signals: the composer emits the new dynamic's id after a successful post. */
 internal object DynamicsEvents {
