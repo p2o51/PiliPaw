@@ -1,16 +1,21 @@
 package com.gpo.pilipala.feature.reply
 
-import android.os.SystemClock
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.TwoWayConverter
 import androidx.compose.animation.core.VectorizedFiniteAnimationSpec
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,72 +31,109 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.ui.theme.YoinMotion
-import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Yoin spring specs captured in composition so non-composable transition lambdas can use them. */
+/**
+ * Yoin spring specs captured in composition so non-composable transition
+ * lambdas can use them. Comments are a reading surface: fades ride the
+ * effects spring and everything that moves settles critically damped, so
+ * nothing overshoots or draws the eye while reading.
+ */
 @Immutable
 internal class ReplyMotionSpecs(
     val fade: FiniteAnimationSpec<Float>,
+    /** The outgoing side of a cross-fade: clears a little quicker than the incoming one arrives. */
+    val fadeOut: FiniteAnimationSpec<Float>,
+    /** The composer's own controls (send button swap); not used on the reading surface. */
     val scale: FiniteAnimationSpec<Float>,
+    /** Short moves: list placement, the like count's digits. */
     val offset: FiniteAnimationSpec<IntOffset>,
     val size: FiniteAnimationSpec<IntSize>,
+    /** The list ⇄ thread step inside one pane. */
+    val pane: FiniteAnimationSpec<IntOffset>,
 )
 
 @Composable
 internal fun replyMotion(): ReplyMotionSpecs = ReplyMotionSpecs(
     fade = YoinMotion.defaultEffectsSpec(),
+    fadeOut = YoinMotion.fastEffectsSpec(),
     scale = YoinMotion.fastSpatialSpec(),
-    offset = YoinMotion.fastSpatialSpec(),
-    size = YoinMotion.fastSpatialSpec(),
+    offset = settledFastSpatialSpec(),
+    size = settledFastSpatialSpec(),
+    pane = settledSpatialSpec(),
 )
 
-internal fun ReplyMotionSpecs.crossfade(): ContentTransform = fadeIn(fade) togetherWith fadeOut(fade)
-
-// ── Row entrances ────────────────────────────────────────────────────────────
+internal fun ReplyMotionSpecs.crossfade(): ContentTransform = fadeIn(fade) togetherWith fadeOut(fadeOut)
 
 /**
- * How a row arrives: a short rise in a stagger (a page landing) or an expand
- * (the reply just sent). Identity matters: a lazy slot reused for another row
- * gets a new instance, so its animation restarts instead of inheriting one
- * that already finished.
+ * A comment surface's item animation: rows that land (a page, a sort switch,
+ * the reply just sent) only fade, on the effects spring; no lift, no stagger.
+ * Placement rides [placement] (the gated, settled spring).
  */
-@Immutable
-internal sealed interface Entrance {
-    class Rise(val delayMs: Int) : Entrance
+internal fun LazyItemScope.replyItemMotion(
+    motion: ReplyMotionSpecs,
+    placement: FiniteAnimationSpec<IntOffset>,
+): Modifier = Modifier.animateItem(fadeInSpec = motion.fade, placementSpec = placement, fadeOutSpec = motion.fade)
 
-    class Expand : Entrance
+/** The default spatial spring at its own stiffness, critically damped (no overshoot). */
+@Composable
+internal fun <T> settledSpatialSpec(): FiniteAnimationSpec<T> = YoinMotion.defaultSpatialSpec<T>().settled()
+
+/** The fast spatial spring at its own stiffness, critically damped (no overshoot). */
+@Composable
+internal fun <T> settledFastSpatialSpec(): FiniteAnimationSpec<T> = YoinMotion.fastSpatialSpec<T>().settled()
+
+private fun <T> FiniteAnimationSpec<T>.settled(): FiniteAnimationSpec<T> {
+    val base = this as? SpringSpec<T> ?: return this
+    return spring(Spring.DampingRatioNoBouncy, base.stiffness, base.visibilityThreshold)
 }
 
+// ── List ⇄ thread (Medium / Expanded) ───────────────────────────────────────
+
+/** M3 shared-axis travel: short, so the pane reads as stepping in rather than paging. */
+internal val SharedAxisDistance = 30.dp
+
 /**
- * Decides which rows animate in. It lives in the ViewModel, so a page that
- * comes back from the thread does not replay its cascade. A row rises only
- * the first time it composes shortly after its batch landed; whatever landed
- * off-screen is marked seen once the batch settles ([settle]), so scrolling
- * down to it later is a plain scroll.
+ * Shared axis X between the comment list and a thread open in the same
+ * pane: both sides travel [distancePx] the same way while cross-fading.
+ * [forward] = into the thread.
+ */
+internal fun ReplyMotionSpecs.sharedAxisX(forward: Boolean, distancePx: Int): ContentTransform {
+    val sign = if (forward) 1 else -1
+    return ContentTransform(
+        targetContentEnter = slideInHorizontally(pane) { sign * distancePx } + fadeIn(fade),
+        initialContentExit = slideOutHorizontally(pane) { -sign * distancePx } + fadeOut(fadeOut),
+        // Both levels fill the pane: no size animation.
+        sizeTransform = null,
+    )
+}
+
+// ── The reply just sent ─────────────────────────────────────────────────────
+
+/**
+ * The only row entrance left: the reply the composer just sent grows in.
+ * Identity matters: a lazy slot reused for another row gets a new instance,
+ * so its animation restarts instead of inheriting one that finished.
+ * [fade]: false where the list's own item fade already covers the row.
+ */
+@Immutable
+internal class Entrance(val fade: Boolean)
+
+/**
+ * Remembers the reply the composer just sent (kept in the ViewModel, so it
+ * is claimed once). Pages landing do not animate their rows beyond the
+ * list's plain item fade.
  */
 internal class ReplyEntrance {
-    private val seen = HashSet<Long>()
-    private var lastClaimAt = 0L
-    private var slot = 0
-
-    /** The reply the composer just sent: it expands in once. */
     var sent: Long = 0L
 
+    /** A lazy row: only the reply just sent grows in (its fade is the list's item fade). */
     fun claim(rpid: Long): Entrance? {
-        if (rpid != 0L && rpid == sent) {
-            sent = 0L
-            seen += rpid
-            return Entrance.Expand()
-        }
-        if (!seen.add(rpid)) return null
-        val now = SystemClock.uptimeMillis()
-        if (now - lastClaimAt > BurstGapMs) slot = 0
-        lastClaimAt = now
-        return Entrance.Rise(min(slot++, MaxStaggerSlots) * StaggerMs)
+        if (rpid == 0L || rpid != sent) return null
+        sent = 0L
+        return Entrance(fade = false)
     }
 
     /** A sub-reply line of a preview block: only the one just sent animates. */
@@ -100,27 +142,7 @@ internal class ReplyEntrance {
         sent = 0L
         return true
     }
-
-    fun settle(ids: Iterable<Long>) {
-        seen += ids
-    }
-
-    /** A new list (sort switch): everything in it rises again. */
-    fun reset() {
-        seen.clear()
-        slot = 0
-    }
-
-    private companion object {
-        /** Claims further apart than this start a new cascade. */
-        const val BurstGapMs = 120L
-        const val StaggerMs = 32
-        const val MaxStaggerSlots = 8
-    }
 }
-
-/** Delay before a batch is considered settled (its unseen rows stop rising). */
-internal const val EntranceSettleMs = 450L
 
 /**
  * Counts rows whose height is animating (a text expanding, a reply expanding
@@ -154,44 +176,25 @@ private class GatedPlacementSpec(
 
 /** Applies a row's [Entrance]; null leaves it as is. */
 @Composable
-internal fun Modifier.entrance(entrance: Entrance?, layout: ReplyLayoutMotion?): Modifier = when (entrance) {
-    null -> this
-    is Entrance.Rise -> this.then(riseIn(entrance))
-    is Entrance.Expand -> this.then(expandIn(entrance, layout))
-}
+internal fun Modifier.entrance(entrance: Entrance?, layout: ReplyLayoutMotion?): Modifier =
+    if (entrance == null) this else this.then(expandIn(entrance, layout))
 
-private val RiseDistance = 16.dp
-
-/** A short lift + fade after its delay: alpha on the effects spring, the lift on the spatial one. */
+/**
+ * Grows from zero height (top anchored, clipped) on the settled spatial
+ * spring, fading in on the effects spring when asked; reads only in
+ * layout / draw.
+ */
 @Composable
-private fun riseIn(rise: Entrance.Rise): Modifier {
-    val alpha = remember(rise) { Animatable(0f) }
-    val lift = remember(rise) { Animatable(1f) }
-    val spatial = YoinMotion.defaultSpatialSpec<Float>()
-    val effects = YoinMotion.defaultEffectsSpec<Float>()
-    LaunchedEffect(rise) {
-        if (rise.delayMs > 0) delay(rise.delayMs.toLong())
-        launch { alpha.animateTo(1f, effects) }
-        lift.animateTo(0f, spatial)
-    }
-    return Modifier.graphicsLayer {
-        this.alpha = alpha.value
-        translationY = lift.value * RiseDistance.toPx()
-    }
-}
-
-/** Grows from zero height (top anchored, clipped) while fading in; reads only in layout / draw. */
-@Composable
-private fun expandIn(expand: Entrance.Expand, layout: ReplyLayoutMotion?): Modifier {
+private fun expandIn(expand: Entrance, layout: ReplyLayoutMotion?): Modifier {
     val grow = remember(expand) { Animatable(0f) }
-    val alpha = remember(expand) { Animatable(0f) }
-    val spatial = YoinMotion.defaultSpatialSpec<Float>()
+    val alpha = remember(expand) { Animatable(if (expand.fade) 0f else 1f) }
+    val spatial = settledSpatialSpec<Float>()
     val effects = YoinMotion.defaultEffectsSpec<Float>()
     LaunchedEffect(expand) {
         layout?.begin()
         try {
             coroutineScope {
-                launch { alpha.animateTo(1f, effects) }
+                if (expand.fade) launch { alpha.animateTo(1f, effects) }
                 grow.animateTo(1f, spatial)
             }
         } finally {

@@ -7,8 +7,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
@@ -16,9 +16,7 @@ import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.friendlyMessage
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 @Immutable
@@ -34,16 +32,27 @@ internal data class ComposeTarget(
     val prefixMention: Boolean = false,
 )
 
+/** A reply sent or deleted on one surface, for another that shows the same comment (the list under a thread). */
+@Immutable
+internal sealed interface ReplyChange {
+    data class Sent(val target: ComposeTarget, val reply: Reply) : ReplyChange
+
+    data class Deleted(val rpid: Long) : ReplyChange
+}
+
 /** Like / delete / send shared by the list and the thread page. */
 internal abstract class BaseReplyViewModel(val oid: Long, val type: Int) : ViewModel() {
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val likes = mutableStateMapOf<Long, LikeState>()
 
-    /** Which rows rise / expand in (kept here so a returning page does not replay it). */
+    /** The reply just sent, which grows in once (kept here so a returning page does not replay it). */
     val entrance = ReplyEntrance()
 
     /** A reply landed through the composer (after it was inserted locally). */
     val sentEvents = MutableSharedFlow<ComposeTarget>(extraBufferCapacity = 1)
+
+    /** Sends and deletes done here, for a host mirroring them elsewhere (dropped when nobody listens). */
+    val changes = MutableSharedFlow<ReplyChange>(extraBufferCapacity = 8)
     var upperMid: Long = 0
         protected set
     private val liking = mutableSetOf<Long>()
@@ -73,6 +82,7 @@ internal abstract class BaseReplyViewModel(val oid: Long, val type: Int) : ViewM
             runCatching { ReplyApi.delete(r.oid.takeIf { it != 0L } ?: oid, type, r.rpid) }
                 .onSuccess {
                     removeLocally(r.rpid)
+                    changes.tryEmit(ReplyChange.Deleted(r.rpid))
                     messages.tryEmit("已删除")
                     onDone()
                 }
@@ -90,20 +100,11 @@ internal abstract class BaseReplyViewModel(val oid: Long, val type: Int) : ViewM
                     entrance.sent = it.rpid
                     insertLocally(target, it)
                     sentEvents.tryEmit(target)
+                    changes.tryEmit(ReplyChange.Sent(target, it))
                 }
             }
             .onFailure { messages.tryEmit(it.friendlyMessage()) }
             .isSuccess
-    }
-
-    /** Rows that landed but never composed stop being "new" once their batch settles. */
-    protected fun settleEntrances(ids: () -> List<Long>) {
-        viewModelScope.launch {
-            snapshotFlow(ids).collectLatest {
-                delay(EntranceSettleMs)
-                entrance.settle(it)
-            }
-        }
     }
 
     protected abstract fun removeLocally(rpid: Long)
@@ -124,8 +125,7 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
     /**
      * Sort switches: [requestedGen] bumps at the tap, [listGen] once the new
      * first page replaced the list. Rows keyed by their generation leave and
-     * arrive as a cross-fade; rows of an older generation than requested are
-     * the stale list, dimmed until the new one lands.
+     * arrive as a plain cross-fade once the new order lands.
      */
     var requestedGen by mutableIntStateOf(0)
         private set
@@ -140,17 +140,13 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
             if (cursor == null && gen != listGen && e !is CancellationException) {
                 // The switch failed: drop the stale list so the error and its retry show.
                 listGen = gen
-                entrance.reset()
                 pager.update { emptyList() }
             }
             throw e
         }
         upperMid = page.upperMid
         if (cursor == null) {
-            if (gen != listGen) {
-                listGen = gen
-                entrance.reset()
-            }
+            if (gen != listGen) listGen = gen
             top = page.top
             count = page.count
             readOnly = page.readOnly
@@ -163,9 +159,19 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
         )
     }
 
+    /**
+     * Holds the ViewModel of a thread open in place over this list (Medium /
+     * Expanded), so it outlives a trip to another page; ReplyList clears it once
+     * the thread has closed.
+     */
+    val threadStore = ViewModelStore()
+
     init {
         pager.refresh()
-        settleEntrances { top.map { it.rpid } + pager.items.map { it.rpid } }
+    }
+
+    override fun onCleared() {
+        threadStore.clear()
     }
 
     fun refresh() {
@@ -173,13 +179,25 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
         pager.refresh()
     }
 
-    /** Keeps the current list (dimmed by the UI) until the new order lands, then swaps. */
+    /** Keeps the current list until the new order lands, then swaps. */
     fun changeSort(value: Int) {
         if (value == sort) return
         sort = value
         AppSettings.set(AppSettings.replySort, value)
         requestedGen++
         pager.refresh()
+    }
+
+    /**
+     * A thread open in place over this list sent or deleted a reply: the
+     * root's preview and the counts follow, with no entrance (the list is
+     * off screen meanwhile).
+     */
+    fun mirror(change: ReplyChange) {
+        when (change) {
+            is ReplyChange.Sent -> insertLocally(change.target, change.reply)
+            is ReplyChange.Deleted -> removeLocally(change.rpid)
+        }
     }
 
     override fun removeLocally(rpid: Long) {
@@ -237,7 +255,6 @@ internal class ReplyThreadViewModel(oid: Long, type: Int, val rootRpid: Long) : 
 
     init {
         pager.refresh()
-        settleEntrances { listOfNotNull(root?.rpid) + pager.items.map { it.rpid } }
     }
 
     fun refresh() {
