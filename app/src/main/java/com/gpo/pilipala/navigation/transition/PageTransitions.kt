@@ -470,5 +470,6 @@ fun Route.sharedKey(): String? = when (this) {
     is Route.Member -> "member:$mid"
     is Route.FavDetail -> "fav:$mediaId"
     is Route.ReplyDetail -> "reply:$rpid"
+    Route.DynamicCompose -> "dynamic:compose"
     else -> null
 }
