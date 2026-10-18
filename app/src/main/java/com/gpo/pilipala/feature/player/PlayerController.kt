@@ -207,9 +207,14 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     private val dataSourceFactory by lazy {
         OkHttpDataSource.Factory(BiliClient.http).setDefaultRequestProperties(BiliClient.mediaHeaders())
     }
-    // Overseas line routing (feature/player/cdn): every media open goes through CdnRouter.
+    // Overseas line routing (feature/player/cdn): every media open goes through CdnRouter;
+    // 多线程加载 (ParallelRangeDataSource) fetches DASH segment files as parallel ranges.
     private val progressiveFactory by lazy {
-        ProgressiveMediaSource.Factory(com.gpo.pilipala.feature.player.cdn.CdnDataSource.Factory(dataSourceFactory))
+        ProgressiveMediaSource.Factory(
+            com.gpo.pilipala.feature.player.cdn.CdnDataSource.Factory(
+                com.gpo.pilipala.feature.player.cdn.ParallelRangeDataSource.Factory(dataSourceFactory),
+            ),
+        )
             .setLoadErrorHandlingPolicy(com.gpo.pilipala.feature.player.cdn.CdnLoadErrorPolicy())
     }
 

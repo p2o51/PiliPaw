@@ -114,6 +114,7 @@ object CdnRouter {
         )
         val first = videoUrls.firstOrNull()?.let { route(it) }?.let(CdnHosts::hostOf).orEmpty()
         _status.value = Status(host = first, requiredBps = requiredBps)
+        ParallelLoad.reset()
     }
 
     /** Quality change: judge against the highest bitrate requested this video. */
@@ -126,6 +127,65 @@ object CdnRouter {
     fun endSession() {
         session = null
         _status.value = Status()
+        ParallelLoad.reset()
+    }
+
+    /** Current video's routing session id; -1 = none. */
+    fun sessionId(): Long = session?.id ?: -1L
+
+    private val audioFileRe = Regex("-302\\d\\d\\.m4s$")
+
+    private fun pathOf(url: String): String? = runCatching { java.net.URI(url).rawPath }.getOrNull()
+
+    /** An audio stream file (by the session's issued URLs, or Bilibili's 302xx audio ids). */
+    fun isAudioUrl(url: String): Boolean {
+        val path = pathOf(url) ?: return false
+        val s = session
+        if (s != null && s.audioUrls.any { pathOf(it) == path }) return true
+        return audioFileRe.containsMatchIn(path)
+    }
+
+    /**
+     * Hosts a parallel stream of [url] (already routed) may use: [url] first, then
+     * the same file on other hosts — issued URLs of the same path (UPOS or Akamai)
+     * and, for UPOS, pool mirrors — best history first. The second value is how
+     * many of them share fresh pieces: the primary, plus (auto mode only) up to two
+     * hosts whose history is at least 80% of the primary's. The rest are fallbacks
+     * for failed or stalled pieces.
+     */
+    fun parallelHosts(url: String, max: Int = 4): Pair<List<String>, Int> {
+        val primary = CdnHosts.hostOf(url)
+        val path = pathOf(url) ?: return listOf(url) to 1
+        val s = session
+        val now = System.currentTimeMillis()
+        val failing = s?.errors?.filterValues { synchronized(it) { it.count { t -> now - t < 30_000 } } >= 2 }?.keys.orEmpty()
+        val alternates = LinkedHashMap<String, String>()
+        s?.let { it.videoUrls + it.audioUrls }.orEmpty().forEach { u ->
+            val h = CdnHosts.hostOf(u)
+            val kind = CdnHosts.classify(u)
+            if (h != primary && h !in failing && pathOf(u) == path && (kind == CdnHosts.Kind.Upos || kind == CdnHosts.Kind.Akamai)) {
+                alternates.putIfAbsent(h, u)
+            }
+        }
+        if (CdnHosts.classify(url) == CdnHosts.Kind.Upos) {
+            CdnHosts.POOL.forEach { h ->
+                if (h.host != primary && h.host !in failing) CdnHosts.swap(url, h.host)?.let { alternates.putIfAbsent(h.host, it) }
+            }
+        }
+        val ranked = alternates.entries.sortedByDescending { history(it.key) ?: -1.0 }
+        val primaryHistory = history(primary)
+        val sharing = if (CdnSettings.mode.value == "auto" && primaryHistory != null && primaryHistory > 0) {
+            ranked.take(2).takeWhile { (history(it.key) ?: 0.0) >= primaryHistory * 0.8 }.size
+        } else {
+            0
+        }
+        val list = listOf(url) + ranked.take(max - 1).map { it.value }
+        return list to (1 + sharing).coerceAtMost(list.size)
+    }
+
+    /** A single-connection speed measured outside a race (parallel pieces). */
+    fun recordSample(host: String, bps: Long) {
+        if (bps > 0) remember(host, bps)
     }
 
     /**

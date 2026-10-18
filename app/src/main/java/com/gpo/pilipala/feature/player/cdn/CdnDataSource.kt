@@ -25,13 +25,19 @@ class CdnDataSource(private val upstream: DataSource) : DataSource {
         override fun createDataSource(): DataSource = CdnDataSource(upstream.createDataSource())
     }
 
-    private var original: String = ""
-    private var host: String = ""
-    private var isVideo = false
+    @Volatile private var original: String = ""
+    @Volatile private var host: String = ""
+    @Volatile private var isVideo = false
     private var generation = 0
     private var openedAt = 0L
-    private var position = 0L
-    private var bytes = 0L
+    @Volatile private var position = 0L
+    @Volatile private var bytes = 0L
+
+    // 多线程加载: a parallel stream reports its own download goodput (read-side timing
+    // would see bursts from already-downloaded pieces).
+    private val parallel = (upstream as? ParallelRangeDataSource)?.also { p ->
+        p.goodputSink = { b, ms -> if (isVideo) CdnRouter.onVideoProgress(original, host, position + bytes, b, ms) }
+    }
     private var lastReportAt = 0L
     // Goodput counts wall time while the loader is busy: the time inside read() plus
     // short gaps between reads (parsing). A long gap means ExoPlayer paused loading
@@ -75,13 +81,15 @@ class CdnDataSource(private val upstream: DataSource) : DataSource {
         }
         val n = try {
             upstream.read(buffer, offset, length)
+        } catch (e: CdnSwitchException) {
+            throw e // a deliberate reopen, not the line's fault
         } catch (e: IOException) {
             CdnRouter.onError(original, host)
             throw e
         }
         if (n > 0) {
             bytes += n
-            if (isVideo) {
+            if (isVideo && parallel?.isParallel != true) {
                 // Goodput = bytes over wall time while the loader keeps asking for data.
                 // A pause longer than BusyGapNanos means ExoPlayer stopped loading (buffer
                 // full) — that idle time is cut out. Time inside read() alone can't be used:

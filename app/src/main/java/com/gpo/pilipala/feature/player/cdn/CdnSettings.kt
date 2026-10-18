@@ -12,4 +12,8 @@ object CdnSettings {
     /** Replace P2P / PCDN endpoints (bare IPs, odd ports) with a UPOS mirror. */
     val avoidPcdn = AppSettings.register("cdn_avoid_pcdn", true)
     val autoSwitch = AppSettings.register("cdn_auto_switch", true)
+    /** 多线程加载: "auto" = on when the line is slow or far away, "on", "off". */
+    val parallel = AppSettings.register("cdn_parallel", "auto")
+    /** Parallel Range requests per video stream (audio uses a quarter, 2–4). */
+    val parallelThreads = AppSettings.register("cdn_parallel_threads", 8)
 }
