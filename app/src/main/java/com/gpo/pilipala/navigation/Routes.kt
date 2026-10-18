@@ -31,6 +31,17 @@ sealed interface Route : NavKey {
     @Serializable data class Search(val hint: String = "") : Route
     @Serializable data class SearchResult(val keyword: String) : Route
 
+    // ── Custom feeds ────────────────────────────────────────────────────────
+    /** Feed editor: [feedId] edits that feed; empty creates one, prefilled with [keyword] ([order]) or the UP [upMid]. */
+    @Serializable data class FeedEditor(
+        val feedId: String = "",
+        val keyword: String = "",
+        val order: String = "",
+        val upMid: Long = 0,
+        val upName: String = "",
+        val upFace: String = "",
+    ) : Route
+
     // ── Member (UP space) ───────────────────────────────────────────────────
     @Serializable data class Member(val mid: Long, val face: String = "", val name: String = "") : Route
     @Serializable data class MemberArchive(val mid: Long, val name: String = "") : Route

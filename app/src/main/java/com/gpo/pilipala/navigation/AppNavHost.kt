@@ -29,6 +29,7 @@ import com.gpo.pilipala.feature.article.ReadScreen
 import com.gpo.pilipala.feature.bangumi.BangumiDetailScreen
 import com.gpo.pilipala.feature.dynamics.DynamicDetailScreen
 import com.gpo.pilipala.feature.dynamics.MemberDynamicsScreen
+import com.gpo.pilipala.feature.feeds.FeedEditorScreen
 import com.gpo.pilipala.feature.library.BlacklistScreen
 import com.gpo.pilipala.feature.library.FansScreen
 import com.gpo.pilipala.feature.library.FavDetailScreen
@@ -156,6 +157,7 @@ private val appEntryProvider = entryProvider<NavKey> {
     entry<Route.LiveRoom> { LiveRoomScreen(it) }
     entry<Route.Search> { SearchScreen(it) }
     entry<Route.SearchResult> { SearchResultScreen(it) }
+    entry<Route.FeedEditor> { FeedEditorScreen(it) }
     entry<Route.Member> { MemberScreen(it) }
     entry<Route.MemberArchive> { MemberArchiveScreen(it) }
     entry<Route.MemberDynamics> { MemberDynamicsScreen(it) }
