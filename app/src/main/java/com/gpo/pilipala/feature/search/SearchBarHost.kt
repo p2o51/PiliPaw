@@ -1,5 +1,15 @@
 package com.gpo.pilipala.feature.search
 
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableLongStateOf
@@ -32,7 +42,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.DropdownMenuPopup
 import androidx.compose.material3.ExpandedFullScreenContainedSearchBar
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -514,15 +523,32 @@ private fun SortSplitButton(order: String, toggleOrder: String, onOrder: (String
                 // Not focusable: the keyboard stays put while the menu is open (a focusable
                 // popup would take the window focus and drop it). Back closes the menu first.
                 BackHandler(enabled = menu) { menu = false }
-                DropdownMenuPopup(
-                    expanded = menu,
+                // The row rides on the keyboard, so there is never room below it: the menu always
+                // opens upward from the button (M3's dropdown would measure the space under the
+                // keyboard as free and open behind it).
+                val menuState = remember { MutableTransitionState(false) }
+                menuState.targetState = menu
+                val gap = with(LocalDensity.current) { 8.dp.roundToPx() }
+                if (menuState.currentState || menuState.targetState) Popup(
+                    popupPositionProvider = remember(gap) { AboveAnchor(gap) },
                     onDismissRequest = {
                         menu = false
                         dismissedAt = SystemClock.uptimeMillis()
                     },
                     properties = PopupProperties(focusable = false),
                 ) {
-                    DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 1)) {
+                    AnimatedVisibility(
+                        visibleState = menuState,
+                        enter = fadeIn(YoinMotion.fastEffectsSpec()) +
+                            scaleIn(YoinMotion.fastSpatialSpec(), initialScale = 0.86f, transformOrigin = TransformOrigin(0.25f, 1f)),
+                        exit = fadeOut(YoinMotion.fastEffectsSpec()) +
+                            scaleOut(YoinMotion.fastSpatialSpec(), targetScale = 0.92f, transformOrigin = TransformOrigin(0.25f, 1f)),
+                    ) {
+                    DropdownMenuGroup(
+                        shapes = MenuDefaults.groupShape(0, 1),
+                        // Sized to its longest item, as the M3 dropdown sizes itself.
+                        modifier = Modifier.width(IntrinsicSize.Max).widthIn(min = 160.dp, max = 280.dp),
+                    ) {
                         SearchSortOrders.forEachIndexed { i, c ->
                             DropdownMenuItem(
                                 selected = c.value == order,
@@ -539,8 +565,25 @@ private fun SortSplitButton(order: String, toggleOrder: String, onOrder: (String
                             )
                         }
                     }
+                    }
                 }
             }
         },
     )
+}
+
+/** Places a popup just above its anchor, start-aligned and kept inside the window. */
+private class AboveAnchor(private val gap: Int) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val x = if (layoutDirection == LayoutDirection.Ltr) anchorBounds.left else anchorBounds.right - popupContentSize.width
+        return IntOffset(
+            x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
+            (anchorBounds.top - popupContentSize.height - gap).coerceAtLeast(0),
+        )
+    }
 }
