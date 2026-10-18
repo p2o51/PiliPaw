@@ -16,6 +16,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -74,6 +76,14 @@ import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.feature.player.BiliPlayerState
+import com.gpo.pilipala.feature.player.GestureFeedback
+import com.gpo.pilipala.feature.player.HoldSpeedPill
+import com.gpo.pilipala.feature.player.HoldSpeedStep
+import com.gpo.pilipala.feature.player.Press
+import com.gpo.pilipala.feature.player.awaitLeave
+import com.gpo.pilipala.feature.player.consumeUntilRelease
+import com.gpo.pilipala.feature.player.holdSpeed
+import com.gpo.pilipala.feature.player.swallowRelease
 import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.feature.player.PlayerPhase
 import com.gpo.pilipala.feature.video.VideoDetail
@@ -207,8 +217,22 @@ internal fun PortraitPage(
     }
 
     // Tap: collapse the text, else play / pause. Double tap: like with a burst where the finger is
-    // (never un-likes). Long press: 3x while held.
+    // (never un-likes). Hold still on a playing video: speed up while held, slide up / down to
+    // set the speed (HoldSpeed.kt), with the speed pill near the top.
+    //
+    // Arbitration, two detectors on one node. The tap detector (outer) only does tap and double
+    // tap. The press detector (inner, so it sees each event first) consumes no move before the
+    // long-press timeout, so the pager keeps every swipe. Whichever comes first decides:
+    // - the finger lifts: a tap, passed through untouched;
+    // - the pager takes a move (checked on the Final pass): its swipe, left alone to the end;
+    // - the finger travels past the touch slop and the pager does not take it (a sideways
+    //   swipe): nothing, and only its release is consumed so it does not end as a tap;
+    // - the finger stays down and in place for the timeout: a hold. On a playing video it owns
+    //   the press until release (every event consumed, so the pager never scrolls, also locked
+    //   by userScrollEnabled while boosting, and the tap is cancelled); paused, the press is
+    //   swallowed so it does not end as a tap (as the old long press did).
     val latestActs by rememberUpdatedState(acts)
+    val hold = remember { GestureFeedback() }
     // Not over the player's error panel: its retry has to stay reachable.
     val gesturesOn = host && ctrl?.phase !is PlayerPhase.Error
     val gestures = if (!gesturesOn) Modifier else Modifier.pointerInput(Unit) {
@@ -231,20 +255,26 @@ internal fun PortraitPage(
                     }
                 }
             },
-            onLongPress = {
-                if (ctrl != null && ctrl.isPlaying) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    ctrl.beginBoost()
-                }
-            },
-            onPress = {
-                tryAwaitRelease()
-                if (ctrl?.boosting == true) {
-                    ctrl.endBoost()
-                    haptic.performHapticFeedback(HapticFeedbackType.GestureEnd)
-                }
-            },
         )
+    }.pointerInput(ctrl) {
+        val slop = viewConfiguration.touchSlop
+        val holdTimeout = viewConfiguration.longPressTimeoutMillis
+        val step = HoldSpeedStep.toPx()
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            when (withTimeoutOrNull(holdTimeout) { awaitLeave(down.id, slop) }) {
+                // Held still: a playing video speeds up until the finger lifts.
+                null -> if (ctrl != null && ctrl.isPlaying) {
+                    holdSpeed(down.id, step, ctrl, hold, haptic)
+                } else {
+                    consumeUntilRelease(down.id)
+                }
+                // A swipe: the pager's if it takes it, otherwise nothing (and not a tap).
+                is Press.Moved -> swallowRelease(down.id)
+                // A tap, or the pager already has it.
+                else -> Unit
+            }
+        }
     }
 
     /** Picture + gestures + text + seek bar in a [w] × [h] frame; [inside] puts the actions in it too. */
@@ -306,6 +336,14 @@ internal fun PortraitPage(
             }
             if (host) {
                 CentreStatus(ctrl, Modifier.align(Alignment.Center))
+                if (ctrl != null) {
+                    HoldSpeedPill(
+                        ctrl = ctrl,
+                        feedback = hold,
+                        big = false,
+                        modifier = Modifier.align(Alignment.TopCenter).padding(top = if (inside) statusTop + 60.dp else 48.dp),
+                    )
+                }
                 Box(Modifier.matchParentSize()) {
                     bursts.forEach { b ->
                         key(b.id) { LikeBurst(b) { bursts.remove(b) } }

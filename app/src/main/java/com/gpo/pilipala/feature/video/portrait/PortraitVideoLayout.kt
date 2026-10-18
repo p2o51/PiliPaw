@@ -6,10 +6,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,12 +22,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -66,7 +61,6 @@ import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.feature.player.PlayerChrome
 import com.gpo.pilipala.feature.player.PlayerSheet
 import com.gpo.pilipala.feature.player.SheetPage
-import com.gpo.pilipala.feature.player.speedLabel
 import com.gpo.pilipala.feature.reply.ReplyList
 import com.gpo.pilipala.feature.video.VideoDetailViewModel
 import com.gpo.pilipala.feature.video.findActivity
@@ -218,8 +212,6 @@ internal fun PortraitVideoLayout(
                         TopChrome(
                             modifier = Modifier.revealed({ reveal.value.coerceIn(0f, 1f) }),
                             statusTop = statusTop,
-                            boosting = ctrl?.boosting == true,
-                            speed = speedLabel(3f),
                             onBack = { nav.pop() },
                             onMore = { moreOpen = true },
                             showMore = ctrl != null,
@@ -270,13 +262,14 @@ private fun aspectOf(vm: VideoDetailViewModel, item: VideoItem, ctrl: PiliPlayer
     return DefaultAspect
 }
 
-/** Back and more as round translucent buttons, the 3x pill while a long press holds. */
+/**
+ * Back and more as round translucent buttons. The hold-to-speed pill belongs to the page
+ * whose picture is held (PortraitPage), just under these.
+ */
 @Composable
 private fun TopChrome(
     modifier: Modifier,
     statusTop: androidx.compose.ui.unit.Dp,
-    boosting: Boolean,
-    speed: String?,
     onBack: () -> Unit,
     onMore: () -> Unit,
     showMore: Boolean,
@@ -300,27 +293,6 @@ private fun TopChrome(
             RoundButton(YoinSymbols.Back, "返回", onBack)
             Spacer(Modifier.weight(1f))
             if (showMore) RoundButton(YoinSymbols.MoreHorizontal, "更多", onMore)
-        }
-        AnimatedVisibility(
-            visible = boosting && speed != null,
-            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + scaleIn(YoinMotion.fastSpatialSpec(), initialScale = 0.7f) +
-                slideInVertically(YoinMotion.fastSpatialSpec()) { -it / 2 },
-            exit = fadeOut(YoinMotion.fastEffectsSpec()) + scaleOut(YoinMotion.fastSpatialSpec(), targetScale = 0.8f),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = statusTop + 60.dp),
-        ) {
-            Row(
-                Modifier
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.42f))
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(YoinSymbols.Speed, contentDescription = null, tint = OnPicture, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(speed.orEmpty(), style = MaterialTheme.typography.labelLarge, color = OnPicture)
-            }
         }
     }
 }

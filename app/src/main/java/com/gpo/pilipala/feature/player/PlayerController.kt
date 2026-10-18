@@ -118,6 +118,10 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         private set
     var boosting by mutableStateOf(false)
         private set
+
+    /** What a boost plays at (hold to speed up steps it); a re-prepare mid-boost keeps it. */
+    var boostRate by mutableFloatStateOf(3f)
+        private set
     var loop by mutableStateOf(false)
         private set
     var sleepMinutes by mutableIntStateOf(0)
@@ -437,10 +441,11 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         if (!boosting) exo?.setPlaybackSpeed(value)
     }
 
-    fun beginBoost() {
-        if (boosting) return
+    /** Plays at [rate] until [endBoost]; called again mid-boost, it only changes the rate. */
+    fun beginBoost(rate: Float = 3f) {
+        boostRate = rate
         boosting = true
-        exo?.setPlaybackSpeed(3f)
+        exo?.setPlaybackSpeed(rate)
     }
 
     fun endBoost() {
@@ -937,7 +942,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         }
         if (phase is PlayerPhase.Error) phase = PlayerPhase.Loading
         p.setMediaSource(source, startMs.coerceAtLeast(0L))
-        p.setPlaybackSpeed(if (boosting) 3f else speed)
+        p.setPlaybackSpeed(if (boosting) boostRate else speed)
         p.playWhenReady = playWhenReady
         p.prepare()
         positionMs = startMs

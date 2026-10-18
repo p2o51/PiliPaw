@@ -75,15 +75,6 @@ internal fun holdRates(base: Float): List<Float> = HoldDetents.filter { it > bas
 /** Where a hold starts: 2x, or the first detent above it when the video already plays at 2x or more. */
 internal fun holdStart(rates: List<Float>): Int = rates.indexOfFirst { it >= 2f }.takeIf { it >= 0 } ?: rates.lastIndex
 
-/**
- * Plays at [rate] for as long as the boost lasts. Rides on the controller's boost (which
- * restores the normal speed on [PiliPlayerController.endBoost]); only the rate differs.
- */
-internal fun PiliPlayerController.holdAt(rate: Float) {
-    if (!boosting) beginBoost()
-    player?.setPlaybackSpeed(rate)
-}
-
 internal fun holdLabel(v: Float): String =
     if (v == v.toInt().toFloat()) "${v.toInt()}.0x" else "${String.format(Locale.US, "%.2f", v).trimEnd('0')}x"
 
@@ -139,6 +130,50 @@ internal suspend fun AwaitPointerEventScope.awaitPress(
     }
 }
 
+/**
+ * Waits on a press that becomes a hold only if it stays put, consuming nothing: it returns
+ * as soon as the finger lifts ([Press.Released]), is taken by a scrolling parent
+ * ([Press.Gone]) or travels past [slop] ([Press.Moved]). Taps, double taps and a parent's
+ * swipes go on exactly as without it. Run it under the long-press timeout: a finger still
+ * down and in place when the time runs out is a hold.
+ */
+internal suspend fun AwaitPointerEventScope.awaitLeave(pointer: PointerId, slop: Float): Press {
+    var total = Offset.Zero
+    while (true) {
+        val event = awaitPointerEvent()
+        val c = event.changes.fastFirstOrNull { it.id == pointer } ?: return Press.Gone
+        if (c.changedToUpIgnoreConsumed()) return if (c.isConsumed) Press.Gone else Press.Released
+        if (c.isConsumed) return Press.Gone
+        total += c.positionChangeIgnoreConsumed()
+        if (total.getDistance() > slop) return Press.Moved(c, total)
+        // Someone later in the pass (the pager) may have taken it.
+        awaitPointerEvent(PointerEventPass.Final)
+        if (c.isConsumed) return Press.Gone
+    }
+}
+
+/**
+ * After [awaitLeave] reported a move: follows the press without consuming any move and
+ * swallows its release, so a swipe nobody took does not end as a tap. Steps aside the moment
+ * a scrolling parent takes a move (its release, and so its fling, is left alone).
+ */
+internal suspend fun AwaitPointerEventScope.swallowRelease(pointer: PointerId) {
+    // The move that crossed the slop is still in its pass: has the parent taken it?
+    var final = awaitPointerEvent(PointerEventPass.Final)
+    while (true) {
+        val moved = final.changes.fastFirstOrNull { it.id == pointer } ?: return
+        if (moved.isConsumed) return
+        val event = awaitPointerEvent()
+        val c = event.changes.fastFirstOrNull { it.id == pointer } ?: return
+        if (c.isConsumed) return
+        if (!c.pressed) {
+            c.consume()
+            return
+        }
+        final = awaitPointerEvent(PointerEventPass.Final)
+    }
+}
+
 /** Swallows the rest of a press, so a long press that did nothing does not end as a tap. */
 internal suspend fun AwaitPointerEventScope.consumeUntilRelease(pointer: PointerId) {
     while (true) {
@@ -165,7 +200,7 @@ internal suspend fun AwaitPointerEventScope.holdSpeed(
 ) {
     val rates = holdRates(ctrl.speed)
     var index = holdStart(rates)
-    ctrl.holdAt(rates[index])
+    ctrl.beginBoost(rates[index])
     feedback.holdRates = rates
     feedback.holdIndex = index
     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -185,7 +220,7 @@ internal suspend fun AwaitPointerEventScope.holdSpeed(
             }.coerceIn(0, rates.lastIndex)
             if (next != index) {
                 index = next
-                ctrl.holdAt(rates[index])
+                ctrl.beginBoost(rates[index])
                 feedback.holdIndex = index
                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
             }
