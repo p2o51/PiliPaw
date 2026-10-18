@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and below. The login (cookies, account) and the device identity (buvid in
+     pili_net) never leave the device; settings, feeds and history still back up. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="pili_cookies.xml" />
+    <exclude domain="sharedpref" path="pili_account.xml" />
+    <exclude domain="sharedpref" path="pili_net.xml" />
+</full-backup-content>
