@@ -56,12 +56,17 @@ import kotlinx.coroutines.launch
  * no-op, its seekable clock made a heavy first frame eat the motion)
  *  - From a card (VideoCardV/H, live cards …): container transform. The
  *    container's bounds lerp from the card to the window on the spatial
- *    spring, corners 12dp → 0; it starts as the card's own pixels, which
- *    fade off the full-size page on the effects spring; the page beneath
- *    dims under the M3 scrim and stays put.
+ *    spring and it reads as a rounded card the whole way: the card's 12dp
+ *    corner opens to the 28dp window corner early in the grow, holds while
+ *    it moves and eases to 0 only over the last ~10% as it lands (one
+ *    smoothstep curve of the growth); it starts as the card's own pixels,
+ *    which fade off the full-size page on the effects spring; the page
+ *    beneath dims under the M3 scrim and stays put.
  *  - Anything else (settings, search, replace …): Yoin's forward mirror —
- *    the page enters from 96dp on EMPHASIZED with a fade, the page beneath
- *    stays put.
+ *    the page enters from 96dp on EMPHASIZED with a fade, clipped to the
+ *    28dp window corner while it slides (easing to 0 as it settles), the
+ *    page beneath stays put.
+ *  - LocalPageSettled turns true only once the forward motion has landed.
  *
  * Back (the AOSP cross-activity replica, tokens in [BackMotionTokens])
  *  - The host consumes the gesture ([PageBackHandler], registered BEFORE the
