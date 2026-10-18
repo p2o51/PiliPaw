@@ -1,18 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Based on PiliPala by guozhigq (github.com/guozhigq/pilipala), GPL-3.0 -->
 <!--
-  PiliPaw launcher foreground: the PiliPala P, grown up, with a paw print
-  for a counter.
+  PiliPaw launcher foreground ("three"): the PiliPala P with a paw at the
+  end of its shadow.
 
-  Face: 32 x 40 units before scaling, 12 stem with a pill foot, 13.5-radius
-  semicircle bowl. Block: the face swept along (-11.5, +11.5), the original
-  logo's 45 degree extrusion, as arcs plus 45 degree tangents. Along the
-  top-left corner, the top edge, the bowl and the foot it runs 1.0 inside
-  the face, so the block never shares an anti-aliased edge with the white
-  (no green fringe). Counter: an upright paw print cut through the face as
-  even-odd holes (domed pad and four jelly-bean toes, every gap >= 1.53),
-  so the block shows through it. Whole mark scaled 0.95 about the centre,
-  within r 29.4 of it (safe zone r 33).
+  Face: the shipped P, 32 x 40 units scaled 0.95 about the centre: 12 stem
+  with a pill foot, 13.5-radius semicircle bowl, D counter (flat side on the
+  stem line, right side concentric with the bowl), cut even-odd so the block
+  shows through. Block: the face swept 45 degrees down-left by 6.97, arcs
+  plus 45 degree tangents, tucked 1.0 under the face wherever they meet (no
+  green fringe). Paw: the block's rounded tail (r 5.7) is the main pad;
+  three round toes of r 2.75 sit on a ring concentric with it,
+  1.6 off the pad and 1.75 apart, centred on the tail's visible arc
+  (122 degrees, y down). Everything stays within r 30.90 of
+  the centre (safe zone r 33).
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -22,10 +23,14 @@
     <path
         android:name="block"
         android:fillColor="#FF2CBA74"
-        android:pathData="M46.448,31.248 L47.155,31.955 A5.65,5.65 0 0,1 51.15,30.3 L62.075,30.3 A11.825,11.825 0 0,1 70.437,50.487 L71.144,51.194 L60.219,62.119 A12.825,12.825 0 0,1 54.397,65.457 L53.66,64.781 A4.7,4.7 0 0,1 53.523,64.923 L54.231,65.631 L43.306,76.556 A5.7,5.7 0 0,1 39.275,78.225 A5.7,5.7 0 0,1 33.575,72.525 L33.575,46.875 A6.65,6.65 0 0,1 35.523,42.173 Z"/>
+        android:pathData="M46.448,31.248 L47.155,31.955 A5.65,5.65 0 0,1 51.15,30.3 L62.075,30.3 A11.825,11.825 0 0,1 70.437,50.487 L71.144,51.194 L64.174,58.164 A12.825,12.825 0 0,1 55.892,61.896 L54.894,61.844 A4.7,4.7 0 0,1 53.523,64.923 L54.231,65.631 L47.261,72.601 A5.7,5.7 0 0,1 43.23,74.27 A5.7,5.7 0 0,1 37.53,68.57 L37.53,42.92 A6.65,6.65 0 0,1 39.478,38.218 Z"/>
+    <path
+        android:name="toes"
+        android:fillColor="#FF2CBA74"
+        android:pathData="M45.516,81.164 A2.75,2.75 0 0,1 42.319,78.95 A2.75,2.75 0 0,1 44.533,75.753 A2.75,2.75 0 0,1 47.73,77.967 A2.75,2.75 0 0,1 45.516,81.164 Z M36.447,79.425 A2.75,2.75 0 0,1 35.572,75.636 A2.75,2.75 0 0,1 39.362,74.761 A2.75,2.75 0 0,1 40.236,78.55 A2.75,2.75 0 0,1 36.447,79.425 Z M30.908,72.037 A2.75,2.75 0 0,1 32.811,68.645 A2.75,2.75 0 0,1 36.203,70.547 A2.75,2.75 0 0,1 34.3,73.939 A2.75,2.75 0 0,1 30.908,72.037 Z"/>
     <path
         android:name="face"
         android:fillColor="#FFFFFFFF"
         android:fillType="evenOdd"
-        android:pathData="M44.5,35.95 A6.65,6.65 0 0,1 51.15,29.3 L62.075,29.3 A12.825,12.825 0 0,1 74.9,42.125 A12.825,12.825 0 0,1 62.075,54.95 L57.8,54.95 A1.9,1.9 0 0,0 55.9,56.85 L55.9,61.6 A5.7,5.7 0 0,1 50.2,67.3 A5.7,5.7 0 0,1 44.5,61.6 Z M59.639,42.499 A2.215,2.215 0 0,1 61.572,41.367 L62.198,41.367 A2.215,2.215 0 0,1 64.131,42.499 L65.121,44.265 A2.517,2.517 0 0,1 62.925,48.013 L60.845,48.013 A2.517,2.517 0 0,1 58.649,44.265 Z M54.903,42.066 A1.405,1.405 0 0,1 56.732,39.933 L57.282,40.405 A1.405,1.405 0 0,1 55.454,42.538 Z M58.165,38.184 A1.405,1.405 0 0,1 60.869,37.422 L61.065,38.12 A1.405,1.405 0 0,1 58.361,38.882 Z M62.901,37.422 A1.405,1.405 0 0,1 65.605,38.184 L65.409,38.882 A1.405,1.405 0 0,1 62.705,38.12 Z M67.038,39.933 A1.405,1.405 0 0,1 68.867,42.066 L68.316,42.538 A1.405,1.405 0 0,1 66.488,40.405 Z"/>
+        android:pathData="M44.5,35.95 A6.65,6.65 0 0,1 51.15,29.3 L62.075,29.3 A12.825,12.825 0 0,1 74.9,42.125 A12.825,12.825 0 0,1 62.075,54.95 L57.8,54.95 A1.9,1.9 0 0,0 55.9,56.85 L55.9,61.6 A5.7,5.7 0 0,1 50.2,67.3 A5.7,5.7 0 0,1 44.5,61.6 Z M55.9,39.75 A1.425,1.425 0 0,1 57.325,38.325 L62.075,38.325 A3.8,3.8 0 0,1 65.875,42.125 A3.8,3.8 0 0,1 62.075,45.925 L57.325,45.925 A1.425,1.425 0 0,1 55.9,44.5 Z"/>
 </vector>
