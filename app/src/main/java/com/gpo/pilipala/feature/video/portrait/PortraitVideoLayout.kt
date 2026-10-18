@@ -1,5 +1,8 @@
 package com.gpo.pilipala.feature.video.portrait
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.LocalContentColor
+import com.gpo.pilipala.feature.player.rememberPlayerSheetProperties
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
 import androidx.compose.material3.LoadingIndicator
@@ -336,9 +339,13 @@ private fun RoundButton(icon: ImageVector, description: String, onClick: () -> U
 /** Compact / Medium: comments in a sheet at ~70% of the height, in the page's own theme. */
 @Composable
 private fun CommentsSheet(aid: Long, count: Long, onSeek: (Long) -> Unit, onDismiss: () -> Unit) {
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        // Edge to edge: the sheet runs under the navigation bar; the list pads itself.
+        contentWindowInsets = { WindowInsets(0) },
+        properties = rememberPlayerSheetProperties(),
     ) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.7f)) {
             CommentsHeader(count, onClose = null)
@@ -348,8 +355,9 @@ private fun CommentsSheet(aid: Long, count: Long, onSeek: (Long) -> Unit, onDism
                         oid = aid,
                         type = 1,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
-                        contentPadding = PaddingValues(bottom = 16.dp),
+                        contentPadding = PaddingValues(bottom = 16.dp + navBottom),
                         onTimestampClick = onSeek,
+                        threadsInPlace = true,
                     )
                 }
             }
@@ -498,8 +506,10 @@ private fun ImmersiveTheme(content: @Composable () -> Unit) {
         motionScheme = MaterialTheme.motionScheme,
         shapes = MaterialTheme.shapes,
         typography = MaterialTheme.typography,
-        content = content,
-    )
+    ) {
+        // A nested scheme needs its own default content colour; the outer one may be light.
+        CompositionLocalProvider(LocalContentColor provides scheme.onSurface, content = content)
+    }
 }
 
 /** Light status / navigation bar icons over the picture; restored when the layout leaves. */

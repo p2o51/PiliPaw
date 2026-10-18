@@ -1,5 +1,7 @@
 package com.gpo.pilipala.feature.player
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.draw.clip
 import android.content.res.Configuration
@@ -991,6 +993,8 @@ private fun PlayerChromeTheme(content: @Composable () -> Unit) {
         motionScheme = MaterialTheme.motionScheme,
         shapes = MaterialTheme.shapes,
         typography = MaterialTheme.typography,
-        content = content,
-    )
+    ) {
+        // A nested scheme needs its own default content colour; the outer one may be light.
+        CompositionLocalProvider(LocalContentColor provides scheme.onSurface, content = content)
+    }
 }

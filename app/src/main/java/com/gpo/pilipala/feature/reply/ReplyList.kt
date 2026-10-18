@@ -120,13 +120,16 @@ fun ReplyList(
     contentPadding: PaddingValues = PaddingValues(),
     header: (LazyListScope.() -> Unit)? = null,
     onTimestampClick: ((seconds: Long) -> Unit)? = null,
+    threadsInPlace: Boolean = false,
 ) {
     val vm: ReplyListViewModel = viewModel(key = "reply_list_${oid}_$type") { ReplyListViewModel(oid, type) }
     val nav = LocalNavigator.current
     val ui = rememberReplyUiState()
     val listState = rememberLazyListState()
     val motion = replyMotion()
-    val inPlace = widthClass() != WidthClass.Compact
+    // A list inside a sheet keeps its threads in the sheet too: pushing a page from there
+    // would drop the sheet's window and flash.
+    val inPlace = threadsInPlace || widthClass() != WidthClass.Compact
     var thread by rememberSaveable(stateSaver = OpenThreadSaver) { mutableStateOf(null) }
 
     val actions = rememberReplyActions(
