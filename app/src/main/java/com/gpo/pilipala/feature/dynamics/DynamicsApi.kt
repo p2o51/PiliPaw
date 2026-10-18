@@ -14,6 +14,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.mutableStateMapOf
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.BiliException
+import com.gpo.pilipala.core.net.BiliHosts
 import com.gpo.pilipala.core.net.BiliJson
 import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asArr
@@ -36,11 +37,13 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -342,6 +345,44 @@ internal object DynamicsApi {
             .writeTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .build()
+    }
+
+    /**
+     * One vote: `/x/vote/vote_info` (`vote_info` + `my_votes`, option images), the
+     * legacy vc endpoint (`info`) when the new one is unreachable. A business error
+     * (260010 投票不可展示 …) is the answer and is not retried.
+     */
+    suspend fun voteInfo(voteId: Long): VoteInfo = withContext(Dispatchers.Default) {
+        val data = try {
+            BiliClient.getData("/x/vote/vote_info", mapOf("vote_id" to voteId)).asObj
+        } catch (e: Exception) {
+            if (e is CancellationException || (e is BiliException && e.code >= 1000)) throw e
+            runCatching {
+                BiliClient.getData("${BiliHosts.VC}/vote_svr/v1/vote_svr/vote_info", mapOf("vote_id" to voteId)).asObj
+            }.getOrElse { throw e }
+        }
+        parseVoteInfo(data) ?: throw BiliException(-404, "投票不存在")
+    }
+
+    /**
+     * Casts a vote. Only ever called from the 投票 button. JSON body like the web
+     * client (`/x/vote/do_vote`, csrf in query and body); the response carries the
+     * updated `vote_info` with `my_votes`, null when it does not.
+     */
+    suspend fun doVote(voteId: Long, votes: List<Int>, dynamicId: String): VoteInfo? = withContext(Dispatchers.Default) {
+        val csrf = BiliClient.csrf
+        val body = buildJsonObject {
+            put("vote_id", voteId)
+            put("votes", buildJsonArray { votes.forEach { add(it) } })
+            put("voter_uid", BiliClient.mid)
+            put("status", 0)
+            put("op_bit", 0)
+            put("dynamic_id", dynamicId.toLongOrNull() ?: 0L)
+            put("csrf_token", csrf)
+            put("csrf", csrf)
+        }.toString()
+        val data = BiliClient.unwrap(BiliClient.postJson("/x/vote/do_vote", body, params = mapOf("csrf" to csrf)))
+        parseVoteInfo(data.asObj)
     }
 
     suspend fun watchLater(aid: Long, bvid: String) {

@@ -30,6 +30,7 @@ import com.gpo.pilipala.feature.bangumi.BangumiDetailScreen
 import com.gpo.pilipala.feature.dynamics.DynamicComposeScreen
 import com.gpo.pilipala.feature.dynamics.DynamicDetailScreen
 import com.gpo.pilipala.feature.dynamics.MemberDynamicsScreen
+import com.gpo.pilipala.feature.dynamics.VoteScreen
 import com.gpo.pilipala.feature.feeds.FeedEditorScreen
 import com.gpo.pilipala.feature.library.BlacklistScreen
 import com.gpo.pilipala.feature.library.FansScreen
@@ -171,6 +172,7 @@ private val appEntryProvider = entryProvider<NavKey> {
     entry<Route.ReplyDetail> { ReplyDetailScreen(it) }
     entry<Route.Opus> { OpusScreen(it) }
     entry<Route.Read> { ReadScreen(it) }
+    entry<Route.Vote> { VoteScreen(it) }
     entry<Route.Fav> { FavScreen(it) }
     entry<Route.FavDetail> { FavDetailScreen(it) }
     entry<Route.Later> { LaterScreen() }

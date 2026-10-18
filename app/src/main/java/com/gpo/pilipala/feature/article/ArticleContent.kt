@@ -43,12 +43,16 @@ import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asObj
 import com.gpo.pilipala.core.net.bool
 import com.gpo.pilipala.core.net.int
+import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.feature.dynamics.RichBuilder
 import com.gpo.pilipala.feature.dynamics.RichContent
+import com.gpo.pilipala.feature.dynamics.VoteCard
+import com.gpo.pilipala.feature.dynamics.VoteSummary
 import com.gpo.pilipala.feature.dynamics.normalizeUrl
+import com.gpo.pilipala.feature.dynamics.voteSummaryOf
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.FameMode
@@ -75,6 +79,8 @@ internal sealed interface ArticleBlock {
     data class ListItem(val marker: String?, val level: Int, val content: RichContent) : ArticleBlock
     data class Code(val text: String) : ArticleBlock
     data class Card(val title: String, val subtitle: String, val cover: String, val url: String, val badge: String) : ArticleBlock
+    /** An opus `LINK_CARD_TYPE_VOTE`, or a legacy article's `data-vote-id` image. */
+    data class Vote(val summary: VoteSummary) : ArticleBlock
     data object Gap : ArticleBlock
 }
 
@@ -152,9 +158,12 @@ private fun parseList(list: JsonObject, level: Int, out: MutableList<ArticleBloc
     }
 }
 
-private fun parseCard(linkCard: JsonObject): ArticleBlock.Card? {
+private fun parseCard(linkCard: JsonObject): ArticleBlock? {
     val card = linkCard.obj("card") ?: return null
     val type = card.str("type").removePrefix("LINK_CARD_TYPE_").lowercase()
+    if (type == "vote") {
+        return voteSummaryOf(card.obj("vote"), card.long("oid"))?.let { ArticleBlock.Vote(it) }
+    }
     val inner: JsonObject = card.obj(type)
         ?: card.values.firstNotNullOfOrNull { (it as? JsonObject)?.takeIf { o -> o.str("title").isNotEmpty() } }
         ?: return null
@@ -374,7 +383,12 @@ internal fun parseHtml(html: String, style: ParseStyle): ParsedArticle {
             "img" -> {
                 val src = a["data-src"].orEmpty().ifEmpty { a["src"].orEmpty() }
                 val cls = a["class"].orEmpty()
-                if (src.isNotEmpty() && !src.startsWith("data:")) {
+                // <img class="vote-display" data-vote-id="…">: the editor's placeholder picture for a vote.
+                val voteId = a["data-vote-id"]?.toLongOrNull()?.takeIf { it > 0 }
+                if (voteId != null) {
+                    flush()
+                    containers.last() += ArticleBlock.Vote(VoteSummary(voteId, title = "", joinCount = 0L, endTime = 0L, status = 0, choiceCount = 1))
+                } else if (src.isNotEmpty() && !src.startsWith("data:")) {
                     val w = a["width"]?.toIntOrNull() ?: 0
                     val h = a["height"]?.toIntOrNull() ?: 0
                     if (cls.contains("cut-off") || (w in 1..120 && h in 1..60)) {
@@ -591,6 +605,7 @@ internal fun ArticleBlockView(block: ArticleBlock, onImage: (Int) -> Unit, modif
                 if (block.badge.isNotEmpty()) Tag(block.badge)
             }
         }
+        is ArticleBlock.Vote -> VoteCard(block.summary, modifier, color = MaterialTheme.colorScheme.surfaceContainerLow)
         ArticleBlock.Gap -> Spacer(modifier.height(8.dp))
     }
 }

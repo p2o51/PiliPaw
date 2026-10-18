@@ -430,22 +430,7 @@ private fun AdditionalContent(item: JsonObject, blockColor: Color) {
                 onClick = r.str("jump_url").takeIf { it.isNotEmpty() }?.let { u -> { nav.openUrl(normalizeUrl(u)) } },
             )
         }
-        "ADDITIONAL_TYPE_VOTE" -> add.obj("vote")?.let { v ->
-            RowBlock(
-                cover = null,
-                icon = PiliSymbols.Trophy,
-                title = v.str("desc"),
-                subtitle = if (v.long("join_num") > 0) "${Fmt.count(v.long("join_num"))}人参与" else null,
-                badge = "投票",
-                color = blockColor,
-                onClick = {
-                    nav.openUrl(
-                        "https://t.bilibili.com/vote/h5/index/#/result?vote_id=${v.long("vote_id")}&dynamic_id=${item.dynId}&isWeb=1",
-                        "投票",
-                    )
-                },
-            )
-        }
+        "ADDITIONAL_TYPE_VOTE" -> add.obj("vote")?.let { v -> VoteCard(v, dynamicId = item.dynId, color = blockColor) }
         "ADDITIONAL_TYPE_GOODS" -> add.obj("goods")?.let { g ->
             val first = g.arr("items").objects().firstOrNull() ?: return@let
             RowBlock(

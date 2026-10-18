@@ -58,15 +58,23 @@ object LinkRouter {
         val path = uri.path.orEmpty()
         val segs = uri.pathSegments
         IdUtils.findBvid(url)?.let { if (host.contains("bilibili") || uri.scheme == "bilibili" || host.contains("b23")) return Route.Video(it) }
+        // Votes: t.bilibili.com/vote/h5/index/#/result?vote_id=…, or any bilibili link carrying
+        // vote_id in its query or fragment, open the native vote page.
+        if (host.contains("bilibili.com") || uri.scheme == "bilibili") {
+            VoteIdRegex.find(url)?.groupValues?.get(1)?.toLongOrNull()?.takeIf { it > 0 }?.let { voteId ->
+                val dynId = DynamicIdRegex.find(url)?.groupValues?.get(1).orEmpty()
+                return Route.Vote(voteId, dynamicId = dynId.takeIf { it.isDigitId() }.orEmpty(), title = title)
+            }
+        }
         return when {
             uri.scheme == "bilibili" && host == "video" -> segs.firstOrNull()?.toLongOrNull()?.let { Route.Video(IdUtils.av2bv(it), aid = it) } ?: Route.Web(url, title)
             uri.scheme == "bilibili" && host == "space" -> segs.firstOrNull()?.toLongOrNull()?.let { Route.Member(it) } ?: Route.Web(url, title)
             uri.scheme == "bilibili" && host == "live" -> segs.firstOrNull()?.toLongOrNull()?.let { Route.LiveRoom(it) } ?: Route.Web(url, title)
-            uri.scheme == "bilibili" && (host == "opus" || host == "following") -> segs.lastOrNull()?.let { Route.DynamicDetail(it) } ?: Route.Web(url, title)
+            uri.scheme == "bilibili" && (host == "opus" || host == "following") -> segs.lastOrNull()?.takeIf { it.isDigitId() }?.let { Route.DynamicDetail(it) } ?: Route.Web(url, title)
             host.startsWith("space.bilibili.com") -> segs.firstOrNull()?.toLongOrNull()?.let { Route.Member(it) } ?: Route.Web(url, title)
             host.startsWith("live.bilibili.com") -> segs.firstOrNull()?.toLongOrNull()?.let { Route.LiveRoom(it) } ?: Route.Web(url, title)
-            host.startsWith("t.bilibili.com") -> segs.firstOrNull()?.let { Route.DynamicDetail(it) } ?: Route.Web(url, title)
-            host.contains("bilibili.com") && path.startsWith("/opus/") -> Route.DynamicDetail(segs.last())
+            host.startsWith("t.bilibili.com") -> segs.firstOrNull()?.takeIf { it.isDigitId() }?.let { Route.DynamicDetail(it) } ?: Route.Web(url, title)
+            host.contains("bilibili.com") && path.startsWith("/opus/") -> segs.lastOrNull()?.takeIf { it.isDigitId() }?.let { Route.DynamicDetail(it) } ?: Route.Web(url, title)
             host.contains("bilibili.com") && path.startsWith("/read/cv") -> path.removePrefix("/read/cv").toLongOrNull()?.let { Route.Read(it, title) } ?: Route.Web(url, title)
             host.contains("bilibili.com") && path.startsWith("/bangumi/play/ss") -> Route.Bangumi(seasonId = path.removePrefix("/bangumi/play/ss").toLongOrNull() ?: 0)
             host.contains("bilibili.com") && path.startsWith("/bangumi/play/ep") -> Route.Bangumi(epId = path.removePrefix("/bangumi/play/ep").toLongOrNull() ?: 0)
@@ -75,3 +83,9 @@ object LinkRouter {
         }
     }
 }
+
+private val VoteIdRegex = Regex("""[?&]vote_id=(\d+)""")
+private val DynamicIdRegex = Regex("""[?&]dynamic_id=(\d+)""")
+
+/** A dynamic id is all digits: `t.bilibili.com/vote/…` or `/h5/…` must not become DynamicDetail("vote"). */
+private fun String.isDigitId(): Boolean = isNotEmpty() && all { it in '0'..'9' }
