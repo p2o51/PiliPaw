@@ -830,8 +830,9 @@ private fun ExpandableSign(sign: String, onLongClick: () -> Unit) {
 }
 
 /**
- * Number over label. [fame]: a popularity count (粉丝 / 获赞 / 播放) — a line under 名声模式;
- * a tap on the line shows it, a tap on the rest of the block still opens [onClick].
+ * Number over label. [fame]: a popularity count (粉丝 / 获赞 / 播放), a line under 名声模式.
+ * A block that opens a list ([onClick]) keeps the line a line, so the whole block opens it;
+ * a block with no tap of its own (获赞, 播放) shows the number when the line is tapped.
  */
 @Composable
 private fun StatBlock(value: Long, label: String, fame: Boolean = false, onClick: (() -> Unit)?) {
@@ -842,16 +843,20 @@ private fun StatBlock(value: Long, label: String, fame: Boolean = false, onClick
             .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
         val fx = YoinMotion.defaultEffectsSpec<Float>()
+        // Held outside the cross-fade: a shown number stays shown when the count moves.
+        val revealed = remember { mutableStateOf(false) }
         AnimatedContent(
-            targetState = value >= 0,
+            targetState = value,
             transitionSpec = { fadeIn(fx) togetherWith fadeOut(fx) },
             label = "stat",
-        ) { known ->
+        ) { v ->
             FameCount(
-                if (known) Fmt.count(value.coerceAtLeast(0)) else "-",
+                if (v >= 0) Fmt.count(v) else "-",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-                hide = fame && known,
+                revealable = onClick == null,
+                hide = fame && v >= 0,
+                revealState = revealed,
             )
         }
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

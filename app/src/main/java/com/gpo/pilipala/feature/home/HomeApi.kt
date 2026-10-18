@@ -18,6 +18,7 @@ import com.gpo.pilipala.core.util.IdUtils
 import com.gpo.pilipala.navigation.LinkRouter
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.VideoItem
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -151,7 +152,7 @@ private fun JsonObject.toWebRcmd(): Pair<VideoItem, Boolean>? {
         danmaku = stat.long("danmaku", -1),
         likes = stat.long("like", -1),
         pubdate = long("pubdate"),
-        badge = if (followed) "已关注" else "",
+        badge = if (followed) FollowedBadge else "",
         reason = obj("rcmd_reason").str("content"),
     )
     val item = when (goto) {
@@ -196,7 +197,7 @@ private fun JsonObject.toAppRcmd(): Triple<VideoItem, Boolean, AppFeedRef>? {
                 ownerName = args.str("up_name"),
                 views = parseCount(str("cover_left_text_1")),
                 danmaku = parseCount(str("cover_left_text_2")),
-                badge = if (followed) "已关注" else "",
+                badge = if (followed) FollowedBadge else "",
                 reason = reason,
             ) to followed
         }
@@ -235,6 +236,31 @@ private fun JsonObject.dislikeReasonId(): Int? {
         .flatMap { it.arr("reasons").objects() } + obj("three_point").arr("dislike_reasons").objects()
     val pick = reasons.firstOrNull { it.str("name").contains("不感兴趣") } ?: reasons.firstOrNull()
     return pick?.int("id", -1)?.takeIf { it >= 0 }
+}
+
+/** Cover badge of a recommended video by an UP the user follows; [MutualBadge] when they follow back. */
+private const val FollowedBadge = "已关注"
+private const val MutualBadge = "互相关注"
+
+/**
+ * The 已关注 badges of a page read 互相关注 for UPs who follow the user back: one read-only
+ * GET /x/relation/relations for the page's followed UPs (attribute 6), logged in only. A failed
+ * lookup keeps 已关注.
+ */
+private suspend fun List<VideoItem>.withMutualBadges(): List<VideoItem> {
+    if (!BiliClient.isLoggedIn) return this
+    val mids = filter { it.badge == FollowedBadge && it.ownerMid > 0 }.map { it.ownerMid }.distinct().take(50)
+    if (mids.isEmpty()) return this
+    val mutual = try {
+        val data = BiliClient.getData("/x/relation/relations", mapOf("fids" to mids.joinToString(","))).asObj
+        mids.filter { data.obj(it.toString()).int("attribute") == 6 }.toSet()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        emptySet()
+    }
+    if (mutual.isEmpty()) return this
+    return map { if (it.badge == FollowedBadge && it.ownerMid in mutual) it.copy(badge = MutualBadge) else it }
 }
 
 /** Flutter's RecommendFilter: true = keep. */
@@ -276,6 +302,7 @@ internal object HomeApi {
             .filter { (item, followed) -> keepRcmd(item, followed) }
             .map { it.first }
             .withoutBlocked()
+            .withMutualBadges()
     }
 
     class AppRcmdPage(val items: List<VideoItem>, val refs: List<AppFeedRef>, val nextIdx: Long)
@@ -299,7 +326,8 @@ internal object HomeApi {
         val blocked = Blacklist.mids.value
         val list = raw.mapNotNull { it.toAppRcmd() }
             .filter { (item, followed, _) -> keepRcmd(item, followed) && item.ownerMid !in blocked }
-        return AppRcmdPage(list.map { it.first }, list.map { it.third }, nextIdx)
+        // Same length and order as the refs: the badge pass only relabels.
+        return AppRcmdPage(list.map { it.first }.withMutualBadges(), list.map { it.third }, nextIdx)
     }
 
     /** Popular list; second = has more. */

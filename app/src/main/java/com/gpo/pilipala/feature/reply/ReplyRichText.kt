@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.reply
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -7,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onPlaced
@@ -47,6 +50,7 @@ import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Navigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Tag
+import com.gpo.pilipala.ui.theme.YoinMotion
 
 private val UrlRegex = Regex("""https?://[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+""")
 private val BvRegex = Regex("BV[0-9A-Za-z]{10}")
@@ -104,6 +108,8 @@ internal fun ReplyRichText(
     var preview by remember { mutableStateOf<InlineEmotePreview?>(null) }
     val longPress by rememberUpdatedState(onEmoteLongPress)
     val hasLongPress = onEmoteLongPress != null
+    // A relation tag known when the line first showed is simply there; one that lands later fades in.
+    val fadeRelationTag = remember { (prefix?.relation ?: 0) == 0 }
     val inline = remember(content, prefix != null && prefix.isUp, prefix?.relation ?: 0, density, hasLongPress) {
         buildMap {
             content.emotes.forEach { (key, emote) ->
@@ -135,21 +141,7 @@ internal fun ReplyRichText(
                 put(
                     RELATION_TAG_ID,
                     InlineTextContent(Placeholder(2.7.em, 1.3.em, PlaceholderVerticalAlign.TextCenter)) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            if (relation == 6) {
-                                Tag(
-                                    "互关",
-                                    container = MaterialTheme.colorScheme.tertiaryContainer,
-                                    content = MaterialTheme.colorScheme.onTertiaryContainer,
-                                )
-                            } else {
-                                Tag(
-                                    "关注",
-                                    container = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    content = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
+                        InlineRelationTag(relation, fadeRelationTag)
                     },
                 )
             }
@@ -181,6 +173,34 @@ internal fun ReplyRichText(
     )
     preview?.let { p ->
         InlineEmotePreviewDialog(p) { preview = null }
+    }
+}
+
+/** The inline 关注 / 互关 tag after a preview line's name; [fade]: it landed after the line showed. */
+@Composable
+private fun InlineRelationTag(relation: Int, fade: Boolean) {
+    val alpha = remember { Animatable(if (fade) 0f else 1f) }
+    val spec = YoinMotion.defaultEffectsSpec<Float>()
+    LaunchedEffect(Unit) { alpha.animateTo(1f, spec) }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer { this.alpha = alpha.value },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (relation == 6) {
+            Tag(
+                "互关",
+                container = MaterialTheme.colorScheme.tertiaryContainer,
+                content = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+        } else {
+            Tag(
+                "关注",
+                container = MaterialTheme.colorScheme.surfaceContainerHighest,
+                content = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 

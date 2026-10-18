@@ -84,6 +84,7 @@ import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.FameCount
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.LocalBottomBarInset
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.components.WidthClass
@@ -349,7 +350,10 @@ private fun StatsRow(u: UserInfo) {
     }
 }
 
-/** Number over label; [fame] (粉丝) draws a line under 名声模式, a tap on the line shows it. */
+/**
+ * Number over label; [fame] (粉丝) draws a line under 名声模式. The cell opens a list,
+ * so the line stays a line and the whole cell keeps its tap.
+ */
 @Composable
 private fun StatCell(value: String, label: String, modifier: Modifier, fame: Boolean = false, onClick: () -> Unit) {
     Column(
@@ -363,12 +367,15 @@ private fun StatCell(value: String, label: String, modifier: Modifier, fame: Boo
     ) {
         val enterFade = YoinMotion.defaultEffectsSpec<Float>()
         val exitFade = YoinMotion.fastEffectsSpec<Float>()
+        val hidden = fame && FameMode.on
         AnimatedContent(
             targetState = value,
             transitionSpec = { fadeIn(enterFade) togetherWith fadeOut(exitFade) },
+            // A hidden count that moves is the same line: nothing to fade.
+            contentKey = { v -> if (hidden) "" else v },
             label = "stat",
         ) { v ->
-            FameCount(v, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, hide = fame)
+            FameCount(v, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, revealable = false, hide = fame)
         }
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

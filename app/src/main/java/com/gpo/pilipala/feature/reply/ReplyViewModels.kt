@@ -66,31 +66,35 @@ internal abstract class BaseReplyViewModel(val oid: Long, val type: Int) : ViewM
      * the page back; rows read it and their tag fades in once it is known.
      */
     val relations = mutableStateMapOf<Long, Int>()
+
+    /** Mids already learnt or on their way. Read and written on the main thread only. */
     private val relationAsked = HashSet<Long>()
 
     fun relationOf(mid: Long): Int = relations[mid] ?: 0
 
-    /** Learns the relations for a page of replies (and their previews): payload first, then one batched GET. */
+    /**
+     * Learns the relations for a page of replies (and their previews): payload first, then one
+     * batched GET. Called from the pager's loader (a background thread): the page is only walked
+     * there; the cache is checked and filled back on the main thread.
+     */
     protected fun learnRelations(replies: List<Reply>) {
         if (!BiliClient.isLoggedIn || replies.isEmpty()) return
         val me = BiliClient.mid
-        val unknown = LinkedHashSet<Long>()
+        // mid → the payload's relation, or -1 when the payload does not say.
+        val seen = LinkedHashMap<Long, Int>()
         fun visit(r: Reply) {
             val mid = r.member.mid
-            if (mid != 0L && mid != me && mid !in relationAsked) {
-                if (r.relation >= 0) {
-                    relationAsked += mid
-                    noteRelation(mid, r.relation)
-                } else {
-                    unknown += mid
-                }
-            }
+            if (mid != 0L && mid != me && (seen[mid] ?: -1) < 0) seen[mid] = r.relation
             r.replies.forEach { visit(it) }
         }
         replies.forEach { visit(it) }
-        if (unknown.isEmpty()) return
-        relationAsked += unknown
+        if (seen.isEmpty()) return
         viewModelScope.launch {
+            val unknown = ArrayList<Long>()
+            seen.forEach { (mid, relation) ->
+                if (!relationAsked.add(mid)) return@forEach
+                if (relation >= 0) noteRelation(mid, relation) else unknown += mid
+            }
             unknown.chunked(RELATION_BATCH).forEach { chunk ->
                 runCatching { ReplyApi.relations(chunk) }
                     .onSuccess { found -> found.forEach { (mid, a) -> noteRelation(mid, a) } }

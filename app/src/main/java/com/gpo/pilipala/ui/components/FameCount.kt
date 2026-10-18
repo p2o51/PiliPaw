@@ -16,6 +16,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -105,9 +106,13 @@ fun ImageVector.isPopularityGlyph(): Boolean = PopularityGlyphs.any { it === thi
  * in its place, the height of the text line so nothing around it moves.
  *
  * [revealable]: tapping the line rolls the real number in (spatial spring) for this
- * spot. Pass false where the number sits inside a bigger clickable (a card, a button):
- * the line stays a line and the tap keeps its job. [hide] false keeps the number
- * (not a popularity count). [lineColor] defaults to onSurfaceVariant.
+ * spot. Only where the number has no parent tap. Inside a bigger clickable (a card, a
+ * row, a button, a stat block that opens a list) pass false: the line's tap area (its
+ * slop plus the 48dp minimum touch target) would take the taps meant for the parent
+ * and the text next to it. [hide] false keeps the number (not a popularity count).
+ * [lineColor] defaults to onSurfaceVariant. [revealState] hoists the revealed flag for
+ * a caller that swaps this composable out when the number changes (an AnimatedContent
+ * keyed on the value), so a shown number stays shown.
  */
 @Composable
 fun FameCount(
@@ -119,6 +124,7 @@ fun FameCount(
     lineColor: Color = Color.Unspecified,
     revealable: Boolean = true,
     hide: Boolean = true,
+    revealState: MutableState<Boolean>? = null,
 ) {
     if (!hide || !FameMode.on || text.isBlank()) {
         Text(text, modifier, color = color, style = style, fontWeight = fontWeight, maxLines = 1)
@@ -129,7 +135,8 @@ fun FameCount(
         FameLine(style, bar, modifier)
         return
     }
-    var revealed by remember { mutableStateOf(false) }
+    val ownState = remember { mutableStateOf(false) }
+    var revealed by (revealState ?: ownState)
     val haptic = LocalHapticFeedback.current
     val offsetSpec = YoinMotion.defaultSpatialSpec<IntOffset>()
     val sizeSpec = YoinMotion.defaultSpatialSpec<IntSize>()

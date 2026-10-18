@@ -2,6 +2,7 @@ package com.gpo.pilipala.feature.video
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -51,12 +52,14 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.FameCount
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
@@ -193,8 +196,8 @@ internal fun VideoHeader(d: VideoDetail, onSeek: ((Long) -> Unit)?, modifier: Mo
 }
 
 /**
- * UP card: avatar, name, fans, follow toggle. Under 名声模式 the fans count is a line;
- * a tap on the line shows it, the rest of the card still opens the space.
+ * UP card: avatar, name, fans, follow toggle. Under 名声模式 the fans count is a line
+ * that stays a line: the whole card opens the space.
  */
 @Composable
 internal fun UpCard(
@@ -222,24 +225,28 @@ internal fun UpCard(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val effects = YoinMotion.defaultEffectsSpec<Float>()
-                AnimatedContent(
-                    targetState = fans >= 0,
-                    transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
-                    label = "fans",
-                ) { known ->
-                    // Keyed on arrival only: a count that moves (follow / unfollow) keeps a revealed number shown.
-                    FameCount(
-                        if (known) Fmt.count(fans.coerceAtLeast(0)) else "",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (fans >= 0) {
-                    Spacer(Modifier.width(3.dp))
-                    Text("粉丝", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val effects = YoinMotion.defaultEffectsSpec<Float>()
+            val size = YoinMotion.defaultSpatialSpec<IntSize>()
+            val fame = FameMode.on
+            AnimatedContent(
+                targetState = fans,
+                transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) using SizeTransform { _, _ -> size } },
+                // The fading content shows its own count; under 名声模式 a moved count is the same line, so it stays put.
+                contentKey = { f -> if (f < 0) -1L else if (fame) 0L else f },
+                label = "fans",
+            ) { f ->
+                if (f >= 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FameCount(
+                            Fmt.count(f),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            revealable = false,
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        Text("粉丝", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }

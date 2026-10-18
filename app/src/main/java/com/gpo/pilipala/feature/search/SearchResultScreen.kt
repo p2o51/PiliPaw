@@ -282,11 +282,11 @@ internal class SearchTabViewModel(
         viewModelScope.launch {
             runCatching { SearchApi.setFollow(mid, !now) }
                 .onSuccess {
-                    // Followed someone who follows the user: 互相关注 (read-only relation check).
+                    // Followed someone who follows the user: 互相关注 (read-only relation check). It only
+                    // learns mutual; a stale or missing answer (0 right after the follow) leaves 已关注 alone.
                     if (!now) {
-                        runCatching { SearchApi.relations(listOf(mid)) }.getOrNull()
-                            ?.takeIf { following[mid] == true }
-                            ?.let { putRelations(it) }
+                        val attribute = runCatching { SearchApi.relations(listOf(mid)) }.getOrNull()?.get(mid)
+                        if (attribute == 6 && following[mid] == true) mutual[mid] = true
                     }
                 }
                 .onFailure {

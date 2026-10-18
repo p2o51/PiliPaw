@@ -31,7 +31,6 @@ import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -77,7 +76,7 @@ import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.CoverBadge
 import com.gpo.pilipala.ui.components.DurationChip
-import com.gpo.pilipala.ui.components.FameCount
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.Tag
@@ -808,39 +807,31 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
             }
             Spacer(Modifier.width(6.dp))
             AnimatedContent(
-                targetState = like.count,
+                targetState = countText(like.count, "点赞", fame = true),
                 transitionSpec = { fadeIn(fadeInSpec).togetherWith(fadeOut(fadeOutSpec)) },
                 label = "likeCount",
-            ) { count ->
-                CountLabel(count, "点赞", fame = true)
+            ) { text ->
+                Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
             }
         }
     }
     if (showForward) ForwardSheet(item) { showForward = false }
 }
 
-/** [fame]: 转发 / 点赞 counts are popularity — a line under 名声模式 (the button keeps its tap). */
 @Composable
 private fun ActionLabel(icon: ImageVector, count: Long, label: String, fame: Boolean = true) {
     Icon(icon, null, Modifier.size(18.dp))
     Spacer(Modifier.width(6.dp))
-    CountLabel(count, label, fame)
+    Text(countText(count, label, fame), style = MaterialTheme.typography.labelLarge, maxLines = 1)
 }
 
-@Composable
-private fun CountLabel(count: Long, label: String, fame: Boolean) {
-    if (count > 0) {
-        FameCount(
-            Fmt.count(count),
-            style = MaterialTheme.typography.labelLarge,
-            lineColor = LocalContentColor.current,
-            revealable = false,
-            hide = fame,
-        )
-    } else {
-        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-    }
-}
+/**
+ * A button's count, or its action word at zero. Under 名声模式 a popularity count
+ * ([fame]: 转发, 点赞) gives way to the word as well: a button shows nothing that
+ * looks like a line to tap open, since a tap there is the button's own action.
+ */
+private fun countText(count: Long, label: String, fame: Boolean): String =
+    if (count > 0 && !(fame && FameMode.on)) Fmt.count(count) else label
 
 // ── Sheets ──────────────────────────────────────────────────────────────────
 

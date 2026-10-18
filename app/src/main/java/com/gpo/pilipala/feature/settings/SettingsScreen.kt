@@ -43,6 +43,7 @@ import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.ui.components.FameCount
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.components.WidthClass
@@ -264,13 +265,14 @@ private fun AccountStats(u: UserInfo) {
     ) {
         Stat(Fmt.count(u.dynamicCount.toLong()), "动态") { nav.push(Route.MemberDynamics(u.mid, u.name)) }
         Stat(Fmt.count(u.following.toLong()), "关注") { nav.push(Route.Follow(u.mid, u.name)) }
-        Stat(Fmt.count(u.follower.toLong()), "粉丝") { nav.push(Route.Fans(u.mid, u.name)) }
-        Stat(if (u.coins % 1.0 == 0.0) u.coins.toInt().toString() else u.coins.toString(), "硬币", null)
+        Stat(Fmt.count(u.follower.toLong()), "粉丝", fame = true) { nav.push(Route.Fans(u.mid, u.name)) }
+        Stat(if (u.coins % 1.0 == 0.0) u.coins.toInt().toString() else u.coins.toString(), "硬币", onClick = null)
     }
 }
 
+/** Number over label. [fame] (粉丝): a line under 名声模式, kept a line since the block opens the list. */
 @Composable
-private fun Stat(value: String, label: String, onClick: (() -> Unit)?) {
+private fun Stat(value: String, label: String, fame: Boolean = false, onClick: (() -> Unit)?) {
     Column(
         Modifier
             .width(80.dp)
@@ -280,7 +282,11 @@ private fun Stat(value: String, label: String, onClick: (() -> Unit)?) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (fame) {
+            FameCount(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, revealable = false)
+        } else {
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
