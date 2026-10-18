@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -33,7 +32,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonGroupDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -55,7 +53,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
-import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -79,6 +76,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.feature.player.sheets.QualitySliderPage
+import com.gpo.pilipala.feature.player.sheets.SpeedSliderPage
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
@@ -93,7 +92,6 @@ import kotlin.math.roundToInt
 
 internal enum class SheetPage { Main, Quality, Audio, Codec, Speed, Danmaku, Sleep, Subtitle, DanmakuBlock }
 
-private val Speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f)
 private val SleepOptions = listOf(0, 15, 30, 45, 60, 90)
 
 internal fun speedLabel(v: Float): String =
@@ -268,10 +266,10 @@ internal fun PlayerSheetPages(
             )
             when (p) {
                 SheetPage.Main -> MainPage(ctrl, onOpen = { page = it }, onClose = close)
-                SheetPage.Quality -> QualityPage(ctrl, close)
+                SheetPage.Quality -> QualitySliderPage(ctrl)
                 SheetPage.Audio -> AudioPage(ctrl, close)
                 SheetPage.Codec -> CodecPage(ctrl, close)
-                SheetPage.Speed -> SpeedPage(ctrl)
+                SheetPage.Speed -> SpeedSliderPage(ctrl)
                 SheetPage.Danmaku -> DanmakuPage(onOpenBlock = { page = SheetPage.DanmakuBlock })
                 SheetPage.Sleep -> SleepPage(ctrl, close)
                 SheetPage.Subtitle -> SubtitlePage(ctrl, close)
@@ -508,33 +506,6 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
 }
 
 @Composable
-private fun QualityPage(ctrl: PiliPlayerController, close: () -> Unit) {
-    val pi = ctrl.info ?: return
-    val loggedIn = BiliClient.isLoggedIn
-    SegmentedGroup(
-        pi.qualities.map { q ->
-            RowSpec(
-                icon = null,
-                title = q.label,
-                selected = q.qn == ctrl.currentQn,
-                enabled = q.available,
-                tag = if (q.available) null else if (loggedIn) "大会员" else "登录",
-            ) {
-                ctrl.selectQuality(q.qn)
-                close()
-            }
-        },
-    )
-    val default by AppSettings.defaultVideoQuality.state.collectAsState()
-    if (ctrl.currentQn != default && pi.qualities.any { it.qn == ctrl.currentQn }) {
-        Spacer(Modifier.height(16.dp))
-        FilledTonalButton(onClick = { AppSettings.set(AppSettings.defaultVideoQuality, ctrl.currentQn) }) {
-            Text("设为默认画质")
-        }
-    }
-}
-
-@Composable
 private fun AudioPage(ctrl: PiliPlayerController, close: () -> Unit) {
     val pi = ctrl.info ?: return
     SegmentedGroup(
@@ -558,41 +529,6 @@ private fun CodecPage(ctrl: PiliPlayerController, close: () -> Unit) {
             }
         },
     )
-}
-
-@Composable
-private fun SpeedPage(ctrl: PiliPlayerController) {
-    val haptics = LocalHapticFeedback.current
-    val default by AppSettings.defaultSpeed.state.collectAsState()
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Speeds.forEach { s ->
-            ToggleButton(
-                checked = ctrl.speed == s,
-                onCheckedChange = {
-                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    ctrl.changeSpeed(s)
-                },
-                shapes = ToggleButtonDefaults.shapes(),
-            ) {
-                Text(speedLabel(s), style = MaterialTheme.typography.labelLarge.withTabularFigures())
-            }
-        }
-    }
-    AnimatedVisibility(
-        visible = ctrl.speed != default,
-        enter = fadeIn(YoinMotion.defaultEffectsSpec()),
-        exit = fadeOut(YoinMotion.fastEffectsSpec()),
-    ) {
-        Box(Modifier.padding(top = 16.dp)) {
-            FilledTonalButton(onClick = { AppSettings.set(AppSettings.defaultSpeed, ctrl.speed) }) {
-                Text("设为默认速度")
-            }
-        }
-    }
 }
 
 @Composable
