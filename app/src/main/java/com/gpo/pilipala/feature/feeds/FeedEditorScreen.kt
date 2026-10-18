@@ -119,6 +119,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
 
 /** Videos the live preview mixes. */
 private const val PreviewCount = 8
@@ -693,7 +695,8 @@ private fun UpPickerSheet(vm: FeedEditorViewModel, onDismiss: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        contentWindowInsets = { WindowInsets(0) },
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
     ) {
         Column(
             Modifier

@@ -143,6 +143,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
+import androidx.compose.foundation.layout.navigationBarsPadding
+import com.gpo.pilipala.ui.components.inlineIconSize
+import com.gpo.pilipala.ui.components.centered
 
 // ── ViewModel ───────────────────────────────────────────────────────────────
 
@@ -407,8 +412,9 @@ private fun MemberContent(vm: MemberViewModel) {
                     selected = pagerState.currentPage == index,
                     onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
                     text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(title, maxLines = 1)
+                        // The count sits on the title's baseline.
+                        Row {
+                            Text(title, maxLines = 1, modifier = Modifier.alignByBaseline())
                             val count = when (index) {
                                 1 -> vm.archiveTotal.takeIf { it > 0 } ?: profile?.archiveCount ?: -1
                                 else -> -1L
@@ -419,6 +425,7 @@ private fun MemberContent(vm: MemberViewModel) {
                                     Fmt.count(count),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.alignByBaseline(),
                                 )
                             }
                         }
@@ -690,7 +697,7 @@ private fun MemberHeader(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     profile?.name ?: vm.initName,
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.headlineSmall.centered(),
                     fontWeight = FontWeight.SemiBold,
                     color = if (profile?.vip == true) scheme.primary else scheme.onSurface,
                     maxLines = 1,
@@ -730,16 +737,21 @@ private fun MemberHeader(
                     verticalAlignment = Alignment.Top,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    // Icon centred on the label's (first) line; label and title on one baseline.
+                    val officialStyle = MaterialTheme.typography.labelLarge
+                    val iconSize = officialStyle.inlineIconSize()
+                    val lineHeight = with(LocalDensity.current) { officialStyle.lineHeight.toDp() }
                     Icon(
                         YoinSymbols.SparkleFilled,
                         contentDescription = null,
                         tint = scheme.primary,
-                        modifier = Modifier.padding(top = 1.dp).size(16.dp),
+                        modifier = Modifier.padding(top = ((lineHeight - iconSize) / 2).coerceAtLeast(0.dp)).size(iconSize),
                     )
                     Text(
                         profile.officialLabel,
-                        style = MaterialTheme.typography.labelLarge,
+                        style = officialStyle,
                         color = scheme.primary,
+                        modifier = Modifier.alignByBaseline(),
                     )
                     Text(
                         profile.officialTitle,
@@ -747,6 +759,7 @@ private fun MemberHeader(
                         color = scheme.onSurfaceVariant,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.alignByBaseline(),
                     )
                 }
             }
@@ -820,8 +833,9 @@ private fun LiveBadge(modifier: Modifier, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Icon(PiliSymbols.Live, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onPrimary)
-        Text("直播中", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary)
+        val style = MaterialTheme.typography.labelSmall.centered()
+        Icon(PiliSymbols.Live, null, Modifier.size(style.inlineIconSize()), tint = MaterialTheme.colorScheme.onPrimary)
+        Text("直播中", style = style, color = MaterialTheme.colorScheme.onPrimary)
     }
 }
 
@@ -900,8 +914,13 @@ private fun MemberMenuSheet(
             then()
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(Modifier.padding(bottom = 16.dp)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
+        Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
             SheetRow(YoinSymbols.Share, if (vm.isOwner) "分享我的主页" else "分享UP主") { close(onShare) }
             SheetRow(PiliSymbols.Link, "复制链接") { close(onCopyLink) }
             if (!vm.isOwner) {
@@ -1088,7 +1107,7 @@ private fun CollectionRow(mid: Long, c: MemberCollection) {
             )
             Text(
                 c.title,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium.centered(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),

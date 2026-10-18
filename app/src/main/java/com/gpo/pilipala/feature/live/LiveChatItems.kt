@@ -45,6 +45,7 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.pilipala.ui.components.centered
 
 /** One row of the live chat: danmaku bubble, super chat card, gift or guard row. */
 @Composable
@@ -177,7 +178,7 @@ private fun MedalChip(m: LiveMedal, onSecondary: Boolean = false) {
         Text(
             m.name,
             modifier = Modifier.padding(start = 6.dp, end = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.centered(),
             color = content,
             maxLines = 1,
         )
@@ -187,7 +188,7 @@ private fun MedalChip(m: LiveMedal, onSecondary: Boolean = false) {
         ) {
             Text(
                 m.level.toString(),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.centered(),
                 fontWeight = FontWeight.Bold,
                 color = levelFg,
             )

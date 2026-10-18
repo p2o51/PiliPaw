@@ -66,6 +66,13 @@ import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.pilipala.ui.components.sheetNavBottom
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
+import androidx.compose.foundation.layout.heightIn
+import com.gpo.pilipala.ui.components.inlineIconSize
+import com.gpo.pilipala.ui.components.centered
+import com.gpo.pilipala.ui.components.Tag
 
 /** Poster + title + score + styles + stats, with the 追番 toggle. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -281,7 +288,7 @@ internal fun SeasonSwitcher(seasons: List<BangumiSeasonRef>, currentId: Long, on
                         maxLines = 1,
                     )
                     if (s.badge.isNotEmpty()) {
-                        Text(s.badge, style = MaterialTheme.typography.labelSmall, color = colors.primary)
+                        Text(s.badge, style = MaterialTheme.typography.labelSmall, color = if (selected) colors.onPrimaryContainer else colors.primary)
                     }
                 }
             }
@@ -358,14 +365,14 @@ private fun EpisodeTile(ep: BangumiEpisode, selected: Boolean, onClick: () -> Un
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.heightIn(min = IndexRowHeight), verticalAlignment = Alignment.CenterVertically) {
             if (selected) {
-                Icon(YoinSymbols.Equalizer, null, Modifier.size(14.dp), tint = colors.onPrimaryContainer)
+                Icon(YoinSymbols.Equalizer, null, Modifier.size(IndexStyle().inlineIconSize()), tint = colors.onPrimaryContainer)
                 Spacer(Modifier.width(4.dp))
             }
             Text(
                 ep.title,
-                style = MaterialTheme.typography.labelMedium,
+                style = IndexStyle(),
                 fontWeight = FontWeight.SemiBold,
                 color = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant,
                 maxLines = 1,
@@ -373,15 +380,7 @@ private fun EpisodeTile(ep: BangumiEpisode, selected: Boolean, onClick: () -> Un
             )
             if (ep.badge.isNotEmpty()) {
                 Spacer(Modifier.width(6.dp))
-                Text(
-                    ep.badge,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.onTertiaryContainer,
-                    modifier = Modifier
-                        .clip(ContinuousRoundedCornerShape(4.dp))
-                        .background(colors.tertiaryContainer)
-                        .padding(horizontal = 4.dp),
-                )
+                Tag(ep.badge)
             }
         }
         Text(
@@ -403,7 +402,13 @@ internal fun EpisodeGridSheet(
     onSelect: (BangumiEpisode) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    val navBottom = sheetNavBottom()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
         Column(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleLarge)
@@ -411,15 +416,23 @@ internal fun EpisodeGridSheet(
                 Text("${groups.sumOf { it.episodes.size }}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(8.dp))
-            Box(Modifier.fillMaxWidth().height((LocalConfiguration.current.screenHeightDp * 0.7f).dp)) {
+            Box(Modifier.fillMaxWidth().height((LocalConfiguration.current.screenHeightDp * 0.7f).dp + navBottom)) {
                 EpisodeGrid(
                     groups,
                     currentId,
                     onSelect,
                     Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp + navBottom),
                 )
             }
         }
     }
 }
+
+
+/** The index line of an episode tile / row: tight label, so the playing glyph and tag centre on it. */
+@Composable
+private fun IndexStyle() = MaterialTheme.typography.labelMedium.centered()
+
+/** Index lines keep one height whether or not they carry a tag. */
+private val IndexRowHeight = 18.dp

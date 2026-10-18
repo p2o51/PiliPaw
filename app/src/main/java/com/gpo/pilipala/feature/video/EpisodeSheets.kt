@@ -45,6 +45,13 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.pilipala.ui.components.sheetNavBottom
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
+import androidx.compose.foundation.layout.heightIn
+import com.gpo.pilipala.ui.components.inlineIconSize
+import com.gpo.pilipala.ui.components.centered
+import com.gpo.pilipala.ui.components.Tag
 
 /** One playable entry in a 分P / 合集 list. */
 @Immutable
@@ -159,28 +166,20 @@ private fun EpisodeCard(entry: EpisodeEntry, selected: Boolean, withCover: Boole
             }
         }
         Column(Modifier.padding(horizontal = 12.dp, vertical = if (withCover) 4.dp else 10.dp).padding(bottom = if (withCover) 6.dp else 0.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.heightIn(min = IndexRowHeight), verticalAlignment = Alignment.CenterVertically) {
                 if (selected) {
-                    Icon(YoinSymbols.Equalizer, null, Modifier.size(14.dp), tint = colors.onPrimaryContainer)
+                    Icon(YoinSymbols.Equalizer, null, Modifier.size(IndexStyle().inlineIconSize()), tint = colors.onPrimaryContainer)
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(
                     entry.index,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = IndexStyle(),
                     color = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant,
                     fontWeight = FontWeight.SemiBold,
                 )
                 if (entry.badge.isNotEmpty()) {
                     Spacer(Modifier.width(6.dp))
-                    Text(
-                        entry.badge,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.onTertiaryContainer,
-                        modifier = Modifier
-                            .clip(ContinuousRoundedCornerShape(4.dp))
-                            .background(colors.tertiaryContainer)
-                            .padding(horizontal = 4.dp),
-                    )
+                    Tag(entry.badge)
                 }
             }
             Text(
@@ -206,7 +205,12 @@ internal fun EpisodeListSheet(
 ) {
     val haptic = LocalHapticFeedback.current
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.75f).dp
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val navBottom = sheetNavBottom()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
         Column(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
@@ -228,8 +232,8 @@ internal fun EpisodeListSheet(
             }
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxWidth().height(maxHeight.coerceAtMost((rows.size * 72 + 32).dp)),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
+                modifier = Modifier.fillMaxWidth().height(maxHeight.coerceAtMost((rows.size * 72 + 32).dp + navBottom)),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp + navBottom),
             ) {
                 itemsIndexed(rows, key = { i, r -> r.second?.key?.let { "e$it" } ?: "h$i" }) { _, (header, entry) ->
                     if (entry == null) {
@@ -276,32 +280,24 @@ private fun EpisodeListRow(entry: EpisodeEntry, selected: Boolean, onClick: () -
             Spacer(Modifier.width(12.dp))
         }
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.heightIn(min = IndexRowHeight), verticalAlignment = Alignment.CenterVertically) {
                 if (selected) {
-                    Icon(YoinSymbols.Equalizer, null, Modifier.size(14.dp), tint = colors.onPrimaryContainer)
+                    Icon(YoinSymbols.Equalizer, null, Modifier.size(IndexStyle().inlineIconSize()), tint = colors.onPrimaryContainer)
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(
                     entry.index,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = IndexStyle(),
                     color = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant,
                     fontWeight = FontWeight.SemiBold,
                 )
                 if (entry.badge.isNotEmpty()) {
                     Spacer(Modifier.width(6.dp))
-                    Text(
-                        entry.badge,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.onTertiaryContainer,
-                        modifier = Modifier
-                            .clip(ContinuousRoundedCornerShape(4.dp))
-                            .background(colors.tertiaryContainer)
-                            .padding(horizontal = 4.dp),
-                    )
+                    Tag(entry.badge)
                 }
                 if (entry.cover.isEmpty() && entry.duration > 0) {
                     Spacer(Modifier.weight(1f))
-                    Text(Fmt.duration(entry.duration), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+                    Text(Fmt.duration(entry.duration), style = MaterialTheme.typography.labelSmall.centered(), color = colors.onSurfaceVariant)
                 }
             }
             Text(
@@ -315,3 +311,11 @@ private fun EpisodeListRow(entry: EpisodeEntry, selected: Boolean, onClick: () -
         }
     }
 }
+
+
+/** The index line of an episode tile / row: tight label, so the playing glyph and tag centre on it. */
+@Composable
+private fun IndexStyle() = MaterialTheme.typography.labelMedium.centered()
+
+/** Index lines keep one height whether or not they carry a tag. */
+private val IndexRowHeight = 18.dp

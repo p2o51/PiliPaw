@@ -65,6 +65,10 @@ import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
 
 /** 投币: 1 or 2 coins (capped by [maxCoins]), optional like. */
 @Composable
@@ -77,8 +81,13 @@ internal fun CoinSheet(
     val haptic = LocalHapticFeedback.current
     var count by remember { mutableIntStateOf(maxCoins.coerceIn(1, 2)) }
     var alsoLike by remember { mutableStateOf(!liked) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text("投币", style = MaterialTheme.typography.titleLarge)
             CoinFlip(count, Modifier.padding(vertical = 8.dp))
             Row(
@@ -236,8 +245,13 @@ internal fun FavSheet(actions: ArchiveActions, onDismiss: () -> Unit) {
             }
             .onFailure { error = it.friendlyMessage() }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
+        // The 新建收藏夹 row has a text field: the column clears the keyboard too.
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(bottom = 16.dp)) {
             Text("收藏到", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp))
             Spacer(Modifier.height(12.dp))
             val list = folders
@@ -342,8 +356,13 @@ internal fun TripleSheet(
     onConfirm: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text("三连", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(20.dp))
             Column(

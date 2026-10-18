@@ -63,6 +63,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import com.gpo.pilipala.ui.components.centered
 
 // ── 番剧 / 影视 ─────────────────────────────────────────────────────────────
 
@@ -209,7 +210,7 @@ internal fun LiveCard(hit: LiveHit, modifier: Modifier = Modifier) {
                 if (hit.area.isNotEmpty()) {
                     Text(
                         hit.area,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelSmall.centered(),
                         color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -231,7 +232,7 @@ internal fun LiveCard(hit: LiveHit, modifier: Modifier = Modifier) {
                 Spacer(Modifier.width(6.dp))
                 Text(
                     hit.uname,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelMedium.centered(),
                     color = scheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -294,7 +295,7 @@ internal fun UserRow(
                 Text(
                     hit.name,
                     modifier = Modifier.weight(1f, fill = false),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleSmall.centered(),
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -376,9 +377,11 @@ private fun AddToFeedButton(inFeed: Boolean, onClick: () -> Unit) {
  */
 @Composable
 private fun CountPair(n: Long, label: String, fame: Boolean = false, self: Boolean = false) {
-    Row(verticalAlignment = Alignment.Bottom) {
+    // Number and label share a baseline (two sizes: centring would float the label).
+    Row {
         FameCount(
             Fmt.count(n),
+            modifier = Modifier.alignByBaseline(),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -387,7 +390,7 @@ private fun CountPair(n: Long, label: String, fame: Boolean = false, self: Boole
             self = self,
         )
         Spacer(Modifier.width(3.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.alignByBaseline())
     }
 }
 
@@ -499,7 +502,7 @@ internal fun ArticleRow(hit: ArticleHit, modifier: Modifier = Modifier) {
                     if (hit.pubTime > 0) {
                         Text(
                             Fmt.relativeTime(hit.pubTime),
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelSmall.centered(),
                             color = scheme.onSurfaceVariant,
                             maxLines = 1,
                         )

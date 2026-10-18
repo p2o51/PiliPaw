@@ -67,6 +67,8 @@ import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.pilipala.ui.components.inlineIconSize
+import com.gpo.pilipala.ui.components.centered
 
 /**
  * The video is the signed-in user's own (uploader, or one of the staff): under
@@ -127,7 +129,7 @@ internal fun VideoHeader(d: VideoDetail, onSeek: ((Long) -> Unit)?, modifier: Mo
             Stat(PiliSymbols.Danmaku, Fmt.count(d.danmaku), revealable = true, self = self)
             Text(
                 Fmt.date(d.pubdate, "yyyy-MM-dd HH:mm"),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.centered(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -142,9 +144,10 @@ internal fun VideoHeader(d: VideoDetail, onSeek: ((Long) -> Unit)?, modifier: Mo
                             .padding(horizontal = 8.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(PiliSymbols.Trophy, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                        val honorStyle = MaterialTheme.typography.labelSmall.centered()
+                        Icon(PiliSymbols.Trophy, null, Modifier.size(honorStyle.inlineIconSize()), tint = MaterialTheme.colorScheme.onTertiaryContainer)
                         Spacer(Modifier.width(4.dp))
-                        Text(h, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                        Text(h, style = honorStyle, color = MaterialTheme.colorScheme.onTertiaryContainer)
                     }
                 }
             }

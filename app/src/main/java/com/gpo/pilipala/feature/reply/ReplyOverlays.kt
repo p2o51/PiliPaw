@@ -51,6 +51,8 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
 
 /** Transient UI for one reply surface (menu, composer, viewer, dialogs). */
 @Stable
@@ -203,7 +205,12 @@ private fun ReplyMenuSheet(
             action()
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 12.dp)) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),

@@ -67,6 +67,9 @@ import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
+import com.gpo.pilipala.ui.components.sheetBottomPadding
 
 /** The editor route that starts a new feed from [this] source. */
 internal fun FeedSource.newFeedRoute(): Route.FeedEditor = when (this) {
@@ -127,13 +130,18 @@ internal fun FeedSourceSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp),
+                .padding(bottom = sheetBottomPadding(24.dp)),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 SourceMark(source, 48.dp)
@@ -323,7 +331,8 @@ internal fun FeedManageSheet(feedId: String, onDismiss: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        contentWindowInsets = { WindowInsets(0) },
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
     ) {
         Column(
             Modifier

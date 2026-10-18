@@ -78,6 +78,8 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
+import com.gpo.pilipala.ui.components.rememberSheetProperties
+import com.gpo.pilipala.ui.components.SheetInsets
 
 private val FieldShape = ContinuousRoundedCornerShape(18.dp)
 
@@ -127,7 +129,8 @@ internal fun ReplyComposerSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        contentWindowInsets = { WindowInsets(0) },
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
     ) {
         // The hold bubble floats over the whole sheet, so the top row's can rise above the panel.
         Box(Modifier.fillMaxWidth()) {
