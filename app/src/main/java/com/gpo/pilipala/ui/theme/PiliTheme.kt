@@ -1,5 +1,6 @@
 package com.gpo.pilipala.ui.theme
 
+import androidx.compose.material3.LocalContentColor
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -94,8 +95,11 @@ fun PiliTheme(
             motionScheme = motionScheme,
             shapes = YoinShapes,
             typography = YoinTypography,
-            content = content,
-        )
+        ) {
+            // Text and icons that name no colour take the scheme's, not the platform's black:
+            // without this an app-forced dark theme draws them black on the dark surface.
+            CompositionLocalProvider(LocalContentColor provides colorScheme.onSurface, content = content)
+        }
     }
 }
 

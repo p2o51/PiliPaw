@@ -102,6 +102,16 @@ class MainActivity : ComponentActivity() {
                         navigator.push(link.route)
                     }
                 }
+                // System bar icons follow the app's own light/dark (it can differ from the system's),
+                // once the launch handoff has let go of the bars.
+                val appDark = com.gpo.pilipala.ui.theme.LocalPiliDark.current
+                val handoffDone = handoff.phase == com.gpo.pilipala.ui.launch.SplashHandoff.Phase.Done
+                LaunchedEffect(appDark, handoffDone) {
+                    if (!handoffDone) return@LaunchedEffect
+                    val c = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                    c.isAppearanceLightStatusBars = !appDark
+                    c.isAppearanceLightNavigationBars = !appDark
+                }
                 CompositionLocalProvider(
                     LocalSnackbarHost provides snackbar,
                     com.gpo.pilipala.ui.components.LocalToastScope provides rootScope,
