@@ -95,6 +95,8 @@ object AppShortcuts {
                 ShortcutManagerCompat.pushDynamicShortcut(app, fixed(app, IdSearch, "搜索", R.drawable.ic_shortcut_search, rank = 3))
             }
         }
+        // A placed widget catches up with the account (signed in or out since) on launch.
+        WatchWidget.refresh(app)
     }
 
     private fun fixed(context: Context, id: String, label: String, icon: Int, rank: Int): ShortcutInfoCompat =

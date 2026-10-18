@@ -193,6 +193,10 @@ private fun WatchContent(data: WatchData) {
 @Composable
 private fun MediumLayout(data: WatchData) {
     val resume = data.resume
+    if (resume != null && data.later.isEmpty()) {
+        ResumeRow(resume, data.resumeCover)
+        return
+    }
     Row(GlanceModifier.fillMaxSize()) {
         if (resume != null) {
             ResumeTile(resume, data.resumeCover, GlanceModifier.defaultWeight().fillMaxHeight(), titleLines = 1, meta = false)
@@ -221,6 +225,36 @@ private fun StackLayout(data: WatchData, rows: Int) {
     }
 }
 
+/** Medium with no list (logged out, or nothing saved): the cover beside the title, so it isn't cropped to a strip. */
+@Composable
+private fun ResumeRow(entry: ContinueEntry, cover: Bitmap?) {
+    val context = LocalContext.current
+    val colors = GlanceTheme.colors
+    Row(
+        GlanceModifier.fillMaxSize().clickable(open(resumeIntent(context, entry))),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Cover(
+            cover = cover,
+            progress = entry.progress.takeIf { entry.durationMs > 0 },
+            modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
+        )
+        Spacer(GlanceModifier.width(12.dp))
+        Column(GlanceModifier.defaultWeight()) {
+            Text(
+                entry.title.ifBlank { entry.bvid },
+                style = style(colors.onSurface, 14.sp, FontWeight.Medium),
+                maxLines = 3,
+            )
+            Spacer(GlanceModifier.height(2.dp))
+            Text(resumeMeta(entry), style = style(colors.onSurfaceVariant, 12.sp), maxLines = 1)
+        }
+    }
+}
+
+private fun resumeMeta(e: ContinueEntry): String =
+    if (e.durationMs > 0) "剩余 ${Fmt.durationMs(e.remainingMs)}" else "看到 ${Fmt.durationMs(e.positionMs)}"
+
 /** The cover with how far you got along its bottom, the title under it. */
 @Composable
 private fun ResumeTile(entry: ContinueEntry, cover: Bitmap?, modifier: GlanceModifier, titleLines: Int, meta: Boolean) {
@@ -240,11 +274,7 @@ private fun ResumeTile(entry: ContinueEntry, cover: Bitmap?, modifier: GlanceMod
         )
         if (meta) {
             Spacer(GlanceModifier.height(2.dp))
-            Text(
-                if (entry.durationMs > 0) "剩余 ${Fmt.durationMs(entry.remainingMs)}" else "看到 ${Fmt.durationMs(entry.positionMs)}",
-                style = style(colors.onSurfaceVariant, 12.sp),
-                maxLines = 1,
-            )
+            Text(resumeMeta(entry), style = style(colors.onSurfaceVariant, 12.sp), maxLines = 1)
         }
     }
 }

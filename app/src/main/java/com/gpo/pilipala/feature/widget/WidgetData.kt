@@ -33,10 +33,12 @@ internal object WidgetData {
     /** The tallest layout shows this many 稍后再看 rows. */
     const val MaxLaterRows = 4
 
-    private const val CoverW = 384
-    private const val CoverH = 216
-    private const val ThumbW = 160
-    private const val ThumbH = 90
+    // Every bitmap of one update travels in a single RemoteViews parcel (shared by the size
+    // buckets): about 0.5MB at most, under the binder's 1MB.
+    private const val CoverW = 360
+    private const val CoverH = 203
+    private const val ThumbW = 144
+    private const val ThumbH = 81
 
     /** Per cover; the Coil disk cache answers at once offline, the network gets this long. */
     private const val ImageTimeoutMs = 5_000L
