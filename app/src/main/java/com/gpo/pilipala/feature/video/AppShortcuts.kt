@@ -80,6 +80,9 @@ object AppShortcuts {
     private const val FinishedTailMs = 15_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** The widget's copy of 继续看 is written off the main thread, one write at a time, in order. */
+    private val widgetWrites = Dispatchers.IO.limitedParallelism(1)
     private var continueJob: Job? = null
 
     /** Last cover drawn into an icon, so a position update doesn't fetch it again. */
@@ -197,18 +200,19 @@ object AppShortcuts {
         if (AppSettings.pauseHistory.value || finished) {
             continueJob?.cancel()
             runCatching { ShortcutManagerCompat.removeDynamicShortcuts(app, listOf(IdContinue)) }
-            // In step with the shortcut (a tiny file), so a later publish can't be undone by it.
-            WidgetStore.clearContinue(app)
-            WatchWidget.refresh(app)
+            scope.launch(widgetWrites) {
+                WidgetStore.clearContinue(app)
+                WatchWidget.refresh(app)
+            }
             return
         }
         if (positionMs < MinWatchedMs) return
         val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-        WidgetStore.writeContinue(
-            app,
-            ContinueEntry(bvid = bvid, cid = cid, title = title, cover = cover, positionMs = positionMs, durationMs = durationMs),
-        )
-        WatchWidget.refresh(app)
+        val entry = ContinueEntry(bvid = bvid, cid = cid, title = title, cover = cover, positionMs = positionMs, durationMs = durationMs)
+        scope.launch(widgetWrites) {
+            WidgetStore.writeContinue(app, entry)
+            WatchWidget.refresh(app)
+        }
         continueJob?.cancel()
         continueJob = scope.launch {
             val icon = runCatching { coverIcon(app, cover, progress, durationMs > 0) }.getOrNull()
