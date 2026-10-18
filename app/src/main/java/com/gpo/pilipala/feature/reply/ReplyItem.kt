@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.animateFloatAsState
@@ -83,7 +84,6 @@ import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.CoverBadge
-import com.gpo.pilipala.ui.components.FameCount
 import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Tag
@@ -554,17 +554,14 @@ internal fun LikeButton(state: LikeState, modifier: Modifier = Modifier, onClick
 /**
  * Odometer count: one slot per character, keyed from the right so ones stay
  * over ones; a slot rolls only when its character changes, on the fast
- * spatial spring critically damped (short, no bounce).
+ * spatial spring critically damped (short, no bounce). Under 名声模式 there
+ * is no count at all: the button is its thumb alone, with nothing that looks
+ * like a line to tap open.
  */
 @Composable
 private fun RollingCount(count: Long, color: ColorProducer) {
-    if (FameMode.on && count > 0) {
-        // 名声模式: the like count is a line; the like button keeps its tap.
-        FameCount(Fmt.count(count), style = MaterialTheme.typography.labelMedium, lineColor = color(), revealable = false)
-        return
-    }
     val motion = replyMotion()
-    val text = if (count > 0) Fmt.count(count) else ""
+    val text = if (count > 0 && !FameMode.on) Fmt.count(count) else ""
     val last = remember { longArrayOf(count) }
     val up = count >= last[0]
     SideEffect { last[0] = count }
@@ -634,6 +631,8 @@ private fun SubReplyPreview(reply: Reply, actions: ReplyActions, modifier: Modif
                     modifier = Modifier
                         .fillMaxWidth()
                         .entrance(lineEntrance, actions.layout)
+                        // A 关注 / 互关 tag landing after the name can rewrap the line: the height follows on the spring.
+                        .animateContentSize(YoinMotion.defaultSpatialSpec())
                         .combinedClickable(onClick = open, onLongClick = subLongPress)
                         .padding(horizontal = 12.dp, vertical = 4.dp),
                 )

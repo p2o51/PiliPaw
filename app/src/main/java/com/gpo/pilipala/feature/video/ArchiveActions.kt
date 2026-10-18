@@ -257,8 +257,12 @@ class UpRelation(private val scope: CoroutineScope, private val onMessage: (Stri
         loadRelation()
     }
 
-    /** Read-only GET /x/relation: 1 悄悄关注, 2 已关注, 6 互相关注 (logged in only). */
-    private fun loadRelation() {
+    /**
+     * Read-only GET /x/relation: 1 悄悄关注, 2 已关注, 6 互相关注 (logged in only).
+     * [mutualOnly]: the check after a follow only learns 互相关注; a stale or empty
+     * answer (attribute 0 right after the follow) leaves 已关注 alone.
+     */
+    private fun loadRelation(mutualOnly: Boolean = false) {
         val target = mid
         if (!BiliClient.isLoggedIn || target == 0L || target == BiliClient.mid) return
         relationJob?.cancel()
@@ -267,14 +271,20 @@ class UpRelation(private val scope: CoroutineScope, private val onMessage: (Stri
                 .onSuccess { d ->
                     if (mid != target || busy) return@onSuccess
                     val attribute = d.int("attribute")
-                    following = attribute == 1 || attribute == 2 || attribute == 6
-                    mutual = attribute == 6
+                    if (mutualOnly) {
+                        if (attribute == 6 && following) mutual = true
+                    } else {
+                        following = attribute == 1 || attribute == 2 || attribute == 6
+                        mutual = attribute == 6
+                    }
                 }
         }
     }
 
     fun toggle() {
         if (busy || mid == 0L) return
+        // An answer still on its way predates this change.
+        relationJob?.cancel()
         scope.launch {
             busy = true
             val target = !following
@@ -288,7 +298,7 @@ class UpRelation(private val scope: CoroutineScope, private val onMessage: (Stri
             }.onFailure { onMessage(it.friendlyMessage()) }
             busy = false
             // A new follow of someone who already follows the user is 互相关注 at once.
-            if (target && following) loadRelation()
+            if (target && following) loadRelation(mutualOnly = true)
         }
     }
 }

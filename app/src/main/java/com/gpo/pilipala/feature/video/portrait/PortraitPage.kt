@@ -82,6 +82,8 @@ import com.gpo.pilipala.feature.video.rememberRichText
 import com.gpo.pilipala.feature.video.shareText
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.ui.components.FameCount
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
@@ -164,7 +166,9 @@ internal fun PortraitPage(
     val title = detail?.title?.ifEmpty { null } ?: item.title
     val up = vm.up
     val relationKnown = up.mid == ownerMid && ownerMid > 0
-    fun label(n: Long, fallback: String) = if (n > 0) Fmt.count(n) else fallback
+    // 名声模式: popularity counts give way to the action word (the 评论 count is not popularity).
+    val fame = FameMode.on
+    fun label(n: Long, fallback: String, popular: Boolean = true) = if (n > 0 && !(popular && fame)) Fmt.count(n) else fallback
     val actionState = ActionState(
         face = face,
         showFollow = relationKnown && ownerMid != BiliClient.mid,
@@ -173,7 +177,7 @@ internal fun PortraitPage(
         likeLabel = label(if (acts) a.likeCount else item.likes, "点赞"),
         coined = acts && a.coined > 0,
         coinLabel = label(if (acts) a.coinCount else 0, "投币"),
-        replyLabel = label(detail?.reply ?: 0, "评论"),
+        replyLabel = label(detail?.reply ?: 0, "评论", popular = false),
         favored = acts && a.favored,
         favLabel = label(if (acts) a.favCount else 0, "收藏"),
         shareLabel = label(if (acts) a.shareCount else 0, "分享"),
@@ -481,12 +485,14 @@ private fun ExpandedInfo(d: VideoDetail, tags: List<String>, onSeek: (Long) -> U
     }
 }
 
+/** 播放 / 弹幕 under the expanded title: a line under 名声模式, never tapped open (the block folds on tap). */
 @Composable
 private fun IconCount(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, tint = OnPicture.copy(alpha = 0.72f), modifier = Modifier.size(16.dp))
+        val tint = OnPicture.copy(alpha = 0.72f)
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(4.dp))
-        Text(text, style = MaterialTheme.typography.labelMedium.onPicture(), color = OnPicture.copy(alpha = 0.72f))
+        FameCount(text, style = MaterialTheme.typography.labelMedium.onPicture(), color = tint, lineColor = tint, revealable = false)
     }
 }
 
