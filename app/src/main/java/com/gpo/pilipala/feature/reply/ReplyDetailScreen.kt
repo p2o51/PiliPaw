@@ -279,7 +279,7 @@ private fun ThreadBody(
 private fun ThreadPaneHeader(count: Long, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val motion = replyMotion()
     Row(
-        modifier = modifier.heightIn(min = 56.dp).padding(start = 4.dp, end = 16.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 4.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack, shapes = IconButtonDefaults.shapes()) {

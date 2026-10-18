@@ -426,6 +426,7 @@ private fun SearchHome(
                     Modifier
                         .animateItem()
                         .readingWidth()
+                        .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 20.dp)
                         .animateContentSize(YoinMotion.defaultSpatialSpec()),
