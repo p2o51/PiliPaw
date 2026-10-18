@@ -124,6 +124,8 @@ internal data class ActionState(
     val shareLabel: String,
     /** [com.gpo.pilipala.feature.video.ArchiveActions.tripleCelebration] for this page's video; -1 while it isn't bound. */
     val tripleCelebration: Int = -1,
+    /** Following each other: the follow badge's check reads 互相关注. */
+    val mutual: Boolean = false,
 )
 
 /**
@@ -157,7 +159,7 @@ internal fun ActionColumn(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        UpAvatar(state.face, state.showFollow, state.following, onAvatar, onFollow)
+        UpAvatar(state.face, state.showFollow, state.following, state.mutual, onAvatar, onFollow)
         Spacer(Modifier.height(10.dp))
         ActionButton(
             icon = if (state.liked) PiliSymbols.ThumbUpFilled else PiliSymbols.ThumbUp,
@@ -298,6 +300,10 @@ private fun ActionButton(
                 is PressInteraction.Release, is PressInteraction.Cancel -> {
                     timer?.cancel()
                     timer = null
+                    // A cancelled press (the pager took the drag, the finger slid off) never
+                    // clicks, so nothing would clear the swallow and the next quick tap would
+                    // be lost: only the click right after a released hold is swallowed.
+                    if (i is PressInteraction.Cancel) consumedByHold = false
                     if (charging && !full) {
                         charging = false
                         rich.cancel()
@@ -428,7 +434,7 @@ private enum class FollowBadge { Add, Done }
 
 /** UP avatar (opens the space) with a small cookie badge that follows; it shows a check, then leaves. */
 @Composable
-private fun UpAvatar(face: String, showFollow: Boolean, following: Boolean, onAvatar: () -> Unit, onFollow: () -> Unit) {
+private fun UpAvatar(face: String, showFollow: Boolean, following: Boolean, mutual: Boolean, onAvatar: () -> Unit, onFollow: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     var tapped by remember { mutableStateOf(false) }
     var justFollowed by remember { mutableStateOf(false) }
@@ -491,7 +497,11 @@ private fun UpAvatar(face: String, showFollow: Boolean, following: Boolean, onAv
                     ) { b ->
                         Icon(
                             if (b == FollowBadge.Done) YoinSymbols.Check else YoinSymbols.Add,
-                            contentDescription = if (b == FollowBadge.Done) "已关注" else "关注",
+                            contentDescription = when {
+                                b != FollowBadge.Done -> "关注"
+                                mutual -> "互相关注"
+                                else -> "已关注"
+                            },
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(15.dp),
                         )
