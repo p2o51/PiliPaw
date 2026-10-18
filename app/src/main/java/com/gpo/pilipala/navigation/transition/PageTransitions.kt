@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.lerp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -95,8 +96,18 @@ internal class PageSnapshot(val image: ImageBitmap, val size: IntSize, val stamp
 /**
  * A push's forward motion: grow out of the card at [source] (container) or
  * the 96dp mirror, over [backdrop] — the page beneath as it was at the tap.
+ * A source with a [solid] colour (a FAB: one glyph on a colour block) starts
+ * the container as that colour instead of its own pixels, and its corner
+ * opens from [sourceCornerPx] (NaN: the card token).
  */
-internal class PageEnter(val key: Any, val container: Boolean, val backdrop: PageSnapshot, val source: Rect)
+internal class PageEnter(
+    val key: Any,
+    val container: Boolean,
+    val backdrop: PageSnapshot,
+    val source: Rect,
+    val solid: Color = Color.Unspecified,
+    val sourceCornerPx: Float = Float.NaN,
+)
 
 @Stable
 class PageTransitions internal constructor(
@@ -159,8 +170,13 @@ class PageTransitions internal constructor(
 
     private val sources = HashMap<String, SourceInfo>()
 
-    /** A card key's live sources and the layout of the one placed last. */
-    private class SourceInfo(var count: Int, var coordinates: LayoutCoordinates?)
+    /** A card key's live sources, the layout of the one placed last and its look (solid sources only). */
+    private class SourceInfo(
+        var count: Int,
+        var coordinates: LayoutCoordinates?,
+        var solid: Color = Color.Unspecified,
+        var cornerPx: Float = Float.NaN,
+    )
 
     /** The container's growth, 0 (the card) → 1 (the window): the spatial spring, run to sub-pixel. */
     internal val containerGrowthSpec: FiniteAnimationSpec<Float> = run {
@@ -214,6 +230,13 @@ class PageTransitions internal constructor(
         sources[key]?.coordinates = coordinates
     }
 
+    /** A solid source's colour and corner (px), noted with its placement. */
+    internal fun noteSourceLook(key: String, solid: Color, cornerPx: Float) {
+        val info = sources[key] ?: return
+        info.solid = solid
+        info.cornerPx = cornerPx
+    }
+
     /** The card's bounds in the window (unclipped, like the snapshot), or null when it is gone. */
     private fun sourceBounds(key: String): Rect? {
         val coordinates = sources[key]?.coordinates ?: return null
@@ -251,11 +274,20 @@ class PageTransitions internal constructor(
      */
     internal fun beforePush(route: Route) {
         val backdrop = captureTop()
-        val source = route.sharedKey()?.let { sourceBounds(it) }
+        val key = route.sharedKey()
+        val source = key?.let { sourceBounds(it) }
+        val look = key?.let { sources[it] }
         val container = source != null && !source.isEmpty &&
             backdrop != null && phase == BackPhase.Idle
         pendingEnter = backdrop?.let {
-            PageEnter(route.toString(), container, it, source ?: Rect.Zero)
+            PageEnter(
+                route.toString(),
+                container,
+                it,
+                source ?: Rect.Zero,
+                solid = look?.solid ?: Color.Unspecified,
+                sourceCornerPx = look?.cornerPx ?: Float.NaN,
+            )
         }
         sceneMirror = backdrop == null
     }

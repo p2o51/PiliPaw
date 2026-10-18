@@ -77,6 +77,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -214,6 +215,8 @@ fun DynamicsScreen() {
     var fabVisible by rememberSaveable { mutableStateOf(true) }
     val threshold = with(LocalDensity.current) { FabScrollThreshold.toPx() }
     val fabScroll = remember(threshold) { FabScrollConnection(threshold) { fabVisible = it } }
+    // The guest page doesn't scroll: a FAB hidden by the signed-in feed comes back with it.
+    LaunchedEffect(loggedIn) { fabVisible = true }
     Box(Modifier.fillMaxSize().nestedScroll(fabScroll)) {
         if (!loggedIn) {
             GuestState()
@@ -256,6 +259,8 @@ private fun ComposeFab(visible: Boolean, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val end = if (widthClass() == WidthClass.Compact) 16.dp else 24.dp
+    val container = MaterialTheme.colorScheme.primaryContainer
+    val shape = FloatingActionButtonDefaults.mediumShape
     MediumFloatingActionButton(
         onClick = {
             if (!visible) return@MediumFloatingActionButton
@@ -270,8 +275,12 @@ private fun ComposeFab(visible: Boolean, modifier: Modifier = Modifier) {
                 scaleAnimationSpec = YoinMotion.fastSpatialSpec(),
                 alphaAnimationSpec = YoinMotion.fastEffectsSpec(),
             )
-            .pageSharedSource(Route.DynamicCompose),
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
+            // Hidden, it is out of the accessibility tree too (no focusable dead button).
+            .then(if (visible) Modifier else Modifier.clearAndSetSemantics {})
+            // The page grows out of the FAB's colour block, not its blown-up glyph.
+            .pageSharedSource(Route.DynamicCompose, solidColor = container, shape = shape),
+        shape = shape,
+        containerColor = container,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
         Icon(YoinSymbols.Edit, contentDescription = "发动态", modifier = Modifier.size(FloatingActionButtonDefaults.MediumIconSize))
