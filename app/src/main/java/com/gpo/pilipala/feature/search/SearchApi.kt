@@ -134,6 +134,25 @@ internal val VideoOrders = listOf(
     Choice("scores", "最多评论"),
 )
 
+/** The search's own sort (its bottom row), sent as the video tab's `order`; default first. */
+internal val SearchSortOrders = listOf(
+    Choice("totalrank", "默认排序"),
+    Choice("pubdate", "最新发布"),
+    Choice("click", "最多播放"),
+    Choice("dm", "最多弹幕"),
+    Choice("stow", "最多收藏"),
+    Choice("scores", "最多评论"),
+)
+
+internal const val DefaultSearchOrder = "totalrank"
+
+/** A video order as one of [SearchSortOrders] (anything else reads as the default). */
+internal fun searchSortOrder(order: String): String =
+    order.takeIf { o -> SearchSortOrders.any { it.value == o } } ?: DefaultSearchOrder
+
+/** Feeds keep keyword sources as 综合 or 最新 only: every other order joins as 综合. */
+internal fun feedKeywordOrder(order: String): String = if (order == "pubdate") "pubdate" else "totalrank"
+
 internal val ArticleOrders = listOf(
     Choice("totalrank", "综合"),
     Choice("pubdate", "最新发布"),
@@ -410,18 +429,21 @@ internal object SearchHistoryStore {
     fun clear() = save(emptyList())
 }
 
-/** Hand-off from the result page's search pill to the search page it opens. */
-internal object SearchHandoff {
-    private var prefill: String? = null
+/**
+ * Hand-off of the search's sort to the result page a submit opens: that page's
+ * video tab starts on it (Route.SearchResult carries the keyword only).
+ */
+internal object SearchOrderHandoff {
+    private var pending: Pair<String, String>? = null
 
-    fun offer(text: String) {
-        prefill = text
+    fun offer(keyword: String, order: String) {
+        pending = keyword to order
     }
 
-    /** The prefilled text when [hint] is what the result page offered, else null. */
-    fun take(hint: String): String? {
-        val p = prefill
-        prefill = null
-        return p?.takeIf { it == hint && it.isNotEmpty() }
+    /** The order offered for [keyword], else null. Consumes the offer either way. */
+    fun take(keyword: String): String? {
+        val p = pending
+        pending = null
+        return p?.takeIf { it.first == keyword }?.second
     }
 }

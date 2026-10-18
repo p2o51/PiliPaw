@@ -5,7 +5,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,8 +29,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,7 +45,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gpo.pilipala.core.account.Account
@@ -58,6 +53,11 @@ import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.feature.feeds.FeedManageSheet
 import com.gpo.pilipala.feature.feeds.FeedStore
 import com.gpo.pilipala.feature.feeds.MaxFeeds
+import com.gpo.pilipala.feature.search.PiliSearchBar
+import com.gpo.pilipala.feature.search.PiliSearchState
+import com.gpo.pilipala.feature.search.SearchRequest
+import com.gpo.pilipala.feature.search.openSearch
+import com.gpo.pilipala.feature.search.rememberPiliSearchState
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.NetImage
@@ -100,6 +100,7 @@ fun HomeScreen() {
     val behavior = rememberHeaderScrollBehavior()
     val pageSpec = YoinMotion.defaultSpatialSpec<Float>()
     var managing by rememberSaveable { mutableStateOf<String?>(null) }
+    val search = rememberPiliSearchState()
 
     // One scroll state per tab, hoisted so it survives the pager disposing pages.
     val liveState = rememberLazyGridState()
@@ -152,11 +153,12 @@ fun HomeScreen() {
             HomeHeader(
                 user = user,
                 hint = headerVm.searchHint,
+                search = search,
                 onAvatar = {
                     val u = user
                     if (u != null) nav.push(Route.Member(u.mid, u.face, u.name)) else nav.push(Route.Login)
                 },
-                onSearch = { nav.push(Route.Search(headerVm.searchHint)) },
+                onSearch = { nav.openSearch(it) },
                 onMessages = { nav.push(if (user != null) Route.Messages else Route.Login) },
             )
         }
@@ -204,8 +206,9 @@ fun HomeScreen() {
 private fun HomeHeader(
     user: UserInfo?,
     hint: String,
+    search: PiliSearchState,
     onAvatar: () -> Unit,
-    onSearch: () -> Unit,
+    onSearch: (SearchRequest) -> Unit,
     onMessages: () -> Unit,
 ) {
     Row(
@@ -217,7 +220,15 @@ private fun HomeHeader(
         HeaderAvatar(user, onAvatar)
         Spacer(Modifier.width(8.dp))
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            SearchPill(hint, onSearch, Modifier.widthIn(max = 640.dp).fillMaxWidth())
+            // The native search: it opens full screen over the shell, the bottom bar included.
+            PiliSearchBar(
+                state = search,
+                hint = hint,
+                onSubmit = onSearch,
+                modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
+                // Back on the home page the bar shows the suggested word again.
+                clearOnSubmit = true,
+            )
         }
         Spacer(Modifier.width(8.dp))
         IconButton(
@@ -259,35 +270,6 @@ private fun HeaderAvatar(user: UserInfo?, onClick: () -> Unit) {
                         modifier = Modifier.size(22.dp),
                     )
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SearchPill(hint: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val enterSpec = YoinMotion.defaultEffectsSpec<Float>()
-    val exitSpec = YoinMotion.fastEffectsSpec<Float>()
-    Surface(
-        onClick = onClick,
-        modifier = modifier.height(48.dp),
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    ) {
-        Row(
-            Modifier.padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(YoinSymbols.Search, contentDescription = null, modifier = Modifier.size(20.dp))
-            AnimatedContent(
-                targetState = hint.ifEmpty { "搜索" },
-                transitionSpec = { fadeIn(enterSpec).togetherWith(fadeOut(exitSpec)) },
-                label = "searchHint",
-                modifier = Modifier.weight(1f),
-            ) { text ->
-                Text(text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

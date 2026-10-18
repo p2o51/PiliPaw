@@ -10,7 +10,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -36,7 +35,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.input.setTextAndSelectAll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -46,6 +45,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.SearchBarValue
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
@@ -62,9 +62,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -115,8 +115,15 @@ internal class SearchCountsViewModel(keyword: String) : ViewModel() {
     }
 }
 
-/** One result tab: paging + filters. Loads on first [start], not on creation. */
-internal class SearchTabViewModel(val keyword: String, val tab: SearchTab) : ViewModel() {
+/**
+ * One result tab: paging + filters. Loads on first [start], not on creation.
+ * [initialOrder] is the video tab's starting order (the search's sort).
+ */
+internal class SearchTabViewModel(
+    val keyword: String,
+    val tab: SearchTab,
+    initialOrder: String? = null,
+) : ViewModel() {
     var items by mutableStateOf<List<SearchHit>>(emptyList())
         private set
     var initialLoading by mutableStateOf(true)
@@ -132,7 +139,13 @@ internal class SearchTabViewModel(val keyword: String, val tab: SearchTab) : Vie
     var hasMore by mutableStateOf(true)
         private set
 
-    var order by mutableStateOf(if (tab == SearchTab.Video || tab == SearchTab.Article) "totalrank" else "")
+    var order by mutableStateOf(
+        when (tab) {
+            SearchTab.Video -> initialOrder?.let(::searchSortOrder) ?: "totalrank"
+            SearchTab.Article -> "totalrank"
+            else -> ""
+        },
+    )
         private set
     var duration by mutableIntStateOf(0)
         private set
@@ -270,12 +283,33 @@ fun SearchResultScreen(route: Route.SearchResult) {
     val keyword = route.keyword
     val tabs = SearchTab.entries
     val countsVm = viewModel { SearchCountsViewModel(keyword) }
-    val vms = tabs.map { t -> viewModel(key = "search_tab_${t.type}") { SearchTabViewModel(keyword, t) } }
+    val vms = tabs.map { t ->
+        viewModel(key = "search_tab_${t.type}") {
+            // The video tab starts on the sort the search was submitted with.
+            SearchTabViewModel(keyword, t, if (t == SearchTab.Video) SearchOrderHandoff.take(keyword) else null)
+        }
+    }
+    val videoVm = vms[tabs.indexOf(SearchTab.Video)]
     val pagerState = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val scheme = MaterialTheme.colorScheme
     var feedSheet by rememberSaveable { mutableStateOf(false) }
+    val search = rememberPiliSearchState(initialText = keyword, initialOrder = videoVm.order)
+    val pageSpec = YoinMotion.defaultSpatialSpec<Float>()
+
+    // The search opens on this page's keyword (all selected) and the video tab's order;
+    // folding it away without a submit puts the keyword back.
+    LaunchedEffect(search) {
+        var last: SearchBarValue? = null
+        snapshotFlow { search.bar.targetValue }.collect { v ->
+            if (v == SearchBarValue.Expanded && last == SearchBarValue.Collapsed) {
+                search.order = searchSortOrder(videoVm.order)
+            }
+            if (v == SearchBarValue.Collapsed) search.input.setTextAndSelectAll(keyword)
+            last = v
+        }
+    }
 
     Column(
         Modifier
@@ -284,10 +318,19 @@ fun SearchResultScreen(route: Route.SearchResult) {
             .statusBarsPadding(),
     ) {
         ResultSearchBar(
+            search = search,
             keyword = keyword,
-            onEdit = {
-                SearchHandoff.offer(keyword)
-                nav.replace(Route.Search(keyword))
+            onSubmit = { request ->
+                val target = request.target
+                if (target is SearchTarget.Keyword && target.text == keyword) {
+                    // Same keyword: the sort lands on this page's video tab.
+                    videoVm.selectOrder(request.order)
+                    val page = tabs.indexOf(SearchTab.Video)
+                    if (pagerState.currentPage != page) scope.launch { pagerState.animateScrollToPage(page, animationSpec = pageSpec) }
+                } else {
+                    // A new keyword replaces this page; a video or link opens over it.
+                    nav.openSearch(request, replace = target is SearchTarget.Keyword)
+                }
             },
             onAddToFeed = { feedSheet = true },
         )
@@ -334,17 +377,22 @@ fun SearchResultScreen(route: Route.SearchResult) {
 
     if (feedSheet) {
         // The keyword joins a feed with the video tab's order when that is 综合 or 最新发布.
-        val videoOrder = vms.firstOrNull { it.tab == SearchTab.Video }?.order.orEmpty()
         FeedSourceSheet(
             keyword = keyword,
-            keywordOrder = if (videoOrder == "pubdate") "pubdate" else "totalrank",
+            keywordOrder = feedKeywordOrder(videoVm.order),
             onDismiss = { feedSheet = false },
         )
     }
 }
 
+/** The page's native search bar: it opens the search again on [keyword]. */
 @Composable
-private fun ResultSearchBar(keyword: String, onEdit: () -> Unit, onAddToFeed: () -> Unit) {
+private fun ResultSearchBar(
+    search: PiliSearchState,
+    keyword: String,
+    onSubmit: (SearchRequest) -> Unit,
+    onAddToFeed: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     Row(
         Modifier
@@ -354,28 +402,15 @@ private fun ResultSearchBar(keyword: String, onEdit: () -> Unit, onAddToFeed: ()
     ) {
         BackButton()
         Spacer(Modifier.width(8.dp))
-        Row(
-            Modifier
+        PiliSearchBar(
+            state = search,
+            hint = keyword,
+            onSubmit = onSubmit,
+            modifier = Modifier
                 .weight(1f, fill = false)
                 .widthIn(max = 720.dp)
-                .fillMaxWidth()
-                .height(52.dp)
-                .clip(CircleShape)
-                .background(scheme.surfaceContainerHigh)
-                .clickable(onClick = onEdit)
-                .padding(horizontal = 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(YoinSymbols.Search, null, Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
-            Spacer(Modifier.width(12.dp))
-            Text(
-                keyword,
-                style = MaterialTheme.typography.bodyLarge,
-                color = scheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+                .fillMaxWidth(),
+        )
         Spacer(Modifier.width(4.dp))
         IconButton(onClick = onAddToFeed, shapes = IconButtonDefaults.shapes()) {
             Icon(YoinSymbols.LibraryAdd, contentDescription = "添加到 Feed", tint = scheme.onSurfaceVariant)
