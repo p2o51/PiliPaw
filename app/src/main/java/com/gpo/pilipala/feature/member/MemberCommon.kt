@@ -1,5 +1,7 @@
 package com.gpo.pilipala.feature.member
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -181,8 +183,9 @@ internal fun <T> ConnectedToggleRow(
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
                 modifier = Modifier.semantics { role = Role.RadioButton },
+                contentPadding = PaddingValues(horizontal = 14.dp),
             ) {
-                Text(label(option), maxLines = 1)
+                Text(label(option), maxLines = 1, softWrap = false)
             }
         }
     }
@@ -204,9 +207,9 @@ internal fun LazyGridScope.archiveSortHeader(
                 selected = order,
                 label = { it.label },
                 onSelect = onOrder,
-                modifier = Modifier.weight(1f, fill = false),
+                // The rest of the row, start-aligned; scrolls rather than squeezing labels.
+                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
             )
-            Box(Modifier.weight(1f))
             if (total > 0) {
                 Stat(PiliSymbols.Video, Fmt.count(total), Modifier.padding(start = 12.dp))
             }

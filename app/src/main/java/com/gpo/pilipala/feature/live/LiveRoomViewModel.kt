@@ -75,6 +75,21 @@ internal class LiveRoomViewModel(
         private set
     var isPlaying by mutableStateOf(false)
         private set
+
+    /**
+     * 熄屏播放 for this room: the screen may sleep and the audio carries on in the
+     * background, whatever the global 后台播放 setting says. Off: the screen stays on.
+     */
+    var screenOffListen by mutableStateOf(false)
+        private set
+
+    fun toggleScreenOffListen() {
+        screenOffListen = !screenOffListen
+        syncBackgroundHost()
+    }
+
+    private val backgroundAllowed: Boolean get() = AppSettings.backgroundPlay.value || screenOffListen
+
     var isBuffering by mutableStateOf(false)
         private set
     var isPortraitStream by mutableStateOf(false)
@@ -411,7 +426,7 @@ internal class LiveRoomViewModel(
     /** The app went to the background: keep the audio going when background play is on. */
     fun onAppStopped() {
         if (!playerBuilt) return
-        if (!(AppSettings.backgroundPlay.value && hosted && player.isPlaying)) player.pause()
+        if (!(backgroundAllowed && hosted && player.isPlaying)) player.pause()
     }
 
     fun resumeFromBackground() {
@@ -444,7 +459,7 @@ internal class LiveRoomViewModel(
     /** Hands the session to the service while playing on a visible page with background play on. */
     private fun syncBackgroundHost() {
         if (!playerBuilt) return
-        val want = AppSettings.backgroundPlay.value && visible && (player.isPlaying || hosted)
+        val want = backgroundAllowed && visible && (player.isPlaying || hosted)
         if (want == hosted) return
         val s = ensureSession() ?: return
         hosted = want

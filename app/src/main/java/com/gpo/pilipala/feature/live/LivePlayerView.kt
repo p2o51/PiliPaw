@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.live
 
+import com.gpo.pilipala.feature.player.KeepScreenOnEffect
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -101,6 +102,8 @@ internal fun LivePlayerView(
     val fadeInSpec = fadeIn(YoinMotion.defaultEffectsSpec())
     val fadeOutSpec = fadeOut(YoinMotion.defaultEffectsSpec())
 
+    // A live stream is watched without touching the screen: keep it awake while it plays.
+    KeepScreenOnEffect(vm.isPlaying && !vm.screenOffListen)
     LaunchedEffect(chromeVisible, vm.isPlaying, tapCount) {
         if (chromeVisible && vm.isPlaying) {
             delay(4_000)
@@ -236,6 +239,7 @@ internal fun LivePlayerView(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
+                        ScreenOffToggle(vm)
                     }
                     // Bottom bar
                     if (live) {
@@ -330,6 +334,28 @@ private fun CenterPill(text: String) {
         fontWeight = FontWeight.SemiBold,
         color = Color.White,
     )
+}
+
+/** 熄屏播放: let the screen sleep and keep the audio going; lit while on. */
+@Composable
+private fun ScreenOffToggle(vm: LiveRoomViewModel) {
+    val toast = com.gpo.pilipala.ui.components.rememberToast()
+    val on = vm.screenOffListen
+    val block by androidx.compose.animation.animateColorAsState(
+        if (on) Color.White.copy(alpha = 0.22f) else Color.Transparent,
+        YoinMotion.defaultEffectsSpec(),
+        label = "screenOffBlock",
+    )
+    IconButton(
+        onClick = {
+            vm.toggleScreenOffListen()
+            toast(if (vm.screenOffListen) "熄屏播放" else "屏幕常亮")
+        },
+        shapes = IconButtonDefaults.shapes(),
+        colors = IconButtonDefaults.iconButtonColors(containerColor = block, contentColor = Color.White),
+    ) {
+        Icon(PiliSymbols.DarkMode, contentDescription = if (on) "屏幕常亮" else "熄屏播放")
+    }
 }
 
 @Composable
