@@ -161,13 +161,13 @@ private fun EpisodeCard(entry: EpisodeEntry, selected: Boolean, withCover: Boole
         Column(Modifier.padding(horizontal = 12.dp, vertical = if (withCover) 4.dp else 10.dp).padding(bottom = if (withCover) 6.dp else 0.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (selected) {
-                    Icon(YoinSymbols.Equalizer, null, Modifier.size(14.dp), tint = colors.primary)
+                    Icon(YoinSymbols.Equalizer, null, Modifier.size(14.dp), tint = colors.onPrimaryContainer)
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(
                     entry.index,
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (selected) colors.primary else colors.onSurfaceVariant,
+                    color = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant,
                     fontWeight = FontWeight.SemiBold,
                 )
                 if (entry.badge.isNotEmpty()) {
@@ -278,13 +278,13 @@ private fun EpisodeListRow(entry: EpisodeEntry, selected: Boolean, onClick: () -
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (selected) {
-                    Icon(YoinSymbols.Equalizer, null, Modifier.size(14.dp), tint = colors.primary)
+                    Icon(YoinSymbols.Equalizer, null, Modifier.size(14.dp), tint = colors.onPrimaryContainer)
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(
                     entry.index,
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (selected) colors.primary else colors.onSurfaceVariant,
+                    color = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant,
                     fontWeight = FontWeight.SemiBold,
                 )
                 if (entry.badge.isNotEmpty()) {

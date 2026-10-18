@@ -360,14 +360,14 @@ private fun EpisodeTile(ep: BangumiEpisode, selected: Boolean, onClick: () -> Un
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (selected) {
-                Icon(YoinSymbols.Equalizer, null, Modifier.size(14.dp), tint = colors.primary)
+                Icon(YoinSymbols.Equalizer, null, Modifier.size(14.dp), tint = colors.onPrimaryContainer)
                 Spacer(Modifier.width(4.dp))
             }
             Text(
                 ep.title,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = if (selected) colors.primary else colors.onSurfaceVariant,
+                color = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant,
                 maxLines = 1,
                 modifier = Modifier.weight(1f, fill = false),
             )

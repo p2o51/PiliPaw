@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.live
 
+import com.gpo.pilipala.ui.theme.LightBarIcons
 import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
@@ -617,11 +618,5 @@ private fun FullscreenEffect(fullscreen: Boolean, portrait: Boolean) {
 /** Light status-bar icons while the black player sits under the status bar. */
 @Composable
 private fun DarkStatusBarEffect(enabled: Boolean) {
-    val activity = LocalActivity.current ?: return
-    DisposableEffect(enabled) {
-        val controller = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
-        val before = controller.isAppearanceLightStatusBars
-        if (enabled) controller.isAppearanceLightStatusBars = false
-        onDispose { controller.isAppearanceLightStatusBars = before }
-    }
+    LightBarIcons(enabled = enabled, status = true)
 }

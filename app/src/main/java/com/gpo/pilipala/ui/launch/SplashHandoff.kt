@@ -1,5 +1,6 @@
 package com.gpo.pilipala.ui.launch
 
+import com.gpo.pilipala.ui.theme.SystemBars
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -294,26 +295,28 @@ class SplashHandoff(window: Window) {
 
     /**
      * Light bar icons while the forest field covers that bar; the app's own appearance after.
-     * The app's appearance is read once, at construction (after enableEdgeToEdge, before any
-     * splash callback): on Android 12/12L core-splashscreen rewrites it from the window theme
-     * when the splash goes, so it cannot be read back later. Every release writes it back.
+     * On release the bar goes back to [SystemBars]; on Android 12/12L core-splashscreen rewrites
+     * the appearance from the window theme when the splash goes, which ApplySystemBars corrects
+     * because the held flag flips after that.
      */
     private class BarTint(window: Window) {
         private val controller = WindowCompat.getInsetsController(window, window.decorView)
-        private val appStatus = controller.isAppearanceLightStatusBars
-        private val appNavigation = controller.isAppearanceLightNavigationBars
 
         fun cover() {
+            SystemBars.heldStatus = true
+            SystemBars.heldNavigation = true
             controller.isAppearanceLightStatusBars = false
             controller.isAppearanceLightNavigationBars = false
         }
 
+        // Letting go hands the bar back to ApplySystemBars, which applies whatever the pages on
+        // screen want now (a video page's light icons included), not a value saved at launch.
         fun releaseStatus() {
-            controller.isAppearanceLightStatusBars = appStatus
+            SystemBars.heldStatus = false
         }
 
         fun releaseNavigation() {
-            controller.isAppearanceLightNavigationBars = appNavigation
+            SystemBars.heldNavigation = false
         }
 
         fun releaseAll() {

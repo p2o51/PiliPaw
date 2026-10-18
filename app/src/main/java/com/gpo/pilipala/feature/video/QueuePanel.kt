@@ -368,7 +368,7 @@ private fun QueueRow(item: QueueItem, position: Int, current: Boolean, playing: 
     ) {
         Box(Modifier.width(28.dp), contentAlignment = Alignment.Center) {
             if (current) {
-                Icon(rememberEqualizerSymbolPainter(playing), contentDescription = null, tint = colors.primary, modifier = Modifier.size(18.dp))
+                Icon(rememberEqualizerSymbolPainter(playing), contentDescription = null, tint = colors.onPrimaryContainer, modifier = Modifier.size(18.dp))
             } else {
                 Text(
                     "${position + 1}",

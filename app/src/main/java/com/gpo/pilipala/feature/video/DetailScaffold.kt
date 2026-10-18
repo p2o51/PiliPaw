@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.video
 
+import com.gpo.pilipala.ui.theme.LightBarIcons
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import com.gpo.pilipala.feature.player.LocalPlayerPictureShape
@@ -221,17 +222,7 @@ private fun DetailTabRow(tabs: List<DetailTab>, state: PagerState, container: Co
 /** Light status-bar icons over the black player strip; restored when the page leaves. */
 @Composable
 private fun StatusBarIcons(light: Boolean) {
-    val view = LocalView.current
-    if (view.isInEditMode) return
-    DisposableEffect(light) {
-        val window = view.context.findActivity()?.window
-        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-        val previous = controller?.isAppearanceLightStatusBars
-        controller?.isAppearanceLightStatusBars = !light
-        onDispose {
-            if (previous != null) controller.isAppearanceLightStatusBars = previous
-        }
-    }
+    LightBarIcons(enabled = light, status = true)
 }
 
 internal fun Context.findActivity(): Activity? {

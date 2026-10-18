@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.video.portrait
 
+import com.gpo.pilipala.ui.theme.LightBarIcons
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.LocalContentColor
 import com.gpo.pilipala.feature.player.rememberPlayerSheetProperties
@@ -515,18 +516,5 @@ private fun ImmersiveTheme(content: @Composable () -> Unit) {
 /** Light status / navigation bar icons over the picture; restored when the layout leaves. */
 @Composable
 private fun ImmersiveSystemBars() {
-    val view = LocalView.current
-    if (view.isInEditMode) return
-    DisposableEffect(view) {
-        val window = view.context.findActivity()?.window
-        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-        val status = controller?.isAppearanceLightStatusBars
-        val navigation = controller?.isAppearanceLightNavigationBars
-        controller?.isAppearanceLightStatusBars = false
-        controller?.isAppearanceLightNavigationBars = false
-        onDispose {
-            if (status != null) controller.isAppearanceLightStatusBars = status
-            if (navigation != null) controller.isAppearanceLightNavigationBars = navigation
-        }
-    }
+    LightBarIcons(status = true, navigation = true)
 }
