@@ -1,12 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Based on PiliPala by guozhigq (github.com/guozhigq/pilipala), GPL-3.0 -->
+<!--
+  PiliPaw status-bar glyph: the themed-icon layer (ic_launcher_monochrome) cropped to the
+  mark. The system keeps only alpha: the P face solid with its paw-print counter, the block
+  at 40% behind it.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp"
-    android:viewportWidth="60" android:viewportHeight="60">
-    <group android:translateX="-24" android:translateY="-27">
-        <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="4.5"
-            android:strokeLineJoin="round" android:strokeLineCap="round"
-            android:pathData="M34,44 h40 a8,8 0 0 1 8,8 v18 a8,8 0 0 1 -8,8 h-40 a8,8 0 0 1 -8,-8 v-18 a8,8 0 0 1 8,-8 z" />
-        <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="4.5"
-            android:strokeLineCap="round" android:pathData="M44,36 l6,7 M64,36 l-6,7" />
-        <path android:fillColor="#FFFFFF" android:pathData="M44,58 m-3,0 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0 M64,58 m-3,0 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0" />
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="54"
+    android:viewportHeight="54">
+    <group
+        android:translateX="-27.21"
+        android:translateY="-26.79">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:fillAlpha="0.4"
+            android:pathData="M46.049,32.609 A7.68,7.68 0 0,1 51.48,30.36 L61.14,30.36 A13.14,13.14 0 0,1 70.431,52.791 L60.771,62.451 A13.14,13.14 0 0,1 55.301,65.732 L45.817,75.217 A6.84,6.84 0 0,1 40.98,77.22 A6.84,6.84 0 0,1 34.14,70.38 L34.14,47.7 A7.68,7.68 0 0,1 36.389,42.269 Z M43.8,38.04 A7.68,7.68 0 0,1 51.48,30.36 L61.14,30.36 A13.14,13.14 0 0,1 74.28,43.5 A13.14,13.14 0 0,1 61.14,56.64 L57.48,56.64 L57.48,60.72 A6.84,6.84 0 0,1 50.64,67.56 A6.84,6.84 0 0,1 43.8,60.72 Z M60.972,36.188 A7.384,7.384 0 0,1 60.972,50.955 A7.384,7.384 0 0,1 60.972,36.188 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M45.6,38.04 A5.88,5.88 0 0,1 51.48,32.16 L61.14,32.16 A11.34,11.34 0 0,1 72.48,43.5 A11.34,11.34 0 0,1 61.14,54.84 L57.36,54.84 A1.68,1.68 0 0,0 55.68,56.52 L55.68,60.72 A5.04,5.04 0 0,1 50.64,65.76 A5.04,5.04 0 0,1 45.6,60.72 Z M58.986,43.831 A1.959,1.959 0 0,1 60.695,42.83 L61.249,42.83 A1.959,1.959 0 0,1 62.958,43.831 L63.833,45.392 A2.226,2.226 0 0,1 61.891,48.706 L60.053,48.706 A2.226,2.226 0 0,1 58.111,45.392 Z M54.799,43.448 A1.242,1.242 0 0,1 56.416,41.562 L56.902,41.979 A1.242,1.242 0 0,1 55.286,43.865 Z M57.682,40.016 A1.242,1.242 0 0,1 60.073,39.341 L60.247,39.958 A1.242,1.242 0 0,1 57.856,40.633 Z M61.871,39.341 A1.242,1.242 0 0,1 64.262,40.016 L64.088,40.633 A1.242,1.242 0 0,1 61.697,39.958 Z M65.528,41.562 A1.242,1.242 0 0,1 67.145,43.448 L66.658,43.865 A1.242,1.242 0 0,1 65.042,41.979 Z" />
     </group>
 </vector>

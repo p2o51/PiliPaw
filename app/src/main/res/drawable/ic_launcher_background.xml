@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Based on PiliPala by guozhigq (github.com/guozhigq/pilipala), GPL-3.0 -->
+<!--
+  PiliPaw launcher background: solid deep forest green (#0E4430).
+  The PiliPala heritage green lives on the block, so the white face keeps a
+  dark field to read against at every size.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF0E4430"
+        android:pathData="M0,0H108V108H0Z"/>
+</vector>

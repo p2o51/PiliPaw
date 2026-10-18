@@ -223,10 +223,10 @@ private suspend fun saveToGallery(context: android.content.Context, url: String)
         else -> "image/jpeg"
     }
     val values = ContentValues().apply {
-        put(MediaStore.Images.Media.DISPLAY_NAME, "pilipala_${System.currentTimeMillis()}.$ext")
+        put(MediaStore.Images.Media.DISPLAY_NAME, "pilipaw_${System.currentTimeMillis()}.$ext")
         put(MediaStore.Images.Media.MIME_TYPE, mime)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/PiliPala")
+            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/PiliPaw")
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
     }

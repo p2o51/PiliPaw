@@ -169,7 +169,7 @@ private fun SettingsList(
             item(key = SettingsPageId.About, paintsOwnSegment = twoPane) {
                 SettingsLinkItem(
                     icon = YoinSymbols.Info,
-                    title = "关于 PiliPala",
+                    title = "关于 PiliPaw",
                     value = BuildConfig.VERSION_NAME,
                     selectable = twoPane,
                     selected = selected == SettingsPageId.About,

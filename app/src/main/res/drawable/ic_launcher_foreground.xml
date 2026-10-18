@@ -1,13 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Based on PiliPala by guozhigq (github.com/guozhigq/pilipala), GPL-3.0 -->
+<!--
+  PiliPaw launcher foreground: the PiliPala P, grown up, with a paw print
+  for a counter.
+
+  Face: 32 x 40 units before scaling, 12 stem with a pill foot, 13.5-radius
+  semicircle bowl. Block: the face swept along (-11.5, +11.5), the original
+  logo's 45 degree extrusion, as arcs plus 45 degree tangents. Along the
+  top-left corner, the top edge, the bowl and the foot it runs 1.0 inside
+  the face, so the block never shares an anti-aliased edge with the white
+  (no green fringe). Counter: an upright paw print cut through the face as
+  even-odd holes (domed pad and four jelly-bean toes, every gap >= 1.53),
+  so the block shows through it. Whole mark scaled 0.95 about the centre,
+  within r 29.4 of it (safe zone r 33).
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp"
-    android:viewportWidth="108" android:viewportHeight="108">
-    <!-- TV body -->
-    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="4.5"
-        android:strokeLineJoin="round" android:strokeLineCap="round"
-        android:pathData="M34,44 h40 a8,8 0 0 1 8,8 v18 a8,8 0 0 1 -8,8 h-40 a8,8 0 0 1 -8,-8 v-18 a8,8 0 0 1 8,-8 z" />
-    <!-- antennae -->
-    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="4.5"
-        android:strokeLineCap="round" android:pathData="M44,36 l6,7 M64,36 l-6,7" />
-    <!-- eyes -->
-    <path android:fillColor="#FFFFFF" android:pathData="M44,58 m-3,0 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0 M64,58 m-3,0 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0" />
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:name="block"
+        android:fillColor="#FF2CBA74"
+        android:pathData="M46.448,31.248 L47.155,31.955 A5.65,5.65 0 0,1 51.15,30.3 L62.075,30.3 A11.825,11.825 0 0,1 70.437,50.487 L71.144,51.194 L60.219,62.119 A12.825,12.825 0 0,1 54.397,65.457 L53.66,64.781 A4.7,4.7 0 0,1 53.523,64.923 L54.231,65.631 L43.306,76.556 A5.7,5.7 0 0,1 39.275,78.225 A5.7,5.7 0 0,1 33.575,72.525 L33.575,46.875 A6.65,6.65 0 0,1 35.523,42.173 Z"/>
+    <path
+        android:name="face"
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M44.5,35.95 A6.65,6.65 0 0,1 51.15,29.3 L62.075,29.3 A12.825,12.825 0 0,1 74.9,42.125 A12.825,12.825 0 0,1 62.075,54.95 L57.8,54.95 A1.9,1.9 0 0,0 55.9,56.85 L55.9,61.6 A5.7,5.7 0 0,1 50.2,67.3 A5.7,5.7 0 0,1 44.5,61.6 Z M59.639,42.499 A2.215,2.215 0 0,1 61.572,41.367 L62.198,41.367 A2.215,2.215 0 0,1 64.131,42.499 L65.121,44.265 A2.517,2.517 0 0,1 62.925,48.013 L60.845,48.013 A2.517,2.517 0 0,1 58.649,44.265 Z M54.903,42.066 A1.405,1.405 0 0,1 56.732,39.933 L57.282,40.405 A1.405,1.405 0 0,1 55.454,42.538 Z M58.165,38.184 A1.405,1.405 0 0,1 60.869,37.422 L61.065,38.12 A1.405,1.405 0 0,1 58.361,38.882 Z M62.901,37.422 A1.405,1.405 0 0,1 65.605,38.184 L65.409,38.882 A1.405,1.405 0 0,1 62.705,38.12 Z M67.038,39.933 A1.405,1.405 0 0,1 68.867,42.066 L68.316,42.538 A1.405,1.405 0 0,1 66.488,40.405 Z"/>
 </vector>

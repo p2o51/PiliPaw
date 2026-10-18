@@ -338,7 +338,7 @@ private fun ZoomableImage(url: String, onTap: () -> Unit) {
 // ── MediaStore ──────────────────────────────────────────────────────────────
 
 internal object ImageSaver {
-    /** Downloads the original and inserts it into Pictures/PiliPala. */
+    /** Downloads the original and inserts it into Pictures/PiliPaw. */
     suspend fun save(context: Context, url: String): Uri = withContext(Dispatchers.IO) {
         val clean = Images.normalize(url).substringBefore('@')
         val bytes = BiliClient.getBytes(clean, BiliClient.mediaHeaders())
@@ -353,10 +353,10 @@ internal object ImageSaver {
         }
         val resolver = context.contentResolver
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "pilipala_${System.currentTimeMillis()}.$ext")
+            put(MediaStore.Images.Media.DISPLAY_NAME, "pilipaw_${System.currentTimeMillis()}.$ext")
             put(MediaStore.Images.Media.MIME_TYPE, mime)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/PiliPala")
+                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/PiliPaw")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
         }

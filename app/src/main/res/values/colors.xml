@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FB7299</color>
+    <!-- PiliPaw's forest field: the launcher background, the splash screen and the
+         in-app handoff overlay that takes over from it (ui/launch). -->
+    <color name="splash_background">#FF0E4430</color>
     <!-- Launcher shortcut icons (稍后再看 / 历史记录 / 搜索): a container tone and its on-colour.
          Android 12+ takes the wallpaper's accent tones instead (values-v31). -->
     <color name="shortcut_container">#FFD9E2</color>
