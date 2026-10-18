@@ -61,6 +61,8 @@ import com.gpo.pilipala.feature.search.rememberPiliSearchState
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.NetImage
+import com.gpo.pilipala.ui.launch.splashAvatarSlot
+import com.gpo.pilipala.ui.launch.splashReveal
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
@@ -219,7 +221,7 @@ private fun HomeHeader(
     ) {
         HeaderAvatar(user, onAvatar)
         Spacer(Modifier.width(8.dp))
-        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+        Box(Modifier.weight(1f).splashReveal(), contentAlignment = Alignment.Center) {
             // The native search: it opens full screen over the shell, the bottom bar included.
             PiliSearchBar(
                 state = search,
@@ -234,7 +236,7 @@ private fun HomeHeader(
         IconButton(
             onClick = onMessages,
             shapes = IconButtonDefaults.shapes(),
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier.size(48.dp).splashReveal(),
         ) {
             Icon(PiliSymbols.Mail, contentDescription = "消息")
         }
@@ -251,8 +253,10 @@ private fun HeaderAvatar(user: UserInfo?, onClick: () -> Unit) {
         shapes = IconButtonDefaults.shapes(),
         modifier = Modifier.size(48.dp),
     ) {
+        // The launch handoff lands the PiliPaw mark here, then this fades in over it.
         AnimatedContent(
             targetState = user?.face,
+            modifier = Modifier.splashAvatarSlot(),
             transitionSpec = { fadeIn(enterSpec).togetherWith(fadeOut(exitSpec)) },
             label = "homeAvatar",
         ) { face ->

@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.gpo.pilipala.ui.launch.splashReveal
 import com.gpo.pilipala.ui.theme.YoinMotion
 import kotlin.math.roundToInt
 
@@ -154,9 +155,11 @@ internal fun SegmentTabs(
                     onSelect(i)
                 },
                 onLongClick = if (onLongClick != null && longClickable(i)) ({ onLongClick(i) }) else null,
-                modifier = Modifier.onPlaced { c ->
-                    bounds[i] = c.positionInParent().x.roundToInt() to c.size.width
-                },
+                modifier = Modifier
+                    .onPlaced { c ->
+                        bounds[i] = c.positionInParent().x.roundToInt() to c.size.width
+                    }
+                    .splashReveal(),
             )
         }
         trailing?.invoke()

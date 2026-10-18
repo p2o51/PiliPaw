@@ -52,6 +52,7 @@ coil-gif = { group = "io.coil-kt.coil3", name = "coil-gif", version.ref = "coil"
 palette = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }
 graphics-shapes = { group = "androidx.graphics", name = "graphics-shapes", version.ref = "graphicsShapes" }
 core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.15.0" }
+core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version = "1.2.0" }
 androidx-browser = { group = "androidx.browser", name = "browser", version = "1.8.0" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version = "1.1.7" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }

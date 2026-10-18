@@ -21,12 +21,14 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.feature.dynamics.DynamicsScreen
 import com.gpo.pilipala.feature.home.HomeScreen
 import com.gpo.pilipala.feature.mine.MineScreen
 import com.gpo.pilipala.feature.rank.RankScreen
 import com.gpo.pilipala.ui.components.LocalBottomBarInset
 import com.gpo.pilipala.ui.components.seam.ProvideSeamBarField
+import com.gpo.pilipala.ui.launch.splashReveal
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
@@ -92,7 +94,7 @@ fun MainShell() {
                 tabs = tabs,
                 selected = selected,
                 onSelect = { if (it == selected) reselects.tryEmit(it) else selected = it },
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier.align(Alignment.BottomCenter).splashReveal(lift = 22.dp),
             )
         }
     }

@@ -49,6 +49,7 @@ import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.RefreshBox
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.launch.splashReveal
 import com.gpo.pilipala.ui.theme.YoinMotion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -159,13 +160,16 @@ internal class FeedPager<T>(
     }
 }
 
-/** Feed items fade in, slide when neighbours leave, and fade out when removed. */
+/**
+ * Feed items fade in, slide when neighbours leave, and fade out when removed. On a cold
+ * launch the first screen of cards rises out from under the splash handoff.
+ */
 @Composable
 internal fun LazyGridItemScope.feedItemMotion(): Modifier = Modifier.animateItem(
     fadeInSpec = YoinMotion.defaultEffectsSpec(),
     placementSpec = YoinMotion.defaultSpatialSpec(),
     fadeOutSpec = YoinMotion.fastEffectsSpec(),
-)
+).splashReveal()
 
 /** Floating bar + gesture/navigation bar: what a main-tab list must clear at the bottom. */
 @Composable
@@ -229,7 +233,7 @@ internal fun <T> PagedGrid(
         label = "feedPhase",
     ) { p ->
         when (p) {
-            FeedPhase.Loading -> LoadingState(Modifier.padding(bottom = bottom))
+            FeedPhase.Loading -> LoadingState(Modifier.padding(bottom = bottom).splashReveal())
             FeedPhase.Error -> ErrorState(pager.error.orEmpty(), Modifier.padding(bottom = bottom), onRetry = onRefresh)
             FeedPhase.Content -> {
                 LoadMoreEffect(state) { pager.loadMore() }

@@ -76,6 +76,7 @@ dependencies {
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.core.ktx)
+    implementation(libs.core.splashscreen)
     implementation(libs.androidx.browser)
     implementation(libs.androidx.datastore.preferences)
 
