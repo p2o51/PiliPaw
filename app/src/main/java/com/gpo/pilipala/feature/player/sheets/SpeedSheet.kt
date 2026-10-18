@@ -52,7 +52,6 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
-import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /** The speeds the player offers (the same list 设置 › 默认倍速 picks from). */
@@ -94,10 +93,10 @@ internal fun SpeedSliderPage(ctrl: PiliPlayerController) {
                     .height(64.dp),
             )
             StepSlider(
-                value = index.toFloat(),
+                value = index,
                 count = PlaybackSpeeds.size,
-                onValueChange = { v ->
-                    val next = PlaybackSpeeds[v.roundToInt().coerceIn(0, PlaybackSpeeds.lastIndex)]
+                onValueChange = { i ->
+                    val next = PlaybackSpeeds[i]
                     if (next != ctrl.speed) {
                         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                         ctrl.changeSpeed(next)
