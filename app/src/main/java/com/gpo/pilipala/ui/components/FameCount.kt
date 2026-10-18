@@ -93,13 +93,18 @@ object FameMode {
     private val selfMirror = mutableStateOf(currentSelfMid(Account.user.value))
 
     init {
-        if (scopeKey.value.isEmpty()) {
-            AppSettings.set(scopeKey, if (legacyKey.value) FameScope.All.key else FameScope.Off.key)
-        }
-        scopeMirror = mutableStateOf(FameScope.of(scopeKey.value))
-        MainScope().launch { scopeKey.state.collect { scopeMirror.value = FameScope.of(it) } }
+        // Read-only here (no writes from object init): an unset scope takes the old switch.
+        scopeMirror = mutableStateOf(resolve(scopeKey.value))
+        MainScope().launch { scopeKey.state.collect { scopeMirror.value = resolve(it) } }
         MainScope().launch { Account.user.collect { selfMirror.value = currentSelfMid(it) } }
     }
+
+    private fun resolve(stored: String): FameScope =
+        if (stored.isEmpty()) {
+            if (legacyKey.value) FameScope.All else FameScope.Off
+        } else {
+            FameScope.of(stored)
+        }
 
     private fun currentSelfMid(user: UserInfo?): Long =
         user?.mid?.takeIf { it > 0 } ?: BiliClient.mid.takeIf { BiliClient.isLoggedIn } ?: 0L
@@ -108,7 +113,10 @@ object FameMode {
     val scope: FameScope get() = scopeMirror.value
 
     /** The signed-in user's mid, 0 when logged out. Snapshot-readable. */
-    val selfMid: Long get() = selfMirror.value
+    val selfMid: Long
+        get() = selfMirror.value.takeIf { it > 0 }
+            // Signed in but the profile never loaded (offline at launch): the cookie still says who.
+            ?: BiliClient.mid.takeIf { BiliClient.isLoggedIn } ?: 0L
 
     /** True when [mid] is the signed-in user. */
     fun isSelf(mid: Long?): Boolean {

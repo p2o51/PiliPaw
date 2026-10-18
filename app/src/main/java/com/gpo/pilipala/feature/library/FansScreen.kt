@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.library
 
+import com.gpo.pilipala.ui.components.FameMode
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +48,9 @@ fun FansScreen(route: Route.Fans) {
         route.name.isNotEmpty() -> "${route.name}的粉丝"
         else -> "粉丝"
     }
-    LibraryScaffold(title = title, subtitle = if (vm.total > 0) "${vm.total}个粉丝" else null) { padding ->
+    // The page every hidden 粉丝 line leads to: its total is that same number.
+    val showTotal = vm.total > 0 && !FameMode.hides(FameMode.isSelf(mid))
+    LibraryScaffold(title = title, subtitle = if (showTotal) "${vm.total}个粉丝" else null) { padding ->
         UserList(
             vm.pager,
             padding,

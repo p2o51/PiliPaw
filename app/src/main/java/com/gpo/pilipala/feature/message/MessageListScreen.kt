@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.message
 
+import com.gpo.pilipala.ui.components.FameMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -425,7 +426,9 @@ private fun LikeRow(e: MsgEntry, modifier: Modifier = Modifier) {
                 buildAnnotatedString {
                     withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(names) }
                     if (e.counts > 2 || e.counts > e.users.size.coerceAtMost(2)) {
-                        withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) { append("  等${e.counts}人") }
+                        // How many liked the user's own comment or video: a 名声模式 number.
+                        val more = if (FameMode.hides(self = true)) "  等人" else "  等${e.counts}人"
+                        withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) { append(more) }
                     }
                 },
                 style = MaterialTheme.typography.titleSmall,
