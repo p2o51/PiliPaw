@@ -117,6 +117,7 @@ private fun SettingsList(
     val scope = rememberCoroutineScope()
     var confirmLogout by remember { mutableStateOf(false) }
     val twoPane = selected != null
+    val linkState = rememberLinkHostState()
 
     SettingsScaffold(title = "设置", pageColor = pageColor) {
         AccountBlock(
@@ -124,6 +125,7 @@ private fun SettingsList(
             onLogin = { nav.push(Route.Login) },
             onProfile = { u -> nav.push(Route.Member(u.mid, u.face, u.name)) },
         )
+        OpenLinksCard(linkState)
 
         SettingsGroup("偏好") {
             listOf(
@@ -162,6 +164,12 @@ private fun SettingsList(
                         onClick = { onOpen(id) },
                     )
                 }
+            }
+        }
+
+        SettingsGroup("链接") {
+            item(key = "open_links", paintsOwnSegment = twoPane) {
+                OpenLinksItem(linkState, selectable = twoPane)
             }
         }
 

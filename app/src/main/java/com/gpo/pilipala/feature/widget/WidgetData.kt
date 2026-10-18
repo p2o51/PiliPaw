@@ -64,7 +64,7 @@ internal object WidgetData {
      * A cover at about [w]×[h] px (the CDN crops it to that box), software and 16-bit: the
      * widget's bitmaps travel in one RemoteViews parcel, so they stay small.
      */
-    private suspend fun cover(context: Context, url: String, w: Int, h: Int): Bitmap? {
+    internal suspend fun cover(context: Context, url: String, w: Int, h: Int): Bitmap? {
         val src = Images.normalize(url).ifEmpty { return null }
         return try {
             withTimeoutOrNull(ImageTimeoutMs) {

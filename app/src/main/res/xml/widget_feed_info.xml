@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Feed (feature/widget/FeedWidget): default 4x2, from 2x2 (one video) up to a tall list or
+     a 3-column grid. The feed is picked on placement (FeedWidgetConfigActivity) and can be
+     changed later. Refresh runs on WorkManager (FeedWidgetWorker, ~45 min) and on app open,
+     so the system's own update period is off. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_feed_description"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:previewLayout="@layout/widget_feed_preview"
+    android:configure="com.gpo.pilipala.feature.widget.FeedWidgetConfigActivity"
+    android:widgetFeatures="reconfigurable"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
+    android:maxResizeWidth="900dp"
+    android:maxResizeHeight="900dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

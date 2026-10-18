@@ -35,7 +35,11 @@ import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.feature.player.PipSignals
 import com.gpo.pilipala.feature.video.AppShortcuts
 import com.gpo.pilipala.feature.player.PlaybackService
+import com.gpo.pilipala.feature.feeds.FeedStore
+import com.gpo.pilipala.feature.widget.FeedWidget
 import com.gpo.pilipala.feature.widget.WatchWidget
+import com.gpo.pilipala.navigation.LinkResolver
+import com.gpo.pilipala.ui.shell.ShellRequests
 import com.gpo.pilipala.navigation.AppNavHost
 import com.gpo.pilipala.navigation.LinkRouter
 import com.gpo.pilipala.navigation.Navigator
@@ -58,6 +62,9 @@ class MainActivity : ComponentActivity() {
 
     private val deepLinks = Channel<DeepLink>(Channel.UNLIMITED)
 
+    /** Feed ids from the feed widget's header. */
+    private val feedOpens = Channel<String>(Channel.UNLIMITED)
+
     /** Compose has laid out its first frame: the splash may go. */
     private var firstLayout = false
 
@@ -79,6 +86,12 @@ class MainActivity : ComponentActivity() {
             runCatching { Account.refresh() }
         }
         AppShortcuts.publishFixed(this)
+        // Placed feed widgets: refetch when stale, keep the periodic refresh scheduled.
+        FeedWidget.onAppOpen(applicationContext)
+        lifecycleScope.launch {
+            // A feed renamed, edited or deleted: placed widgets follow.
+            FeedStore.feeds.drop(1).collect { FeedWidget.onFeedsChanged(applicationContext, it) }
+        }
         lifecycleScope.launch {
             // Signed in, out or into another account: a placed widget swaps its 稍后再看 at once.
             Account.user.map { it?.mid }.distinctUntilChanged().drop(1).collect {
@@ -100,6 +113,14 @@ class MainActivity : ComponentActivity() {
                         if (link.shortcut && (top == link.route || (top is Route.Video && top.bvid == (link.route as? Route.Video)?.bvid))) continue
                         // Through the navigator, so the covered page is frozen for its later reveal.
                         navigator.push(link.route)
+                    }
+                }
+                LaunchedEffect(Unit) {
+                    for (id in feedOpens) {
+                        // Back to the shell's 首页, which switches to the feed's tab.
+                        navigator.popToMain()
+                        ShellRequests.select(0)
+                        FeedStore.requestFocus(id)
                     }
                 }
                 // System bar icons follow the app's own light/dark (it can differ from the system's),
@@ -230,9 +251,32 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
+        // The feed widget's header: that feed's tab on the home page.
+        intent.getStringExtra(FeedWidget.ExtraFeedId)?.takeIf { it.isNotEmpty() }?.let { id ->
+            intent.removeExtra(FeedWidget.ExtraFeedId)
+            handoff?.divert()
+            feedOpens.trySend(id)
+            return
+        }
+        // The widget's picker had no feed to offer: the editor.
+        if (intent.getBooleanExtra(FeedWidget.ExtraNewFeed, false)) {
+            intent.removeExtra(FeedWidget.ExtraNewFeed)
+            handoff?.divert()
+            deepLinks.trySend(DeepLink(Route.FeedEditor(), resume = false))
+            return
+        }
+        // 分享 → PiliPaw: the first bilibili / b23.tv link in the text.
+        if (intent.action == Intent.ACTION_SEND) {
+            val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
+            val link = LinkResolver.firstLink(text) ?: return
+            handoff?.divert()
+            routeExternal(link, resume = false)
+            return
+        }
         // The launcher, the live notification and the widget's open-the-app tap just bring the
         // app forward. Glance stamps a data-less intent with a glance-action: URI, which is no link.
-        if (intent == null || intent.action == Intent.ACTION_MAIN) return
+        if (intent.action == Intent.ACTION_MAIN) return
         if (intent.data?.scheme == GlanceActionScheme) return
         val data = intent.dataString ?: return
         // A page is about to cover the home: the handoff fades instead of flying to its avatar.
@@ -242,7 +286,19 @@ class MainActivity : ComponentActivity() {
             return
         }
         val resume = intent.getBooleanExtra(PlaybackService.EXTRA_RESUME, false)
-        deepLinks.trySend(DeepLink(LinkRouter.route(data), resume))
+        routeExternal(data, resume)
+    }
+
+    /** A link from outside: short links (b23.tv …) are expanded first, read-only. */
+    private fun routeExternal(url: String, resume: Boolean) {
+        val host = runCatching { android.net.Uri.parse(url).host.orEmpty() }.getOrDefault("")
+        if (!LinkResolver.isShortHost(host)) {
+            deepLinks.trySend(DeepLink(LinkRouter.route(url), resume))
+            return
+        }
+        lifecycleScope.launch {
+            deepLinks.trySend(DeepLink(LinkRouter.route(LinkResolver.expand(url)), resume))
+        }
     }
 
     private companion object {

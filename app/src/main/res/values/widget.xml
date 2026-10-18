@@ -6,6 +6,10 @@
     <string name="widget_preview_title">继续看</string>
     <string name="widget_preview_later">稍后再看</string>
 
+    <!-- Feed home-screen widget (feature/widget/FeedWidget). -->
+    <string name="widget_feed_label">Feed</string>
+    <string name="widget_feed_description">自定义 Feed 的最新视频</string>
+
     <!-- The picker's preview layout; Android 12+ takes the wallpaper's tones instead (values-v31). -->
     <color name="widget_preview_surface">#FFF7EEF0</color>
     <color name="widget_preview_block">#FFFFD9E2</color>
