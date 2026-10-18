@@ -297,9 +297,11 @@ fun BiliVideoPlayer(
             .onGloballyPositioned { yInWindow = it.positionInWindow().y },
     ) {
         Box(Modifier.fillMaxSize().turnedContent(turned) { turnAngle.value }) {
-            // A TextureView keeps its old buffer size across a window resize (rotation) and
-            // draws the picture small in a corner on some devices: give it a fresh view instead.
-            key(surfaceType, if (surfaceType == SURFACE_TYPE_TEXTURE_VIEW) configuration.screenWidthDp * 10_000 + configuration.screenHeightDp else 0) {
+            // The video view is rebuilt whenever its frame changes size (inline ⇄ fullscreen,
+            // window resize). On some devices a resized SurfaceView keeps its old size and the
+            // picture sits small in a corner of the fullscreen frame; a new view is laid out
+            // at the right size from its first frame. Costs at most a black frame at the switch.
+            key(surfaceType, fullscreen, configuration.screenWidthDp, configuration.screenHeightDp) {
                 ContentFrame(
                     player = ctrl.player,
                     modifier = Modifier.fillMaxSize(),
