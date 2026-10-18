@@ -38,12 +38,15 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MediumFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.animateFloatingActionButton
 import androidx.compose.material3.toPath
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
@@ -52,10 +55,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Outline
@@ -63,8 +69,12 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -83,8 +93,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.feature.reply.requireLogin
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.ErrorState
@@ -95,6 +107,7 @@ import com.gpo.pilipala.ui.components.LocalBottomBarInset
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.RefreshBox
+import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.WidthClass
 import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.components.seam.seamViewport
@@ -102,6 +115,9 @@ import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import kotlin.math.sign
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private val FILTERS = listOf("全部" to "all", "投稿" to "video", "番剧" to "pgc", "专栏" to "article")
@@ -120,6 +136,40 @@ internal class DynamicsViewModel : ViewModel() {
         val (page, base) = DynamicsApi.feed(type, cursor, baseline, host?.mid)
         if (cursor == null) baseline = base
         page
+    }
+
+    /** Set when a post lands; the feed scrolls to the top and clears it. */
+    var pendingScrollTop by mutableStateOf(false)
+
+    init {
+        viewModelScope.launch { DynamicsEvents.posted.collect { onPosted(it) } }
+    }
+
+    /**
+     * A dynamic was just published: back to the unfiltered feed, refreshed, and
+     * the new item fetched by id and put on top if the feed doesn't carry it yet
+     * (the followed feed can lag a few seconds behind a post).
+     */
+    private fun onPosted(id: String) {
+        if (host != null || type != "all") {
+            host = null
+            type = "all"
+            pager.update { emptyList() }
+        }
+        refreshAll()
+        pendingScrollTop = true
+        if (id.isEmpty()) return
+        viewModelScope.launch {
+            var item: DynItem? = null
+            for (attempt in 0 until 3) {
+                item = runCatching { DynamicsApi.detail(id) }.getOrNull()
+                if (item != null) break
+                delay(800L * (attempt + 1))
+            }
+            val posted = item ?: return@launch
+            snapshotFlow { pager.isRefreshing }.first { !it }
+            if (pager.items.none { it.id == posted.id }) pager.update { listOf(posted) + it }
+        }
     }
 
     /** Called whenever the signed-in account changes. */
@@ -160,13 +210,72 @@ internal class DynamicsViewModel : ViewModel() {
 fun DynamicsScreen() {
     val user by Account.user.collectAsState()
     val loggedIn = user != null && BiliClient.isLoggedIn
-    if (!loggedIn) {
-        GuestState()
-        return
+    // The compose FAB leaves while the feed scrolls down and comes back on any scroll up.
+    var fabVisible by rememberSaveable { mutableStateOf(true) }
+    val threshold = with(LocalDensity.current) { FabScrollThreshold.toPx() }
+    val fabScroll = remember(threshold) { FabScrollConnection(threshold) { fabVisible = it } }
+    Box(Modifier.fillMaxSize().nestedScroll(fabScroll)) {
+        if (!loggedIn) {
+            GuestState()
+        } else {
+            val vm: DynamicsViewModel = viewModel(key = "dynamics_main") { DynamicsViewModel() }
+            LaunchedEffect(user?.mid) { vm.onAccount(user?.mid ?: 0L) }
+            DynamicsFeed(vm, onPostLanded = { fabVisible = true })
+        }
+        ComposeFab(visible = fabVisible, modifier = Modifier.align(Alignment.BottomEnd))
     }
-    val vm: DynamicsViewModel = viewModel(key = "dynamics_main") { DynamicsViewModel() }
-    LaunchedEffect(user?.mid) { vm.onAccount(user?.mid ?: 0L) }
-    DynamicsFeed(vm)
+}
+
+private val FabScrollThreshold = 24.dp
+
+/** Hides the FAB once a drag/fling has moved [threshold] px down the feed, shows it after as much up. */
+private class FabScrollConnection(
+    private val threshold: Float,
+    private val onVisible: (Boolean) -> Unit,
+) : NestedScrollConnection {
+    private var travel = 0f
+
+    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+        val dy = available.y
+        if (dy == 0f) return Offset.Zero
+        if (travel != 0f && sign(travel) != sign(dy)) travel = 0f
+        travel += dy
+        if (travel <= -threshold) onVisible(false) else if (travel >= threshold) onVisible(true)
+        return Offset.Zero
+    }
+}
+
+/**
+ * 发动态: a medium FAB at the bottom end, above the floating bar. Its push grows
+ * the composer out of it (container transform); guests go through the login gate.
+ */
+@Composable
+private fun ComposeFab(visible: Boolean, modifier: Modifier = Modifier) {
+    val nav = LocalNavigator.current
+    val toast = rememberToast()
+    val haptics = LocalHapticFeedback.current
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val end = if (widthClass() == WidthClass.Compact) 16.dp else 24.dp
+    MediumFloatingActionButton(
+        onClick = {
+            if (!visible) return@MediumFloatingActionButton
+            haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+            if (requireLogin(nav, toast)) nav.push(Route.DynamicCompose)
+        },
+        modifier = modifier
+            .padding(end = end, bottom = LocalBottomBarInset.current + navBottom + 12.dp)
+            .animateFloatingActionButton(
+                visible = visible,
+                alignment = Alignment.BottomEnd,
+                scaleAnimationSpec = YoinMotion.fastSpatialSpec(),
+                alphaAnimationSpec = YoinMotion.fastEffectsSpec(),
+            )
+            .pageSharedSource(Route.DynamicCompose),
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
+        Icon(YoinSymbols.Edit, contentDescription = "发动态", modifier = Modifier.size(FloatingActionButtonDefaults.MediumIconSize))
+    }
 }
 
 @Composable
@@ -189,7 +298,7 @@ private fun GuestState() {
 }
 
 @Composable
-private fun DynamicsFeed(vm: DynamicsViewModel) {
+private fun DynamicsFeed(vm: DynamicsViewModel, onPostLanded: () -> Unit) {
     val pager = vm.pager
     val wc = widthClass()
     val cols = if (wc == WidthClass.Expanded) 2 else 1
@@ -202,6 +311,14 @@ private fun DynamicsFeed(vm: DynamicsViewModel) {
     val fadeInSpec = YoinMotion.defaultEffectsSpec<Float>()
     val fadeOutSpec = YoinMotion.fastEffectsSpec<Float>()
     LoadMoreEffect(gridState) { pager.loadMore() }
+    // A post just landed: back to the top, where it appears, with the FAB in view.
+    LaunchedEffect(vm.pendingScrollTop) {
+        if (vm.pendingScrollTop) {
+            vm.pendingScrollTop = false
+            onPostLanded()
+            gridState.scrollToItem(0)
+        }
+    }
 
     RefreshBox(
         isRefreshing = pager.isRefreshing && pager.items.isNotEmpty(),
