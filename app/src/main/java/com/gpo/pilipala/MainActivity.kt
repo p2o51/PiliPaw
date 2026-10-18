@@ -123,7 +123,7 @@ class MainActivity : ComponentActivity() {
     /**
      * The splash (霹雳啵, drawable/splash_icon) stays only until Compose has laid out its first
      * frame, and never past the icon's own length. On exit it waits for the icon to finish (the
-     * paw stamp lands at 770 ms), then hands over to [SplashHandoff]: from the launcher the mark
+     * last toe bean pops out at 875 ms), then hands over to [SplashHandoff]: from the launcher the mark
      * flies into the home header's avatar; off a link, shortcut, widget or notification it just
      * fades; with animations removed, or on a recreated activity, it is simply gone.
      */
