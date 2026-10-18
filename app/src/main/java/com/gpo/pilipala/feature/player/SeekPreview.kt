@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,11 +39,18 @@ import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Images
 import com.gpo.pilipala.ui.theme.YoinShapeTokens
 
-/** A chapter (bilibili "view point"): starts at [fromMs], titled [title]. */
-internal data class Chapter(val fromMs: Long, val toMs: Long, val title: String)
+/** A chapter (bilibili "view point"): starts at [fromMs], titled [title], with a still at [imgUrl]. */
+internal data class Chapter(val fromMs: Long, val toMs: Long, val title: String, val imgUrl: String = "")
 
 /** The chapter that covers [ms], if any. */
 internal fun List<Chapter>.at(ms: Long): Chapter? = lastOrNull { ms >= it.fromMs }
+
+/** The chapter under the playhead (recomposes only when it changes, not per tick). */
+@Composable
+internal fun rememberCurrentChapter(ctrl: PiliPlayerController): Chapter? {
+    val current by remember(ctrl) { androidx.compose.runtime.derivedStateOf { ctrl.chapters.at(ctrl.positionMs) } }
+    return current
+}
 
 /**
  * Seek preview sprites (/x/player/videoshot): [images] are sprite sheets of [cols] × [rows]
@@ -117,14 +125,25 @@ internal object VideoShotsApi {
     }
 }
 
-/** Chapters from the wbi/v2 player info (`view_points`). */
-internal fun parseChapters(data: kotlinx.serialization.json.JsonObject?): List<Chapter> =
-    data.arr("view_points").objects().mapNotNull { p ->
-        val from = (p.double("from") * 1000).toLong()
+/**
+ * Chapters from the player info (`view_points`: `{type, from, to, content, imgUrl}`, times
+ * in seconds). Type 2 is the uploader's chapters; other types are only used when a video
+ * has no type 2 points. Duplicate starts are dropped.
+ */
+internal fun parseChapters(data: kotlinx.serialization.json.JsonObject?): List<Chapter> {
+    val points = data.arr("view_points").objects()
+    val typed = points.filter { it.int("type") == 2 }.ifEmpty { points }
+    return typed.mapNotNull { p ->
+        val from = (p.double("from") * 1000).toLong().coerceAtLeast(0L)
         val to = (p.double("to") * 1000).toLong()
         val title = p.str("content").trim()
-        if (title.isEmpty() && to <= from) null else Chapter(from, to, title)
-    }.sortedBy { it.fromMs }
+        if (title.isEmpty() && to <= from) {
+            null
+        } else {
+            Chapter(from, to, title, p.str("imgUrl").ifBlank { p.str("img_url") }.trim())
+        }
+    }.sortedBy { it.fromMs }.distinctBy { it.fromMs }
+}
 
 /**
  * One tile of the sprite sheet for [timeMs], [width] wide (height from the tile's aspect).

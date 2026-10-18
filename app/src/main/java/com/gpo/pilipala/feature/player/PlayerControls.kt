@@ -13,6 +13,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -105,6 +107,9 @@ internal class GestureFeedback {
     /** Hold to speed up: the detents of the current hold and which one plays (-1: no hold). */
     var holdRates by mutableStateOf<List<Float>>(emptyList())
     var holdIndex by mutableIntStateOf(-1)
+
+    /** Double tap on a side third: skip 10 s, quick follow-up taps add more. */
+    val skip = DoubleTapSeek()
 }
 
 /**
@@ -211,7 +216,8 @@ internal fun ChromeAutoHide(ctrl: PiliPlayerController, ui: PlayerChromeState, f
  * Taps and drags on the picture. [minimal]: tap plays / pauses (with a brief centre
  * glyph), double tap goes to [onDoubleTap], only horizontal drags are taken (seek), so a
  * vertical pager around the player keeps its swipes. Otherwise tap toggles the controls,
- * double tap plays / pauses, horizontal drag seeks and vertical drags set volume (right
+ * double tap skips 10 s on the left / right third (quick follow-up taps add 10 s each,
+ * [DoubleTapSeek]) and plays / pauses in the middle, horizontal drag seeks and vertical drags set volume (right
  * half) or brightness (left half). In both, holding still on a playing picture speeds it
  * up and sliding while held sets the speed ([holdSpeed]).
  *
@@ -252,23 +258,48 @@ internal fun Modifier.playerGestures(
     }
     return this
         .pointerInput(locked, minimal, hasDoubleTap) {
-            detectTapGestures(
-                onTap = {
-                    if (minimal) {
+            if (minimal) {
+                detectTapGestures(
+                    onTap = {
                         feedback.flashPlaying = !(ctrl.isPlaying || (ctrl.playWhenReady && !ctrl.ended))
                         togglePlay()
                         feedback.flash++
+                    },
+                    onDoubleTap = if (hasDoubleTap) {
+                        { offset -> latestDoubleTap?.invoke(offset) }
                     } else {
+                        null
+                    },
+                )
+            } else {
+                // Double tap: left third back 10 s, right third forward 10 s, middle play / pause.
+                // During a skip streak a tap on either side third steps at once.
+                fun skip(dir: Int, at: Offset) {
+                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    feedback.skip.step(dir, at, ctrl)
+                }
+                detectPlayerTaps(
+                    continues = { at ->
+                        val dir = tapThird(at.x, size.width)
+                        if (!locked && dir != 0 && ctrl.durationMs > 0 && feedback.skip.active()) {
+                            skip(dir, at)
+                            true
+                        } else {
+                            false
+                        }
+                    },
+                    onTap = {
                         ui.visible = !ui.visible
                         ui.poke()
-                    }
-                },
-                onDoubleTap = when {
-                    minimal && hasDoubleTap -> { offset -> latestDoubleTap?.invoke(offset) }
-                    minimal -> null
-                    else -> { _ -> if (!locked) togglePlay() }
-                },
-            )
+                    },
+                    onDoubleTap = { at ->
+                        if (!locked) {
+                            val dir = tapThird(at.x, size.width)
+                            if (dir != 0 && ctrl.durationMs > 0) skip(dir, at) else togglePlay()
+                        }
+                    },
+                )
+            }
         }
         .pointerInput(locked, minimal) {
             val slop = viewConfiguration.touchSlop
@@ -390,6 +421,7 @@ internal class ChromeActions(
     val onSubtitles: () -> Unit,
     val onNext: () -> Unit,
     val onPlay: () -> Unit,
+    val onChapters: () -> Unit,
 )
 
 @Composable
@@ -437,6 +469,10 @@ internal fun rememberChromeActions(
             haptics.performHapticFeedback(if (playing) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
             ctrl.togglePlay()
             ui.poke()
+        },
+        onChapters = {
+            haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+            ui.sheet = SheetPage.Chapters
         },
     )
 }
@@ -526,6 +562,48 @@ private fun InlineGroupButton(onClick: () -> Unit, content: @Composable () -> Un
         colors = IconButtonDefaults.iconButtonColors(contentColor = OnVideo),
         modifier = Modifier.size(40.dp),
     ) { content() }
+}
+
+/**
+ * The chapter under the playhead as a quiet label (nothing when the video has no
+ * chapters). Tapping it opens the chapter list.
+ */
+@Composable
+private fun CurrentChapterLabel(
+    ctrl: PiliPlayerController,
+    style: TextStyle,
+    color: Color,
+    onClick: () -> Unit,
+    padded: Boolean = true,
+) {
+    val chapter = rememberCurrentChapter(ctrl)
+    val motion = MaterialTheme.motionScheme
+    AnimatedContent(
+        targetState = chapter?.title?.takeIf { it.isNotEmpty() },
+        transitionSpec = {
+            (fadeIn(motion.defaultEffectsSpec()) + slideInVertically(motion.defaultSpatialSpec()) { it / 2 }) togetherWith
+                (fadeOut(motion.fastEffectsSpec()) + slideOutVertically(motion.fastSpatialSpec()) { -it / 2 }) using
+                SizeTransform(clip = false) { _, _ -> motion.defaultSpatialSpec() }
+        },
+        contentAlignment = Alignment.CenterStart,
+        label = "chapterLabel",
+    ) { title ->
+        if (title == null) {
+            Spacer(Modifier.size(0.dp))
+        } else {
+            Text(
+                title,
+                style = style,
+                color = color,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .clip(YoinShapeTokens.Small)
+                    .clickable(onClick = onClick)
+                    .then(if (padded) Modifier.padding(horizontal = 6.dp, vertical = 4.dp) else Modifier),
+            )
+        }
+    }
 }
 
 /** Playhead and duration as two separate labels (no joiner), tabular so they never jitter. */
@@ -643,7 +721,14 @@ internal fun InlineStrip(
                     PlayPauseButton(ctrl, actions.onPlay)
                     NextButton(ctrl, actions.onNext)
                     TimeLabels(ctrl, ui, big = false, modifier = Modifier.padding(start = 6.dp))
-                    Spacer(Modifier.weight(1f))
+                    Box(Modifier.weight(1f).padding(horizontal = 6.dp)) {
+                        CurrentChapterLabel(
+                            ctrl = ctrl,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = ink.contentVariant,
+                            onClick = actions.onChapters,
+                        )
+                    }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -668,6 +753,7 @@ internal fun InlineStrip(
  */
 @Composable
 internal fun FullscreenTopBar(
+    ctrl: PiliPlayerController,
     title: String,
     actions: ChromeActions,
     canPip: Boolean,
@@ -696,14 +782,22 @@ internal fun FullscreenTopBar(
                 Icon(YoinSymbols.Back, contentDescription = "返回")
             }
             Spacer(Modifier.width(12.dp))
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium.onVideo(),
-                color = OnVideo,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium.onVideo(),
+                    color = OnVideo,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                CurrentChapterLabel(
+                    ctrl = ctrl,
+                    style = MaterialTheme.typography.labelMedium.onVideo(),
+                    color = OnVideoVariant,
+                    onClick = actions.onChapters,
+                    padded = false,
+                )
+            }
             val send = actions.onSend
             if (send != null) {
                 IconButton(onClick = send, shapes = IconButtonDefaults.shapes()) {
@@ -930,6 +1024,8 @@ private fun PillButton(text: String, onClick: () -> Unit) {
 @Composable
 internal fun GestureFeedbackLayer(ctrl: PiliPlayerController, feedback: GestureFeedback, big: Boolean) {
     Box(Modifier.fillMaxSize()) {
+        DoubleTapSeekLayer(feedback.skip, big = big)
+
         AnimatedVisibility(
             visible = feedback.seekTargetMs != null,
             enter = fadeIn(YoinMotion.fastEffectsSpec()) + scaleIn(YoinMotion.fastSpatialSpec(YoinMotionRole.Expressive), initialScale = 0.85f),

@@ -44,7 +44,15 @@ internal object SubtitleApi {
             if (target.bvid.isNotBlank()) put("bvid", target.bvid) else put("aid", target.aid)
             put("cid", target.cid)
         }
-        val data = BiliClient.getData("/x/player/wbi/v2", params, wbi = true).asObj
+        // The signed endpoint can be refused (-352 / an HTML block page); the unsigned one
+        // carries the same subtitles and view points.
+        val data = try {
+            BiliClient.getData("/x/player/wbi/v2", params, wbi = true).asObj
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            runCatching { BiliClient.getData("/x/player/v2", params).asObj }.getOrNull() ?: throw e
+        }
         val tracks = data.obj("subtitle").arr("subtitles").objects().mapNotNull { s ->
             // AI tracks sometimes only carry subtitle_url_v2; tracks without either need login.
             val url = s.str("subtitle_url").ifBlank { s.str("subtitle_url_v2") }

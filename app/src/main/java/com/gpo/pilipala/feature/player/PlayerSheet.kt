@@ -90,7 +90,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
 
-internal enum class SheetPage { Main, Quality, Audio, Codec, Speed, Danmaku, Sleep, Subtitle, DanmakuBlock }
+internal enum class SheetPage { Main, Quality, Audio, Codec, Speed, Danmaku, Sleep, Subtitle, DanmakuBlock, Chapters }
 
 private val SleepOptions = listOf(0, 15, 30, 45, 60, 90)
 
@@ -253,6 +253,7 @@ internal fun PlayerSheetPages(
                     SheetPage.Sleep -> "定时关闭"
                     SheetPage.Subtitle -> "字幕"
                     SheetPage.DanmakuBlock -> "屏蔽词"
+                    SheetPage.Chapters -> "章节"
                 },
                 onBack = when {
                     p == SheetPage.DanmakuBlock -> {
@@ -274,6 +275,7 @@ internal fun PlayerSheetPages(
                 SheetPage.Sleep -> SleepPage(ctrl, close)
                 SheetPage.Subtitle -> SubtitlePage(ctrl, close)
                 SheetPage.DanmakuBlock -> DanmakuBlockRulesEditor()
+                SheetPage.Chapters -> ChaptersPage(ctrl, close)
             }
         }
     }
@@ -460,6 +462,9 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
                     value = ctrl.subtitles.getOrNull(ctrl.subtitleIndex)?.label ?: "关闭",
                 ) { onOpen(SheetPage.Subtitle) },
             )
+        }
+        if (ctrl.chapters.isNotEmpty()) {
+            add(RowSpec(YoinSymbols.Playlist, "章节", value = "${ctrl.chapters.size}") { onOpen(SheetPage.Chapters) })
         }
         add(RowSpec(PiliSymbols.Danmaku, "弹幕设置") { onOpen(SheetPage.Danmaku) })
     }
@@ -705,6 +710,74 @@ private fun SubtitlePage(ctrl: PiliPlayerController, close: () -> Unit) {
         }
     }
     SegmentedGroup(rows)
+}
+
+/**
+ * The chapters: a still, the title and the start time per row; the one under the playhead
+ * sits on the selected block. Tapping a row seeks to its start.
+ */
+@Composable
+private fun ChaptersPage(ctrl: PiliPlayerController, close: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    val chapters = ctrl.chapters
+    val current = rememberCurrentChapter(ctrl)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        chapters.forEachIndexed { i, c ->
+            val selected = c == current
+            val container by androidx.compose.animation.animateColorAsState(
+                if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                YoinMotion.defaultEffectsSpec(),
+                label = "chapterRow",
+            )
+            val content = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
+            Surface(
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    ctrl.seekTo(c.fromMs)
+                    close()
+                },
+                shape = segmentShape(i, chapters.size),
+                color = container,
+                contentColor = content,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    com.gpo.pilipala.ui.components.NetImage(
+                        url = c.imgUrl.takeIf { it.isNotBlank() },
+                        shape = YoinShapeTokens.Small,
+                        thumbWidth = 112.dp,
+                        modifier = Modifier.width(96.dp).height(54.dp),
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            c.title.ifEmpty { "${i + 1}" },
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (selected) FontWeight.Medium else null,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            clock(c.fromMs),
+                            style = MaterialTheme.typography.labelMedium.withTabularFigures(),
+                            color = if (selected) content.copy(alpha = 0.72f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    AnimatedVisibility(
+                        visible = selected,
+                        enter = fadeIn(YoinMotion.defaultEffectsSpec()) + scaleIn(YoinMotion.fastSpatialSpec(), initialScale = 0.4f),
+                        exit = fadeOut(YoinMotion.fastEffectsSpec()) + scaleOut(YoinMotion.fastSpatialSpec(), targetScale = 0.4f),
+                    ) {
+                        Icon(YoinSymbols.PlayArrow, contentDescription = null, modifier = Modifier.padding(start = 8.dp).size(20.dp))
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** "腾讯云（海外） 12 Mbps" — the line the video is read from, and its measured speed. */

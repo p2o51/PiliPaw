@@ -706,6 +706,7 @@ fun BiliVideoPlayer(
                                     )
                                 } else {
                                     FullscreenTopBar(
+                                        ctrl = ctrl,
                                         title = target?.title.orEmpty(),
                                         actions = actions,
                                         canPip = canPip && activity != null,
