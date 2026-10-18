@@ -2,6 +2,7 @@ package com.gpo.pilipala.feature.player
 
 import android.app.Activity
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -404,9 +405,13 @@ internal fun PlayerOverlay(
         AnimatedContent(
             targetState = centreState,
             transitionSpec = {
-                (fadeIn(motion.defaultEffectsSpec()) + scaleIn(motion.defaultSpatialSpec(), initialScale = 0.8f)) togetherWith
-                    (fadeOut(motion.fastEffectsSpec()) + scaleOut(motion.fastSpatialSpec(), targetScale = 0.8f))
+                // No clipping size transform: the default one clips the button to a box that
+                // grows from the top-start corner, which read as a square mask cutting it off.
+                ((fadeIn(motion.defaultEffectsSpec()) + scaleIn(motion.defaultSpatialSpec(), initialScale = 0.8f)) togetherWith
+                    (fadeOut(motion.fastEffectsSpec()) + scaleOut(motion.fastSpatialSpec(), targetScale = 0.8f)))
+                    .using(SizeTransform(clip = false))
             },
+            contentAlignment = Alignment.Center,
             modifier = Modifier.align(Alignment.Center),
             label = "playerCentre",
         ) { s ->

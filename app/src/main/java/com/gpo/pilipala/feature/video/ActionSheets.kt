@@ -31,6 +31,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.animation.animateContentSize
+import kotlinx.coroutines.launch
+import com.gpo.pilipala.core.net.asObj
+import com.gpo.pilipala.core.net.long
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -166,6 +170,14 @@ internal fun FavSheet(actions: ArchiveActions, onDismiss: () -> Unit) {
                         Modifier.fillMaxWidth().heightIn(max = 420.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp),
                     ) {
+                        item(key = "new") {
+                            NewFolderRow(
+                                onCreated = { folder ->
+                                    folders = listOf(folder) + folders.orEmpty()
+                                    checked[folder.id] = true
+                                },
+                            )
+                        }
                         items(list.orEmpty(), key = { it.id }) { f ->
                             val on = checked[f.id] == true
                             Row(
@@ -283,6 +295,96 @@ private fun TripleRow(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         if (state != null) {
             Text(state, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** "新建收藏夹" row: expands in place into a name field + 私密 switch; the new folder comes back checked. */
+@Composable
+private fun NewFolderRow(onCreated: (FavFolder) -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    val toast = com.gpo.pilipala.ui.components.rememberToast()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var open by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var private by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 4.dp)
+            .clip(YoinContainerShapes.Card)
+            .background(if (open) MaterialTheme.colorScheme.surfaceContainerHigh else androidx.compose.ui.graphics.Color.Transparent)
+            .animateContentSize(YoinMotion.defaultSpatialSpec()),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(YoinContainerShapes.ListRow)
+                .clickable { open = !open }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(40.dp).clip(YoinContainerShapes.ListRow).background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(YoinSymbols.Add, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+            Spacer(Modifier.size(14.dp))
+            Text("新建收藏夹", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        }
+        if (open) {
+            Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
+                androidx.compose.material3.TextField(
+                    value = name,
+                    onValueChange = { if (it.length <= 20) name = it },
+                    placeholder = { Text("名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = YoinContainerShapes.ListRow,
+                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    ),
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(PiliSymbols.Lock, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.size(10.dp))
+                    Text("私密", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Switch(checked = private, onCheckedChange = { private = it })
+                    Spacer(Modifier.size(12.dp))
+                    Button(
+                        onClick = {
+                            val title = name.trim()
+                            if (title.isEmpty() || saving) return@Button
+                            saving = true
+                            scope.launch {
+                                runCatching {
+                                    com.gpo.pilipala.core.net.BiliClient.postData(
+                                        "/x/v3/fav/folder/add",
+                                        mapOf("title" to title, "intro" to "", "privacy" to if (private) 1 else 0, "cover" to ""),
+                                    ).asObj.long("id")
+                                }.onSuccess { id ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    onCreated(FavFolder(id = id, title = title, count = 0, faved = false, isDefault = false, isPrivate = private))
+                                    name = ""
+                                    private = false
+                                    open = false
+                                }.onFailure { toast(it.friendlyMessage()) }
+                                saving = false
+                            }
+                        },
+                        enabled = name.isNotBlank() && !saving,
+                        shapes = ButtonDefaults.shapes(),
+                    ) {
+                        Text("创建")
+                    }
+                }
+            }
         }
     }
 }
