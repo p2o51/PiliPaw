@@ -44,6 +44,7 @@ import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.feature.player.cdn.CdnHosts
 import com.gpo.pilipala.feature.player.cdn.CdnRouter
 import com.gpo.pilipala.feature.player.cdn.CdnSettings
+import com.gpo.pilipala.feature.player.cdn.ParallelLoad
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.YoinMotion
@@ -60,6 +61,14 @@ private val modeChoices = listOf(
 
 private val hostChoices = CdnHosts.POOL.map { Choice(it.host, "${it.vendor}（${it.region}）") }
 
+private val parallelChoices = listOf(
+    Choice("auto", "自动"),
+    Choice("on", "开"),
+    Choice("off", "关"),
+)
+
+private val threadChoices = ParallelLoad.threadChoices.map { Choice(it, "$it") }
+
 private val mcdnChoices = listOf(
     Choice("proxy", "官方代理"),
     Choice("keep", "不处理"),
@@ -74,6 +83,9 @@ internal fun ColumnScope.NetworkBody() {
     val avoidPcdn by CdnSettings.avoidPcdn.state.collectAsState()
     val autoSwitch by CdnSettings.autoSwitch.state.collectAsState()
     val live by CdnRouter.status.collectAsState()
+    val parallel by CdnSettings.parallel.state.collectAsState()
+    val threads by CdnSettings.parallelThreads.state.collectAsState()
+    val loading by ParallelLoad.status.collectAsState()
 
     SettingsGroup("线路") {
         item {
@@ -110,6 +122,29 @@ internal fun ColumnScope.NetworkBody() {
         }
     }
 
+    SettingsGroup("加载") {
+        item {
+            SettingsToggleItem(
+                title = "多线程加载",
+                icon = YoinSymbols.Download,
+                choices = parallelChoices,
+                selected = parallel,
+                onSelect = { AppSettings.set(CdnSettings.parallel, it) },
+            )
+        }
+        if (parallel != "off") {
+            item(key = "threads") {
+                SettingsToggleItem(
+                    title = "线程数",
+                    icon = YoinSymbols.Equalizer,
+                    choices = threadChoices,
+                    selected = threads,
+                    onSelect = { AppSettings.set(CdnSettings.parallelThreads, it) },
+                )
+            }
+        }
+    }
+
     SettingsGroup("P2P 节点") {
         item {
             SettingsChoiceItem(
@@ -140,6 +175,14 @@ internal fun ColumnScope.NetworkBody() {
                     summary = region,
                     icon = YoinSymbols.PlayCircle,
                     trailing = { ValueLabel(if (live.goodputBps > 0) mbps(live.goodputBps / 1e6) else "测量中") },
+                )
+            }
+            item(key = "parallel") {
+                SettingsItem(
+                    title = "多线程加载",
+                    summary = loading.reason.takeIf { loading.active },
+                    icon = YoinSymbols.Download,
+                    trailing = { ValueLabel(if (loading.active) "${loading.threads} 线程" else "未启用") },
                 )
             }
         }
