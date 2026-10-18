@@ -199,6 +199,7 @@ fun BiliVideoPlayer(
     val latestFullscreen by rememberUpdatedState(fullscreen)
     SideEffect { ctrl.onCompleted = { latestCompleted() } }
     LaunchedEffect(target) { target?.let { ctrl.load(it) } }
+    SubtitleAutoSelect(ctrl)
 
     val activity = LocalActivity.current as? ComponentActivity
     val inPip = rememberIsInPip(activity)
@@ -466,6 +467,8 @@ fun BiliVideoPlayer(
     val bottomBand = if (shortFrame) 56.dp else 64.dp
 
     val phase = ctrl.phase
+    // 仅听声音 shows the subtitles as lyrics where the picture was (not in the PiP window).
+    val lyricsShown = ctrl.audioOnly && !inPip && !pipEntering && target != null
     val showCover = target == null || !settled || (!ctrl.firstFrameRendered && phase !is PlayerPhase.Error)
 
     // The inline strip sits on the page, in the page's own colours (captured before the
@@ -598,11 +601,13 @@ fun BiliVideoPlayer(
                         ) {
                             CoverLoading(ctrl = ctrl, cover = target?.cover.orEmpty(), big = fullscreen)
                         }
-                        if (!inPip && !pipEntering) {
+                        if (!inPip && !pipEntering && !lyricsShown) {
                             DanmakuLayer(ctrl = ctrl, big = fullscreen)
                         }
                         // Nothing covers the picture any more, so subtitles stay put.
-                        SubtitleOverlay(ctrl = ctrl, controlsVisible = false, big = fullscreen)
+                        if (!lyricsShown) {
+                            SubtitleOverlay(ctrl = ctrl, controlsVisible = false, big = fullscreen, minimal = !full)
+                        }
                         if (controls) {
                             // The hairline sits on the picture's own bottom edge (inside any letterbox).
                             val aspect = ctrl.videoAspect.takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
@@ -633,6 +638,28 @@ fun BiliVideoPlayer(
                                 },
                             ),
                     )
+                    // 仅听声音: the subtitles as lyrics take the picture's place (LyricsPane.kt).
+                    // Over the picture's gestures: the lines scroll and seek, a tap off them
+                    // does what a tap on the picture does.
+                    AnimatedVisibility(
+                        visible = lyricsShown,
+                        enter = fadeIn(YoinMotion.defaultEffectsSpec()),
+                        exit = fadeOut(YoinMotion.defaultEffectsSpec()),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        LyricsPane(
+                            ctrl = ctrl,
+                            cover = target?.cover.orEmpty(),
+                            onBackgroundTap = {
+                                if (full) {
+                                    ui.visible = !ui.visible
+                                    ui.poke()
+                                } else {
+                                    ctrl.togglePlay()
+                                }
+                            },
+                        )
+                    }
                 },
                 strip = {
                     if (controls && revealing) {

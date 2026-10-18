@@ -75,6 +75,12 @@ internal object SettingsChoices {
 
     val speed = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f).map { Choice(it, speedLabel(it)) }
 
+    val subtitleDefault = listOf(
+        Choice("off", "关闭"),
+        Choice("auto", "自动"),
+        Choice("zh", "优先中文"),
+    )
+
     val rcmdSource = listOf(
         Choice("web", "Web 端"),
         Choice("app", "App 端"),
