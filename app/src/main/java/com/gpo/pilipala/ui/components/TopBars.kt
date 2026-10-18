@@ -52,7 +52,11 @@ fun PiliTopBar(
     )
 }
 
-/** Expressive large flexible bar for list pages (收藏夹 / 历史 / 设置). */
+/**
+ * Expressive large flexible bar for list pages (收藏夹 / 历史 / 设置). It keeps the
+ * page colour when content scrolls under it: the list's seam (ui/components/seam,
+ * the tide line) is what parts them, so a tinted bar would draw a hard edge.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PiliLargeTopBar(
@@ -73,7 +77,7 @@ fun PiliLargeTopBar(
         scrollBehavior = scrollBehavior,
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.surface,
-            scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            scrolledContainerColor = MaterialTheme.colorScheme.surface,
         ),
     )
 }

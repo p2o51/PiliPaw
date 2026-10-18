@@ -46,6 +46,7 @@ import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
@@ -99,6 +100,7 @@ fun SubscriptionScreen(route: Route.Subscription) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(RowGridMinCell),
                 state = gridState,
+                modifier = Modifier.librarySeam(gridState, listPadding),
                 contentPadding = listPadding,
             ) {
                 items(vm.pager.items, key = { "${it.type}:${it.id}" }) { f ->
@@ -163,7 +165,7 @@ private fun SubFolderRow(
         Box(Modifier.width(coverWidth).aspectRatio(16f / 10f)) {
             NetImage(f.cover, Modifier.matchParentSize(), shape = LibCoverShape, thumbWidth = coverWidth)
         }
-        Column(Modifier.weight(1f).height(coverWidth * 10f / 16f), verticalArrangement = Arrangement.SpaceBetween) {
+        Column(Modifier.weight(1f).height(coverWidth * 10f / 16f).seamText(), verticalArrangement = Arrangement.SpaceBetween) {
             Text(f.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (f.upperName.isNotEmpty()) {

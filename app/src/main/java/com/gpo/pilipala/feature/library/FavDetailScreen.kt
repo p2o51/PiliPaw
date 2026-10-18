@@ -383,6 +383,7 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(RowGridMinCell),
                     state = gridState,
+                    modifier = Modifier.librarySeam(gridState, listPadding),
                     contentPadding = listPadding,
                 ) {
                     if (vm.info.intro.isNotBlank() || vm.info.upperName.isNotEmpty()) {

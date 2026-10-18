@@ -77,6 +77,8 @@ import com.gpo.pilipala.ui.components.PiliLargeTopBar
 import com.gpo.pilipala.ui.components.RefreshBox
 import com.gpo.pilipala.ui.components.WidthClass
 import com.gpo.pilipala.ui.components.readingWidth
+import com.gpo.pilipala.ui.components.seam.seamText
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
@@ -306,7 +308,8 @@ private fun MessagesList(
         ) {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize().readingWidth(),
+                // Under the large top bar: rows sink under the tide line instead of being cut.
+                modifier = Modifier.fillMaxSize().readingWidth().seamViewport(listState),
                 contentPadding = PaddingValues(
                     bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp,
                 ),
@@ -414,7 +417,7 @@ private fun SessionRow(s: Session, selected: Boolean, modifier: Modifier = Modif
             Avatar(s.face, 48.dp)
         }
         Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.weight(1f).seamText(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     s.name,

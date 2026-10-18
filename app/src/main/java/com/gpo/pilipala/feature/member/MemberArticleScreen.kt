@@ -29,6 +29,7 @@ import com.gpo.pilipala.ui.components.LoadingState
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.PiliLargeTopBar
 import com.gpo.pilipala.ui.components.RefreshBox
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.yoin.symbols.PiliSymbols
 
 internal class MemberArticleViewModel(val mid: Long) : ViewModel() {
@@ -60,7 +61,7 @@ fun MemberArticleScreen(route: Route.MemberArticle) {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(400.dp),
                     state = gridState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().seamViewport(gridState),
                     contentPadding = PaddingValues(top = 4.dp, bottom = navBottom + 16.dp),
                 ) {
                     val items = pager.items

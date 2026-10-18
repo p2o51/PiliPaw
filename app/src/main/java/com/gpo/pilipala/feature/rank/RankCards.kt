@@ -46,6 +46,8 @@ import com.gpo.pilipala.ui.components.DurationChip
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.VideoItem
+import com.gpo.pilipala.ui.components.seam.seamGraphic
+import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
@@ -137,6 +139,8 @@ internal fun PodiumCard(
     Column(
         modifier
             .pageSharedSource(item.rankRoute())
+            // A tinted card is one print for the seams; its text lifts out whole.
+            .seamGraphic()
             .clip(YoinContainerShapes.Card)
             .background(tier.card)
             .combinedClickable(onLongClick = { onLongPress(item) }) { onOpen(item) }
@@ -156,7 +160,7 @@ internal fun PodiumCard(
                 modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
             )
         }
-        Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 10.dp, bottom = 6.dp)) {
+        Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 10.dp, bottom = 6.dp).seamText()) {
             Text(
                 item.title,
                 style = titleStyle,
@@ -269,14 +273,14 @@ internal fun RankRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RankNumeral(rank, wide)
-        Box(Modifier.width(coverWidth).aspectRatio(16f / 9f)) {
+        Box(Modifier.width(coverWidth).aspectRatio(16f / 9f).seamGraphic()) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = coverWidth)
             if (item.duration > 0) {
                 DurationChip(Fmt.duration(item.duration), Modifier.align(Alignment.BottomEnd).padding(4.dp))
             }
         }
         Column(
-            Modifier.weight(1f).heightIn(min = coverWidth * 9f / 16f),
+            Modifier.weight(1f).heightIn(min = coverWidth * 9f / 16f).seamText(),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
@@ -316,7 +320,7 @@ private fun RankNumeral(rank: Int, wide: Boolean) {
     }
     Text(
         rank.toString(),
-        modifier = Modifier.width(if (wide) 64.dp else 44.dp),
+        modifier = Modifier.width(if (wide) 64.dp else 44.dp).seamText(style.fontSize),
         style = style.withTabularFigures(),
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.outline,

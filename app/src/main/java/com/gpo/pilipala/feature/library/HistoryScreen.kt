@@ -64,6 +64,8 @@ import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.components.seam.seamGraphic
+import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
@@ -267,6 +269,7 @@ fun HistoryScreen() {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(RowGridMinCell),
                 state = gridState,
+                modifier = Modifier.librarySeam(gridState, listPadding),
                 contentPadding = listPadding,
             ) {
                 var lastDay: String? = null
@@ -364,7 +367,7 @@ private fun HistoryCard(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.width(coverWidth).aspectRatio(16f / 10f)) {
+        Box(Modifier.width(coverWidth).aspectRatio(16f / 10f).seamGraphic()) {
             NetImage(e.cover, Modifier.matchParentSize(), shape = LibCoverShape, thumbWidth = coverWidth)
             val badge = when {
                 e.business == "live" -> if (e.liveStatus == 1) "直播中" else "直播"
@@ -395,7 +398,7 @@ private fun HistoryCard(
                 }
             }
         }
-        Column(Modifier.weight(1f).height(coverWidth * 10f / 16f), verticalArrangement = Arrangement.SpaceBetween) {
+        Column(Modifier.weight(1f).height(coverWidth * 10f / 16f).seamText(), verticalArrangement = Arrangement.SpaceBetween) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(e.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val sub = when {

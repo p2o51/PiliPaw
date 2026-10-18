@@ -83,6 +83,8 @@ import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.toPath
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.ui.components.readingWidth
+import com.gpo.pilipala.ui.components.seam.seamText
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
@@ -170,6 +172,7 @@ internal fun SettingsScaffold(
         },
     ) { inner ->
         val dir = LocalLayoutDirection.current
+        val scroll = rememberScrollState()
         Box(Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
@@ -179,7 +182,9 @@ internal fun SettingsScaffold(
                         start = inner.calculateStartPadding(dir),
                         end = inner.calculateEndPadding(dir),
                     )
-                    .verticalScroll(rememberScrollState())
+                    // Groups sink under the tide line at the bar instead of being cut there.
+                    .seamViewport(scroll, pageColor = page)
+                    .verticalScroll(scroll)
                     .readingWidth(760.dp)
                     .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp + inner.calculateBottomPadding()),
                 verticalArrangement = Arrangement.spacedBy(28.dp),
@@ -223,7 +228,7 @@ internal fun SettingsGroup(
 
 @Composable
 internal fun SettingsGroupLabel(title: String, modifier: Modifier = Modifier, trailingLabel: String? = null) {
-    Row(modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().padding(horizontal = 8.dp).seamText(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             title,
             style = MaterialTheme.typography.labelLarge,
@@ -297,7 +302,7 @@ internal fun SettingsItem(
                 leading != null -> leading()
                 icon != null -> SettingsRowIcon(icon)
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(Modifier.weight(1f).seamText(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, color = titleColor)
                 if (!summary.isNullOrEmpty()) {
                     Text(

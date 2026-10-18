@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -75,6 +76,8 @@ import com.gpo.pilipala.ui.components.PiliLargeTopBar
 import com.gpo.pilipala.ui.components.RefreshBox
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.components.VideoItem
+import com.gpo.pilipala.ui.components.seam.seamText
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
@@ -137,7 +140,7 @@ internal fun <T> PagerBody(
         else -> BodyState.Empty
     }
     val listPadding = PaddingValues(
-        top = padding.calculateTopPadding() + 4.dp,
+        top = padding.calculateTopPadding() + ListTopGap,
         bottom = padding.calculateBottomPadding() + 24.dp,
     )
     val enterFade = YoinMotion.defaultEffectsSpec<Float>()
@@ -167,6 +170,19 @@ internal fun <T> PagerBody(
         }
     }
 }
+
+/** The gap [PagerBody] adds above a list, under whatever chrome its padding clears. */
+private val ListTopGap = 4.dp
+
+/**
+ * A library grid as a seam viewport (ui/components/seam): the seam is the
+ * chrome above it — the large top bar, a tab row, the search field — at
+ * [listPadding]'s top less [PagerBody]'s gap, so rows sink under the tide
+ * line there instead of being cut at the bar.
+ */
+@Composable
+internal fun Modifier.librarySeam(state: LazyGridState, listPadding: PaddingValues): Modifier =
+    seamViewport(state, topChrome = (listPadding.calculateTopPadding() - ListTopGap).coerceAtLeast(0.dp))
 
 /** Full-height, vertically scrollable slot so pull-to-refresh also works on empty / error states. */
 @Composable
@@ -201,7 +217,7 @@ internal fun LazyGridScope.sectionHeader(key: String, title: String, trailing: (
                 title,
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).seamText(),
             )
             trailing?.invoke()
         }
@@ -371,7 +387,7 @@ internal fun UserRow(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Avatar(user.face, 48.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f).seamText(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     user.name,
@@ -497,10 +513,10 @@ internal fun FolderCard(
             style = MaterialTheme.typography.titleSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp),
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp).seamText(),
         )
         Row(
-            Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            Modifier.padding(horizontal = 4.dp, vertical = 2.dp).seamText(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {

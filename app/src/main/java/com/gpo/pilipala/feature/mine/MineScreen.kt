@@ -86,6 +86,9 @@ import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.LocalBottomBarInset
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.components.WidthClass
+import com.gpo.pilipala.ui.components.seam.seamGraphic
+import com.gpo.pilipala.ui.components.seam.seamText
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.LocalPiliDark
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
@@ -151,14 +154,16 @@ fun MineScreen() {
     val bottom = LocalBottomBarInset.current +
         WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp
 
-    // The status-bar inset sits outside the scroll (which clips), so content never
-    // scrolls under the clock and battery icons.
+    // The page scrolls up under the status bar and sinks under its tide line there
+    // (the clock never sits on bare content); graphics dot in the floating bar's field.
+    val scroll = rememberScrollState()
     Column(
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
+            .seamViewport(scroll, underStatusBar = true)
+            .verticalScroll(scroll)
             .statusBarsPadding()
-            .verticalScroll(rememberScrollState())
             .padding(bottom = bottom),
     ) {
         MineTopRow()
@@ -166,7 +171,10 @@ fun MineScreen() {
             "我的",
             style = MaterialTheme.typography.displaySmall,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(start = 24.dp, top = 8.dp, bottom = 24.dp).semantics { heading() },
+            modifier = Modifier
+                .padding(start = 24.dp, top = 8.dp, bottom = 24.dp)
+                .seamText(MaterialTheme.typography.displaySmall.fontSize)
+                .semantics { heading() },
         )
         if (width == WidthClass.Expanded) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -194,7 +202,7 @@ private fun MineTopRow() {
     val dark = LocalPiliDark.current
     val haptics = LocalHapticFeedback.current
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).seamText(),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -251,6 +259,7 @@ private fun GuestProfile() {
         Box(
             Modifier
                 .size(72.dp)
+                .seamGraphic()
                 .clip(MaterialShapes.Cookie9Sided.toShape())
                 .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
@@ -260,12 +269,12 @@ private fun GuestProfile() {
         Text(
             "未登录",
             style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).seamText(),
         )
         Button(
             onClick = { nav.push(Route.Login) },
             contentPadding = ButtonDefaults.MediumContentPadding,
-            modifier = Modifier.height(ButtonDefaults.MediumContainerHeight),
+            modifier = Modifier.height(ButtonDefaults.MediumContainerHeight).seamText(),
         ) { Text("登录", style = MaterialTheme.typography.titleMedium) }
     }
 }
@@ -284,7 +293,7 @@ private fun UserProfile(u: UserInfo) {
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Avatar(u.face, 72.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.weight(1f).seamText(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 u.name,
                 style = MaterialTheme.typography.headlineSmall,
@@ -316,7 +325,7 @@ private fun UserProfile(u: UserInfo) {
                 }
             }
         }
-        Icon(YoinSymbols.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(YoinSymbols.ChevronRight, null, Modifier.seamText(), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -327,7 +336,7 @@ private fun formatCoins(c: Double): String =
 private fun StatsRow(u: UserInfo) {
     val nav = LocalNavigator.current
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).seamGraphic(),
         shape = YoinContainerShapes.Card,
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
@@ -345,7 +354,8 @@ private fun StatCell(value: String, label: String, modifier: Modifier, onClick: 
         modifier
             .clip(YoinContainerShapes.ListRow)
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
+            .padding(vertical = 12.dp)
+            .seamText(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -402,18 +412,20 @@ private fun Tile(tile: MineTile, modifier: Modifier) {
                 },
             )
         },
+        // A tinted tile is a graphic for the seams; its icon and label lift out whole.
         modifier = modifier
             .height(96.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            },
+            }
+            .seamGraphic(),
         shape = YoinContainerShapes.Card,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         interactionSource = interaction,
     ) {
         Column(
-            Modifier.fillMaxSize().padding(14.dp),
+            Modifier.fillMaxSize().padding(14.dp).seamText(),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Icon(tile.icon, null, tint = MaterialTheme.colorScheme.onSurface)
@@ -435,7 +447,7 @@ private fun FolderSection(vm: MineViewModel, user: UserInfo?) {
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
-                Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp),
+                Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp).seamText(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {

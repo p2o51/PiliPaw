@@ -70,6 +70,8 @@ import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.PiliLargeTopBar
 import com.gpo.pilipala.ui.components.RefreshBox
 import com.gpo.pilipala.ui.components.readingWidth
+import com.gpo.pilipala.ui.components.seam.seamText
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.yoin.symbols.PiliSymbols
 import kotlinx.coroutines.Dispatchers
@@ -299,7 +301,8 @@ fun MessageListScreen(route: Route.MessageList) {
                 }
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize().readingWidth(),
+                    // Under the large top bar: rows sink under the tide line instead of being cut.
+                    modifier = Modifier.fillMaxSize().readingWidth().seamViewport(listState),
                     contentPadding = PaddingValues(
                         start = if (route.kind == "system") 16.dp else 0.dp,
                         end = if (route.kind == "system") 16.dp else 0.dp,
@@ -359,7 +362,7 @@ private fun FeedRow(e: MsgEntry, modifier: Modifier = Modifier) {
         Avatar(actor?.face, 42.dp) { actor?.let { nav.push(Route.Member(it.mid, it.face, it.name)) } }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.seamText(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     actor?.name.orEmpty(),
                     style = MaterialTheme.typography.titleSmall,
@@ -376,7 +379,7 @@ private fun FeedRow(e: MsgEntry, modifier: Modifier = Modifier) {
             }
             if (e.content.isNotEmpty()) {
                 VSpace(6)
-                Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 6, overflow = TextOverflow.Ellipsis)
+                Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.seamText())
             }
             VSpace(8)
             SourceBlock(e.sourceText, e.sourceImage, onClick = if (e.uri.isNotEmpty()) ({ nav.openUrl(e.uri) }) else null)
@@ -385,6 +388,7 @@ private fun FeedRow(e: MsgEntry, modifier: Modifier = Modifier) {
                 Fmt.relativeTime(e.time),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.seamText(),
             )
         }
     }
@@ -427,13 +431,14 @@ private fun LikeRow(e: MsgEntry, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.seamText(),
             )
             VSpace(2)
-            Text(e.action, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(e.action, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.seamText())
             VSpace(8)
             SourceBlock(e.sourceText, e.sourceImage)
             VSpace(6)
-            Text(Fmt.relativeTime(e.time), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(Fmt.relativeTime(e.time), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.seamText())
         }
     }
 }

@@ -1,7 +1,14 @@
 package com.gpo.pilipala.feature.settings
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.feature.live.LiveQnChoices
+import com.gpo.pilipala.ui.components.seam.SeamTopStyle
 import com.gpo.pilipala.ui.theme.ThemeSettings
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
@@ -82,6 +89,9 @@ internal object SettingsChoices {
         Choice(1, "最热"),
     )
 
+    /** 滚动边缘: how content meets pinned chrome at the top (Yoin's Scroll edge). */
+    val seamTopStyle = SeamTopStyle.entries.map { Choice(it, it.label) }
+
     /** 配色风格 (dynamic colour on). */
     val colorStyle = listOf(
         Choice(ThemeSettings.StyleExpressive, "表现力"),
@@ -151,4 +161,21 @@ internal fun formatBytes(bytes: Long): String {
         i++
     }
     return if (i == 0) "${bytes} B" else String.format(Locale.US, "%.1f %s", v, units[i])
+}
+
+/** 滚动边缘's glyph: two waves (the tide line). 24 viewport, 1.5 stroke, round caps. */
+internal val TideGlyph: ImageVector by lazy {
+    ImageVector.Builder("Tide", 24.dp, 24.dp, 24f, 24f).apply {
+        addPath(
+            pathData = PathParser().parsePathString(
+                "M3 9.5c1.5 0 1.5 -1.5 3 -1.5s1.5 1.5 3 1.5s1.5 -1.5 3 -1.5s1.5 1.5 3 1.5s1.5 -1.5 3 -1.5s1.5 1.5 3 1.5" +
+                    "M3 15.5c1.5 0 1.5 -1.5 3 -1.5s1.5 1.5 3 1.5s1.5 -1.5 3 -1.5s1.5 1.5 3 1.5s1.5 -1.5 3 -1.5s1.5 1.5 3 1.5",
+            ).toNodes(),
+            fill = null,
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 1.5f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        )
+    }.build()
 }

@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
@@ -50,7 +49,6 @@ import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -98,6 +96,8 @@ import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.RefreshBox
 import com.gpo.pilipala.ui.components.WidthClass
+import com.gpo.pilipala.ui.components.seam.seamText
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
@@ -212,7 +212,9 @@ private fun DynamicsFeed(vm: DynamicsViewModel) {
         LazyVerticalStaggeredGrid(
             columns = StaggeredGridCells.Fixed(cols),
             state = gridState,
-            modifier = Modifier.fillMaxSize(),
+            // Nothing is pinned but the status bar: the feed sinks under its tide line (the
+            // clock never sits on bare cards), and graphics dot in the floating bar's field.
+            modifier = Modifier.fillMaxSize().seamViewport(gridState, underStatusBar = true),
             contentPadding = PaddingValues(start = side, end = side, top = statusTop + 8.dp, bottom = bottom + 24.dp),
             verticalItemSpacing = 12.dp,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -222,14 +224,14 @@ private fun DynamicsFeed(vm: DynamicsViewModel) {
                     "动态",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp).seamText(MaterialTheme.typography.headlineMedium.fontSize),
                 )
             }
             val portal = vm.portal
             if (portal != null && (portal.ups.isNotEmpty() || portal.lives.isNotEmpty())) {
                 item(key = "upsHeader", span = StaggeredGridItemSpan.FullLine) {
                     val nav = LocalNavigator.current
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().seamText(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "最新关注",
                             style = MaterialTheme.typography.titleSmall,
@@ -305,21 +307,6 @@ private fun DynamicsFeed(vm: DynamicsViewModel) {
                 }
             }
         }
-
-        // Status-bar scrim: cards never scroll bare under the clock. It fades in
-        // once the feed leaves the top; alpha is read in the layer only.
-        val scrolled by remember(gridState) {
-            derivedStateOf { gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0 }
-        }
-        val scrimAlpha = animateFloatAsState(if (scrolled) 1f else 0f, YoinMotion.defaultEffectsSpec(), label = "statusScrim")
-        Box(
-            Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .windowInsetsTopHeight(WindowInsets.statusBars)
-                .graphicsLayer { alpha = scrimAlpha.value }
-                .background(MaterialTheme.colorScheme.surface),
-        )
     }
 }
 
@@ -501,7 +488,7 @@ private fun UpChip(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().seamText(),
         )
     }
 }
@@ -553,7 +540,7 @@ private fun LiveChip(live: LiveUser, dimmed: Boolean, onClick: () -> Unit, onLon
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().seamText(),
         )
     }
 }

@@ -53,6 +53,7 @@ import com.gpo.pilipala.ui.components.VideoCardH
 import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.theme.CoverTheme
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.yoin.symbols.PiliSymbols
@@ -133,6 +134,7 @@ private fun SubDetailContent(route: Route.SubDetail, vm: SubDetailViewModel) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(RowGridMinCell),
                 state = gridState,
+                modifier = Modifier.librarySeam(gridState, listPadding),
                 contentPadding = listPadding,
             ) {
                 item(key = "__header", span = { GridItemSpan(maxLineSpan) }) {
@@ -211,7 +213,7 @@ private fun SubHeader(info: SubInfo, cover: String, showUnsub: Boolean, onUnsub:
         Box(Modifier.width(160.dp).aspectRatio(16f / 10f)) {
             NetImage(cover, Modifier.matchParentSize(), shape = ContinuousRoundedCornerShape(12.dp), thumbWidth = 160.dp)
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.weight(1f).seamText(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (info.upperName.isNotEmpty()) {
                 Text(info.upperName, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
