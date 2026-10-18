@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.home
 
+import com.gpo.pilipala.ui.components.ReservedTitleColumn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -243,12 +244,12 @@ private fun LiveCard(room: LiveRoomItem) {
                 }
             }
         }
-        Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 10.dp)) {
+        ReservedTitleColumn(Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 10.dp)) { reserve ->
             Text(
                 room.title,
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 2,
-                minLines = 2,
+                minLines = if (reserve) 2 else 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(6.dp))

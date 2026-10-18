@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.search
 
+import com.gpo.pilipala.ui.components.ReservedTitleColumn
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
@@ -218,12 +219,12 @@ internal fun LiveCard(hit: LiveHit, modifier: Modifier = Modifier) {
                 }
             }
         }
-        Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 10.dp)) {
+        ReservedTitleColumn(Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 10.dp)) { reserve ->
             Text(
                 hit.title,
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 2,
-                minLines = 2,
+                minLines = if (reserve) 2 else 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(6.dp))

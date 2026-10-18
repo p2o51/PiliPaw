@@ -109,12 +109,12 @@ fun VideoCardV(
             CoverStats(item, Modifier.align(Alignment.BottomCenter))
             if (item.badge.isNotEmpty()) CoverBadge(item.badge, Modifier.align(Alignment.TopEnd).padding(6.dp))
         }
-        Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 10.dp).seamText()) {
+        ReservedTitleColumn(Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 10.dp).seamText()) { reserve ->
             Text(
                 item.title,
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 2,
-                minLines = 2,
+                minLines = if (reserve) 2 else 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(4.dp))

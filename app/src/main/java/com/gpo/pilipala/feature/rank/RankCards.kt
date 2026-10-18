@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.rank
 
+import com.gpo.pilipala.ui.components.ReservedTitleColumn
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -161,14 +162,14 @@ internal fun PodiumCard(
                 modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
             )
         }
-        Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 10.dp, bottom = 6.dp).seamText()) {
+        ReservedTitleColumn(Modifier.padding(start = 4.dp, end = 4.dp, top = 10.dp, bottom = 6.dp).seamText()) { reserve ->
             Text(
                 item.title,
                 style = titleStyle,
                 fontWeight = FontWeight.Medium,
                 color = tier.onCard,
                 maxLines = 2,
-                minLines = 2,
+                minLines = if (reserve) 2 else 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(if (size == PodiumSize.Small) 6.dp else 10.dp))
