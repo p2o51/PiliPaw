@@ -48,6 +48,15 @@ class ArchiveActions(private val scope: CoroutineScope) {
     var busy by mutableStateOf(false)
         private set
 
+    /**
+     * Bumped when one of the user's own actions leaves like + coin + favourite all on (a
+     * 三连 landing, or the last of the three done by hand), and when 三连 is confirmed on a
+     * video that already has all three. The action rows play their 三连 burst on it; the
+     * relation arriving from the network never bumps it.
+     */
+    var tripleCelebration by mutableIntStateOf(0)
+        private set
+
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val messages: SharedFlow<String> = _messages
 
@@ -88,10 +97,16 @@ class ArchiveActions(private val scope: CoroutineScope) {
         if (busy) return
         scope.launch {
             busy = true
-            runCatching { block() }.onFailure { _messages.tryEmit(it.friendlyMessage()) }
+            val id = aid
+            val before = hasAllThree()
+            runCatching { block() }
+                .onSuccess { if (!before && hasAllThree() && aid == id) tripleCelebration++ }
+                .onFailure { _messages.tryEmit(it.friendlyMessage()) }
             busy = false
         }
     }
+
+    private fun hasAllThree(): Boolean = liked && coined > 0 && favored
 
     private fun idForm(): Map<String, Any?> = if (bvid.isNotEmpty()) mapOf("bvid" to bvid) else mapOf("aid" to aid)
 
@@ -106,6 +121,7 @@ class ArchiveActions(private val scope: CoroutineScope) {
     fun triple() = write {
         if (liked && coined > 0 && favored) {
             _messages.tryEmit("已三连")
+            tripleCelebration++
             return@write
         }
         val r = BiliClient.postData("/x/web-interface/archive/like/triple", idForm()).asObj

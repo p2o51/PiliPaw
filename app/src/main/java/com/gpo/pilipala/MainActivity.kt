@@ -1,6 +1,8 @@
 package com.gpo.pilipala
 
+import android.app.PictureInPictureUiState
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -23,6 +25,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation3.runtime.rememberNavBackStack
 import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.feature.player.PipSignals
+import com.gpo.pilipala.feature.video.AppShortcuts
 import com.gpo.pilipala.feature.player.PlaybackService
 import com.gpo.pilipala.navigation.AppNavHost
 import com.gpo.pilipala.navigation.LinkRouter
@@ -35,7 +39,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     /** [resume]: from the media notification — the playing page may already be on top. */
-    private class DeepLink(val route: Route, val resume: Boolean)
+    private class DeepLink(val route: Route, val resume: Boolean, val shortcut: Boolean = false)
 
     private val deepLinks = Channel<DeepLink>(Channel.UNLIMITED)
 
@@ -50,6 +54,7 @@ class MainActivity : ComponentActivity() {
             BiliClient.ensureBuvid()
             runCatching { Account.refresh() }
         }
+        AppShortcuts.publishFixed(this)
         handleIntent(intent)
         setContent {
             PiliTheme {
@@ -61,6 +66,8 @@ class MainActivity : ComponentActivity() {
                     for (link in deepLinks) {
                         val top = backStack.lastOrNull()
                         if (link.resume && (top is Route.Video || top is Route.Bangumi)) continue
+                        // A launcher shortcut for the page that is already open (the same video, 稍后再看 …).
+                        if (link.shortcut && (top == link.route || (top is Route.Video && top.bvid == (link.route as? Route.Video)?.bvid))) continue
                         // Through the navigator, so the covered page is frozen for its later reveal.
                         navigator.push(link.route)
                     }
@@ -78,6 +85,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Android 15+: the PiP flight has started (or was called off); the player drops its chrome at once. */
+    override fun onPictureInPictureUiStateChanged(pipState: PictureInPictureUiState) {
+        super.onPictureInPictureUiStateChanged(pipState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            if (pipState.isTransitioningToPip) {
+                PipSignals.entering = true
+            } else if (!isInPictureInPictureMode) {
+                PipSignals.entering = false
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        PipSignals.entering = false
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!isInPictureInPictureMode) PipSignals.entering = false
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
@@ -85,6 +114,10 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         val data = intent?.dataString ?: return
+        AppShortcuts.route(this, intent)?.let { route ->
+            deepLinks.trySend(DeepLink(route, resume = false, shortcut = true))
+            return
+        }
         val resume = intent.getBooleanExtra(PlaybackService.EXTRA_RESUME, false)
         deepLinks.trySend(DeepLink(LinkRouter.route(data), resume))
     }

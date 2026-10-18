@@ -87,6 +87,17 @@ import com.gpo.pilipala.ui.theme.ExpressiveColorSchemeFactory
 import com.gpo.pilipala.ui.theme.LocalPiliDark
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.YoinSymbols
+import androidx.compose.animation.core.snap
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.layout.boundsInWindow
+import com.gpo.pilipala.ui.theme.rememberRichHaptics
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 /**
  * How much UI the player draws over the picture. CONTRACT:
@@ -188,6 +199,15 @@ fun BiliVideoPlayer(
     val inPip = rememberIsInPip(activity)
     val latestInPip by rememberUpdatedState(inPip)
     val canPip = remember(context) { pipSupported(context) }
+    // On its way into PiP (Android 15+ says so as the flight starts; a home swipe with 自动
+    // 画中画 on is taken as the start too): the controls and danmaku leave at once, so only
+    // the clean picture is carried into the floating window.
+    val pipEntering = PipSignals.entering && !inPip
+    val rich = rememberRichHaptics()
+    val pipScope = rememberCoroutineScope()
+    // Where the picture sits in the window, for the PiP flight (see pipHintRect).
+    var pipBox by remember { mutableStateOf<Rect?>(null) }
+    val latestTarget by rememberUpdatedState(target)
 
     // ── Lifecycle: pause on leave (unless background play), drop video in background.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -202,9 +222,13 @@ fun BiliVideoPlayer(
                         resumeOnReturn = true
                     }
                 }
-                Lifecycle.Event.ON_RESUME -> if (resumeOnReturn) {
-                    resumeOnReturn = false
-                    ctrl.play()
+                Lifecycle.Event.ON_RESUME -> {
+                    // Back in the full window: any PiP flight has landed or was called off.
+                    if (activity?.isInPictureInPictureMode != true) PipSignals.entering = false
+                    if (resumeOnReturn) {
+                        resumeOnReturn = false
+                        ctrl.play()
+                    }
                 }
                 Lifecycle.Event.ON_STOP -> {
                     if (latestInPip) {
@@ -228,6 +252,7 @@ fun BiliVideoPlayer(
     // ── PiP: force fullscreen layout while in the PiP window; auto-enter if enabled.
     var wasInPip by remember { mutableStateOf(inPip) }
     LaunchedEffect(inPip) {
+        if (inPip) PipSignals.entering = false
         if (inPip == wasInPip) return@LaunchedEffect
         wasInPip = inPip
         if (inPip) {
@@ -245,17 +270,33 @@ fun BiliVideoPlayer(
     }
     val autoPip by AppSettings.autoPip.state.collectAsState()
     if (canPip && activity != null) {
-        val aspect = ctrl.videoAspect
-        val playing = ctrl.isPlaying
-        LaunchedEffect(autoPip, playing, aspect) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                runCatching { activity.setPictureInPictureParams(pipParams(aspect, autoPip && playing)) }
+        // The params ride along with the picture: aspect, auto-enter while playing, and the
+        // picture's rect so the system flies exactly the video out of the page. Debounced, so
+        // a page settling or the pager scrolling doesn't turn into a binder call per frame.
+        LaunchedEffect(activity, autoPip) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return@LaunchedEffect
+            snapshotFlow {
+                PipSpec(
+                    aspect = ctrl.videoAspect,
+                    autoEnter = autoPip && ctrl.isPlaying,
+                    hint = pipBox?.let { pipHintRect(it, ctrl.videoAspect) },
+                    title = latestTarget?.title,
+                    subtitle = state.artist,
+                )
             }
+                .distinctUntilChanged()
+                .collectLatest { s ->
+                    delay(PipParamsDebounceMs)
+                    runCatching { activity.setPictureInPictureParams(pipParams(s.aspect, s.autoEnter, s.hint, s.title, s.subtitle)) }
+                }
         }
         DisposableEffect(activity) {
             val leaveHint = Runnable {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && AppSettings.autoPip.value && ctrl.isPlaying) {
-                    enterPip(activity, ctrl.videoAspect)
+                if (AppSettings.autoPip.value && ctrl.isPlaying && !latestInPip) {
+                    PipSignals.entering = true
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                        enterPip(activity, ctrl.videoAspect, pipBox?.let { pipHintRect(it, ctrl.videoAspect) }, latestTarget?.title, state.artist)
+                    }
                 }
             }
             activity.addOnUserLeaveHintListener(leaveHint)
@@ -345,11 +386,19 @@ fun BiliVideoPlayer(
     val controls = full && !inPip
     val inline = controls && !fullscreen
     val fill = !inline
-    val shown = controls && ui.visible && !ui.locked
+    val shown = controls && ui.visible && !ui.locked && !pipEntering
+    LaunchedEffect(pipEntering) {
+        if (!pipEntering) return@LaunchedEffect
+        ui.visible = false
+        // A flight that never lands (PiP refused, gesture called off without a callback).
+        delay(PipEnteringTimeoutMs)
+        if (!latestInPip && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) PipSignals.entering = false
+    }
     // One spring drives the strip under the picture, the bars and the fullscreen picture card.
+    // Into PiP it snaps: the system is already flying the picture, the chrome must not ride along.
     val revealState = animateFloatAsState(
         targetValue = if (shown) 1f else 0f,
-        animationSpec = YoinMotion.defaultSpatialSpec(YoinMotionRole.Expressive),
+        animationSpec = if (pipEntering) snap() else YoinMotion.defaultSpatialSpec(YoinMotionRole.Expressive),
         label = "chromeReveal",
     )
     val reveal: () -> Float = remember(revealState) { { revealState.value } }
@@ -382,7 +431,18 @@ fun BiliVideoPlayer(
                     if (!fs) ctrl.fullscreenByRotation = false
                     onFullscreenChange(fs)
                 },
-                onPip = { enterPip(activity, ctrl.videoAspect) },
+                onPip = {
+                    // Lift-off: drop the chrome (and the fullscreen card's inset) first, give that
+                    // two frames to draw, then hand the clean picture's rect to the system.
+                    rich.liftOff()
+                    PipSignals.entering = true
+                    pipScope.launch {
+                        withFrameNanos { }
+                        withFrameNanos { }
+                        val ok = enterPip(activity, ctrl.videoAspect, pipBox?.let { pipHintRect(it, ctrl.videoAspect) }, latestTarget?.title, state.artist)
+                        if (!ok) PipSignals.entering = false
+                    }
+                },
             )
             PlayerFrame(
                 fill = fill,
@@ -394,6 +454,11 @@ fun BiliVideoPlayer(
                     Box(
                         Modifier
                             .fillMaxSize()
+                            // The picture's resting rect (before the card's shrink below), for the PiP
+                            // flight. Not from inside the PiP window, and not while it is turned by hand.
+                            .onGloballyPositioned { c ->
+                                if (!latestInPip) pipBox = if (turned || turnAngle.value != 0f) null else c.boundsInWindow()
+                            }
                             .then(
                                 if (cardFrame) {
                                     Modifier.pictureCard(
@@ -431,7 +496,7 @@ fun BiliVideoPlayer(
                         ) {
                             CoverLoading(ctrl = ctrl, cover = target?.cover.orEmpty(), big = fullscreen)
                         }
-                        if (!inPip) {
+                        if (!inPip && !pipEntering) {
                             DanmakuLayer(ctrl = ctrl, big = fullscreen)
                         }
                         // Nothing covers the picture any more, so subtitles stay put.
@@ -574,6 +639,21 @@ fun BiliVideoPlayer(
         }
     }
 }
+
+/** What the PiP params are built from; compared as a whole so only real changes reach the system. */
+@Immutable
+private data class PipSpec(
+    val aspect: Float,
+    val autoEnter: Boolean,
+    val hint: android.graphics.Rect?,
+    val title: String?,
+    val subtitle: String?,
+)
+
+private const val PipParamsDebounceMs = 120L
+
+/** How long the chrome stays down for a PiP flight that never reports landing. */
+private const val PipEnteringTimeoutMs = 2500L
 
 /**
  * The player's layers. [fill]: everything takes the whole frame and the strip (the

@@ -326,6 +326,7 @@ private fun BangumiActions(
             ),
         ),
         Modifier.padding(horizontal = 16.dp),
+        triple = com.gpo.pilipala.feature.video.TripleCharge(celebration = a.tripleCelebration),
     )
 }
 

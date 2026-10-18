@@ -91,6 +91,8 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     DisposableEffect(vm, playerState) {
         onDispose { vm.rememberPosition(playerState.positionMs) }
     }
+    // The launcher's 继续看 shortcut follows the video left part-way.
+    ContinueShortcutEffect(vm, playerState)
     // The queue (收藏夹 / 稍后再看 as a playlist) drives the player: completion, notification
     // previous / next and the play mode. Attached before the player's first load runs.
     val queue = vm.queue
@@ -413,6 +415,7 @@ private fun VideoActions(
             ),
         ),
         Modifier.padding(horizontal = 16.dp),
+        triple = TripleCharge(celebration = a.tripleCelebration),
     )
 }
 

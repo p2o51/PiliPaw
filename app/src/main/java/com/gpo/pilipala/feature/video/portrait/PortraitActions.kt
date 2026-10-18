@@ -54,6 +54,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.drawWithContent
+import com.gpo.pilipala.feature.video.TripleBurst
+import com.gpo.pilipala.feature.video.drawTripleBloom
+import com.gpo.pilipala.feature.video.drawTripleSparks
+import com.gpo.pilipala.feature.video.rememberTripleBurst
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
@@ -103,6 +108,8 @@ internal data class ActionState(
     val favored: Boolean,
     val favLabel: String,
     val shareLabel: String,
+    /** [com.gpo.pilipala.feature.video.ArchiveActions.tripleCelebration] for this page's video; -1 while it isn't bound. */
+    val tripleCelebration: Int = -1,
 )
 
 /**
@@ -123,6 +130,8 @@ internal fun ActionColumn(
     onShare: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 三连 landed: 点赞, 投币 and 收藏 bloom one after another (the same burst as the detail page's row).
+    val burst = rememberTripleBurst(state.tripleCelebration)
     Column(
         modifier.width(ActionColumnWidth),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -137,6 +146,8 @@ internal fun ActionColumn(
             checked = state.liked,
             onClick = onLike,
             onLongClick = onTriple,
+            burst = burst,
+            slot = 0,
         )
         ActionButton(
             icon = if (state.coined) PiliSymbols.CoinFilled else PiliSymbols.Coin,
@@ -144,6 +155,8 @@ internal fun ActionColumn(
             label = state.coinLabel,
             checked = state.coined,
             onClick = onCoin,
+            burst = burst,
+            slot = 1,
         )
         ActionButton(
             icon = PiliSymbols.Comment,
@@ -159,6 +172,8 @@ internal fun ActionColumn(
             checked = state.favored,
             onClick = onFav,
             onLongClick = onQuickFav,
+            burst = burst,
+            slot = 2,
         )
         ActionButton(
             icon = YoinSymbols.Share,
@@ -182,6 +197,8 @@ private fun ActionButton(
     checked: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    burst: TripleBurst? = null,
+    slot: Int = -1,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -220,12 +237,23 @@ private fun ActionButton(
     ) {
         val fastEffects = YoinMotion.fastEffectsSpec<Float>()
         val fastSpatial = YoinMotion.fastSpatialSpec<Float>()
+        val accent = MaterialTheme.colorScheme.tertiary
         AnimatedContent(
             targetState = icon,
             transitionSpec = {
                 (fadeIn(fastEffects) + scaleIn(fastSpatial, initialScale = 0.6f)) togetherWith fadeOut(fastEffects)
             },
             label = "actionIcon",
+            modifier = if (burst != null && slot >= 0) {
+                Modifier.drawWithContent {
+                    // The 三连 bloom behind the glyph, its sparks over it.
+                    drawTripleBloom(burst, slot, center, radius = size.minDimension * 0.62f, color = accent)
+                    drawContent()
+                    drawTripleSparks(burst, slot, center, from = 16.dp.toPx(), to = 40.dp.toPx(), dot = 2.5.dp.toPx(), color = accent)
+                }
+            } else {
+                Modifier
+            },
         ) { glyph ->
             ShadowedIcon(
                 glyph,
@@ -233,7 +261,8 @@ private fun ActionButton(
                 tint = tint,
                 size = 34.dp,
                 modifier = Modifier.graphicsLayer {
-                    val s = press * pop.value
+                    val kick = if (burst != null && slot >= 0) burst.pop[slot].value else 1f
+                    val s = press * pop.value * kick
                     scaleX = s
                     scaleY = s
                 },

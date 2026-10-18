@@ -54,21 +54,72 @@ internal fun rememberIsInPip(activity: ComponentActivity?): Boolean {
 internal fun pipSupported(context: Context): Boolean =
     context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
-internal fun pipParams(aspect: Float, autoEnter: Boolean): PictureInPictureParams {
-    val clamped = if (aspect.isFinite() && aspect > 0f) aspect.coerceIn(0.42f, 2.38f) else 16f / 9f
+/**
+ * [hint]: where the picture itself sits in the window (the video's own rect, letterbox
+ * excluded). With it the system lifts exactly that rect out of the page and flies it
+ * into the floating window (and back), instead of shrinking the whole page and
+ * cross-fading. [title] / [subtitle] (API 33+) name the window for the system.
+ */
+internal fun pipParams(
+    aspect: Float,
+    autoEnter: Boolean,
+    hint: android.graphics.Rect? = null,
+    title: String? = null,
+    subtitle: String? = null,
+): PictureInPictureParams {
+    val clamped = pipAspect(aspect)
     val builder = PictureInPictureParams.Builder()
         .setAspectRatio(Rational((clamped * 1000).roundToInt(), 1000))
+    if (hint != null && !hint.isEmpty) builder.setSourceRectHint(hint)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         builder.setAutoEnterEnabled(autoEnter)
         builder.setSeamlessResizeEnabled(true)
     }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (!title.isNullOrBlank()) builder.setTitle(title)
+        if (!subtitle.isNullOrBlank()) builder.setSubtitle(subtitle)
+    }
     return builder.build()
 }
 
-internal fun enterPip(activity: Activity?, aspect: Float): Boolean {
+private fun pipAspect(aspect: Float): Float = if (aspect.isFinite() && aspect > 0f) aspect.coerceIn(0.42f, 2.38f) else 16f / 9f
+
+internal fun enterPip(
+    activity: Activity?,
+    aspect: Float,
+    hint: android.graphics.Rect? = null,
+    title: String? = null,
+    subtitle: String? = null,
+): Boolean {
     activity ?: return false
     if (!pipSupported(activity)) return false
-    return runCatching { activity.enterPictureInPictureMode(pipParams(aspect, autoEnter = false)) }.getOrDefault(false)
+    return runCatching {
+        activity.enterPictureInPictureMode(pipParams(aspect, autoEnter = false, hint = hint, title = title, subtitle = subtitle))
+    }.getOrDefault(false)
+}
+
+/**
+ * The picture's rect for [pipParams]'s hint: the video fitted (as the surface draws it,
+ * ContentScale.Fit) into [box], in window pixels, with the PiP window's aspect so the
+ * flight neither stretches nor jumps at the end. Null when nothing sensible is laid out.
+ */
+internal fun pipHintRect(box: androidx.compose.ui.geometry.Rect, videoAspect: Float): android.graphics.Rect? {
+    if (box.width < 2f || box.height < 2f) return null
+    val a = pipAspect(videoAspect)
+    val (w, h) = if (box.width / box.height > a) box.height * a to box.height else box.width to box.width / a
+    val left = box.left + (box.width - w) / 2f
+    val top = box.top + (box.height - h) / 2f
+    return android.graphics.Rect(left.roundToInt(), top.roundToInt(), (left + w).roundToInt(), (top + h).roundToInt())
+}
+
+/**
+ * Process-wide PiP signals from the activity. [entering]: Android 15+ says the window is
+ * on its way into PiP (`isTransitioningToPip`, before the mode change lands, e.g. while
+ * the home swipe is still flying) so the player drops its controls and danmaku at once
+ * and only the clean picture is carried into the floating window.
+ */
+internal object PipSignals {
+    var entering by mutableStateOf(false)
 }
 
 /**
