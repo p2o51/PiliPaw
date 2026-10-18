@@ -732,6 +732,14 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
     val fallback = remember(item) { LikeState(stat.obj("like").bool("status"), stat.obj("like").long("count")) }
     val like = LikeCache.get(id, fallback)
     var showForward by remember { mutableStateOf(false) }
+    var showLikers by remember { mutableStateOf(false) }
+    // Long press on 点赞 (and the detail page's 点赞 row) lists who liked; a tap still only likes.
+    val openLikers = remember(haptics) {
+        {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            showLikers = true
+        }
+    }
 
     val quiet = ButtonDefaults.buttonColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -800,7 +808,7 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
                 checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ),
             contentPadding = pad,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).longPressAside("点赞列表", openLikers),
         ) {
             AnimatedContent(
                 targetState = like.liked,
@@ -821,7 +829,18 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
             }
         }
     }
+    if (detail) {
+        LikersEntry(like.count, openLikers)
+    }
     if (showForward) ForwardSheet(item) { showForward = false }
+    if (showLikers) {
+        LikersSheet(
+            dynId = id,
+            ownerMid = item.json.author.long("mid"),
+            fallbackTotal = like.count,
+            onDismiss = { showLikers = false },
+        )
+    }
 }
 
 @Composable

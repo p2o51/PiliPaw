@@ -36,8 +36,9 @@ internal fun ColumnScope.HabitBody() {
     val autoFs by AppSettings.autoFullscreenLandscape.state.collectAsState()
     val background by AppSettings.backgroundPlay.state.collectAsState()
     val replySort by AppSettings.replySort.state.collectAsState()
-    val fameKey by FameMode.scopeKey.state.collectAsState()
-    val fame = FameScope.of(fameKey)
+    // The effective scope: an unset key still follows the old on/off switch (FameMode.scope
+    // resolves it), so the picker never shows 关闭 while numbers are hidden.
+    val fame = FameMode.scope
 
     SettingsGroup("启动") {
         item {

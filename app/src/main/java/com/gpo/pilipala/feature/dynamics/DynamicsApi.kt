@@ -117,6 +117,34 @@ internal object DynamicsApi {
         item.toDynItem()
     }
 
+    /**
+     * Who liked (or forwarded) a dynamic: GET detail/reaction, read-only.
+     * `data { items: [{mid, name, face, action: "赞了" | "转发了", attend}], offset, has_more, total }`.
+     * Visitors get an empty page. Fields are read loosely; a row without a mid is dropped.
+     */
+    suspend fun reactions(id: String, offset: String?): ReactionPage = withContext(Dispatchers.Default) {
+        val data = BiliClient.getData(
+            "/x/polymer/web-dynamic/v1/detail/reaction",
+            mapOf("id" to id, "offset" to (offset ?: "")),
+        ).asObj
+        val items = data.arr("items").objects().mapNotNull {
+            val mid = it.long("mid")
+            if (mid <= 0) return@mapNotNull null
+            Reactor(
+                mid = mid,
+                name = it.str("name").ifEmpty { it.str("uname") },
+                face = normalizeUrl(it.str("face")),
+                action = it.str("action"),
+                following = it.int("attend") > 0,
+            )
+        }
+        val next = data.str("offset")
+        ReactionPage(
+            page = Page(items, hasMore = data.bool("has_more") && next.isNotEmpty() && next != offset, nextCursor = next),
+            total = data.long("total"),
+        )
+    }
+
     suspend fun portal(): Portal = withContext(Dispatchers.Default) {
         val data = BiliClient.getData("/x/polymer/web-dynamic/v1/portal").asObj
         val lives = data.obj("live_users").arr("items").objects().map {
@@ -806,6 +834,19 @@ internal fun JsonObject.pictures(): List<DynPic> {
 // ── Shared like state (list and detail stay in sync) ────────────────────────
 
 internal data class LikeState(val liked: Boolean, val count: Long)
+
+/** One row of a dynamic's 点赞 list. */
+@Immutable
+internal data class Reactor(
+    val mid: Long,
+    val name: String,
+    val face: String,
+    /** "赞了", "转发了"… as the server words it. */
+    val action: String,
+    val following: Boolean,
+)
+
+internal class ReactionPage(val page: Page<Reactor>, val total: Long)
 
 internal object LikeCache {
     private val map = mutableStateMapOf<String, LikeState>()
