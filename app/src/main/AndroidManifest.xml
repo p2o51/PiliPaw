@@ -40,16 +40,46 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Bilibili links. Not verifiable for us (no assetlinks on bilibili.com), so on
+                 Android 12+ the owner turns these hosts on under 默认打开 (设置 › 打开 B 站链接).
+                 Hosts that are all content: every path. passport / account / pay hosts are left alone. -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="www.bilibili.com" />
-                <data android:scheme="https" android:host="m.bilibili.com" />
-                <data android:scheme="https" android:host="b23.tv" />
-                <data android:scheme="https" android:host="space.bilibili.com" />
-                <data android:scheme="https" android:host="live.bilibili.com" />
-                <data android:scheme="https" android:host="t.bilibili.com" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="space.bilibili.com" />
+                <data android:host="live.bilibili.com" />
+                <data android:host="t.bilibili.com" />
+                <data android:host="b23.tv" />
+                <data android:host="bili2233.cn" />
+            </intent-filter>
+            <!-- The main hosts: content pages only (data elements combine, so every host takes
+                 every prefix). The rest of www / m (home, blackboard, account pages) stays in the browser. -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="www.bilibili.com" />
+                <data android:host="m.bilibili.com" />
+                <data android:host="bilibili.com" />
+                <data android:pathPrefix="/video/" />
+                <data android:pathPrefix="/s/video/" />
+                <data android:pathPrefix="/bangumi/play/" />
+                <data android:pathPrefix="/opus/" />
+                <data android:pathPrefix="/read/" />
+                <data android:pathPrefix="/dynamic/" />
+                <data android:pathPrefix="/space/" />
+                <data android:pathPrefix="/festival/" />
+            </intent-filter>
+            <!-- 分享 from the official app (or any text with a bilibili link). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -80,6 +110,32 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_watch_info" />
         </receiver>
+
+        <!-- Feed home-screen widget (feature/widget/FeedWidget, Glance): one custom feed, picked on placement. -->
+        <receiver
+            android:name=".feature.widget.FeedWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_feed_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_feed_info" />
+        </receiver>
+
+        <activity
+            android:name=".feature.widget.FeedWidgetConfigActivity"
+            android:exported="true"
+            android:label="@string/widget_feed_label"
+            android:theme="@style/Theme.PiliPala"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
 
         <!-- Live room background audio (feature/live); media3 action only, nothing to resume from SystemUI. -->
         <service

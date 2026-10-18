@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +46,20 @@ import kotlinx.coroutines.flow.map
  */
 val LocalTabReselect = staticCompositionLocalOf<Flow<Unit>> { emptyFlow() }
 
+/** Requests from outside the composition (a widget tap) to show one of the shell's sections. */
+object ShellRequests {
+    private val _section = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
+    internal val section: kotlinx.coroutines.flow.StateFlow<Int?> = _section
+
+    fun select(index: Int) {
+        _section.value = index
+    }
+
+    internal fun consume() {
+        _section.value = null
+    }
+}
+
 /**
  * The shell: four sections under Yoin's floating button group. Sections keep
  * their state (scroll, tabs) while hidden; switching cross-fades with the
@@ -61,6 +77,12 @@ fun MainShell() {
     val holder = rememberSaveableStateHolder()
     val reselects = remember { MutableSharedFlow<Int>(extraBufferCapacity = 1) }
     BackHandler(enabled = selected != 0) { selected = 0 }
+    val requested by ShellRequests.section.collectAsState()
+    LaunchedEffect(requested) {
+        val index = requested ?: return@LaunchedEffect
+        if (index in tabs.indices) selected = index
+        ShellRequests.consume()
+    }
 
     // The floating bar reports where it sits; main-tab lists marked with seamViewport
     // break their graphics into the halftone field around it (Yoin's dissolve).
