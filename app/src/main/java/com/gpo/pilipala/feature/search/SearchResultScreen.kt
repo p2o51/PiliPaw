@@ -40,6 +40,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -51,7 +52,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +73,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gpo.pilipala.feature.feeds.FeedSource
+import com.gpo.pilipala.feature.feeds.FeedSourceSheet
+import com.gpo.pilipala.feature.feeds.FeedStore
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.BackButton
@@ -268,6 +274,7 @@ fun SearchResultScreen(route: Route.SearchResult) {
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val scheme = MaterialTheme.colorScheme
+    var feedSheet by rememberSaveable { mutableStateOf(false) }
 
     Column(
         Modifier
@@ -275,10 +282,14 @@ fun SearchResultScreen(route: Route.SearchResult) {
             .background(scheme.surface)
             .statusBarsPadding(),
     ) {
-        ResultSearchBar(keyword) {
-            SearchHandoff.offer(keyword)
-            nav.replace(Route.Search(keyword))
-        }
+        ResultSearchBar(
+            keyword = keyword,
+            onEdit = {
+                SearchHandoff.offer(keyword)
+                nav.replace(Route.Search(keyword))
+            },
+            onAddToFeed = { feedSheet = true },
+        )
         PrimaryScrollableTabRow(
             selectedTabIndex = pagerState.currentPage,
             containerColor = scheme.surface,
@@ -319,15 +330,25 @@ fun SearchResultScreen(route: Route.SearchResult) {
             SearchTabPage(vms[page])
         }
     }
+
+    if (feedSheet) {
+        // The keyword joins a feed with the video tab's order when that is 综合 or 最新发布.
+        val videoOrder = vms.firstOrNull { it.tab == SearchTab.Video }?.order.orEmpty()
+        FeedSourceSheet(
+            keyword = keyword,
+            keywordOrder = if (videoOrder == "pubdate") "pubdate" else "totalrank",
+            onDismiss = { feedSheet = false },
+        )
+    }
 }
 
 @Composable
-private fun ResultSearchBar(keyword: String, onEdit: () -> Unit) {
+private fun ResultSearchBar(keyword: String, onEdit: () -> Unit, onAddToFeed: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+            .padding(start = 4.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         BackButton()
@@ -353,6 +374,10 @@ private fun ResultSearchBar(keyword: String, onEdit: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        Spacer(Modifier.width(4.dp))
+        IconButton(onClick = onAddToFeed, shapes = IconButtonDefaults.shapes()) {
+            Icon(YoinSymbols.LibraryAdd, contentDescription = "添加到 Feed", tint = scheme.onSurfaceVariant)
         }
     }
 }
@@ -433,6 +458,11 @@ private fun ResultGrid(vm: SearchTabViewModel) {
     val haptics = LocalHapticFeedback.current
     val wc = widthClass()
     val gridState = rememberLazyGridState()
+    val feeds by FeedStore.feeds.collectAsState()
+    val feedMids = remember(feeds) {
+        feeds.flatMap { it.sources }.filterIsInstance<FeedSource.Up>().mapTo(HashSet()) { it.mid }
+    }
+    var feedUser by remember { mutableStateOf<UserHit?>(null) }
     var seenTop by rememberSaveable { mutableIntStateOf(vm.topSignal) }
     LaunchedEffect(vm.topSignal) {
         if (vm.topSignal != seenTop) {
@@ -491,6 +521,8 @@ private fun ResultGrid(vm: SearchTabViewModel) {
                         }
                     },
                     modifier = m,
+                    inFeed = hit.mid in feedMids,
+                    onAddToFeed = { feedUser = hit },
                 )
                 is ArticleHit -> ArticleRow(hit, m)
             }
@@ -498,6 +530,9 @@ private fun ResultGrid(vm: SearchTabViewModel) {
         item(key = "footer", span = { GridItemSpan(maxLineSpan) }, contentType = "footer") {
             ResultFooter(vm)
         }
+    }
+    feedUser?.let { hit ->
+        FeedSourceSheet(upMid = hit.mid, upName = hit.name, upFace = hit.face, onDismiss = { feedUser = null })
     }
 }
 

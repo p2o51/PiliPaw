@@ -1,20 +1,31 @@
 package com.gpo.pilipala.feature.home
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ripple
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -26,6 +37,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -37,7 +50,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -91,9 +103,12 @@ internal fun CollapsingHeader(
 }
 
 /**
- * Yoin's segment chips as a tab row: filled tonal pills (secondaryContainer
- * when on, surfaceContainerHigh when off) that animate their colours on the
- * effects spring. The row scrolls and keeps the selected chip in view.
+ * Yoin's segment chips as a tab row: filled tonal pills (primary when on,
+ * surfaceContainerHigh when off) that animate their colours on the effects
+ * spring and tighten their corners while pressed. The row scrolls and keeps
+ * the selected chip in view. Chips for which [longClickable] holds answer a
+ * long press with [onLongClick]; [trailing] sits after the last chip (the
+ * home row's "+").
  */
 @Composable
 internal fun SegmentTabs(
@@ -102,17 +117,23 @@ internal fun SegmentTabs(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     horizontalPadding: Dp = 16.dp,
+    onLongClick: ((Int) -> Unit)? = null,
+    longClickable: (Int) -> Boolean = { onLongClick != null },
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val scroll = rememberScrollState()
     val bounds = remember { mutableStateMapOf<Int, Pair<Int, Int>>() }
     var viewport by remember { mutableIntStateOf(0) }
     val haptics = LocalHapticFeedback.current
     val spec = YoinMotion.defaultSpatialSpec<Float>()
-    LaunchedEffect(selected, viewport) {
-        val (x, w) = bounds[selected] ?: return@LaunchedEffect
-        if (viewport == 0) return@LaunchedEffect
-        val target = (x + w / 2 - viewport / 2).coerceIn(0, scroll.maxValue)
-        scroll.animateScrollTo(target, spec)
+    // Also waits for a chip that is not measured yet (a feed tab created and selected at once).
+    LaunchedEffect(selected) {
+        snapshotFlow { bounds[selected] to viewport }.collectLatest { (b, vp) ->
+            val (x, w) = b ?: return@collectLatest
+            if (vp == 0) return@collectLatest
+            val target = (x + w / 2 - vp / 2).coerceIn(0, scroll.maxValue)
+            scroll.animateScrollTo(target, spec)
+        }
     }
     Row(
         modifier = modifier
@@ -132,16 +153,31 @@ internal fun SegmentTabs(
                     if (i != selected) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                     onSelect(i)
                 },
+                onLongClick = if (onLongClick != null && longClickable(i)) ({ onLongClick(i) }) else null,
                 modifier = Modifier.onPlaced { c ->
                     bounds[i] = c.positionInParent().x.roundToInt() to c.size.width
                 },
             )
         }
+        trailing?.invoke()
     }
 }
 
+/** Pill corner at rest (a 40dp chip is fully round) and while pressed (M3 press morph). */
+private val ChipCorner = 20.dp
+private val ChipPressedCorner = 8.dp
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SegmentChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun SegmentChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     val container by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
         YoinMotion.defaultEffectsSpec(),
@@ -152,19 +188,56 @@ private fun SegmentChip(label: String, selected: Boolean, onClick: () -> Unit, m
         YoinMotion.defaultEffectsSpec(),
         label = "segmentContent",
     )
-    FilledTonalButton(
-        onClick = onClick,
-        modifier = modifier
-            .semantics {
-                role = Role.Tab
-                this.selected = selected
-            }
-            .heightIn(min = 40.dp),
-        shapes = ButtonDefaults.shapes(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        colors = ButtonDefaults.filledTonalButtonColors(containerColor = container, contentColor = content),
+    val corner by animateDpAsState(if (pressed) ChipPressedCorner else ChipCorner, YoinMotion.fastSpatialSpec(), label = "segmentCorner")
+    Box(
+        modifier
+            .semantics { this.selected = selected }
+            .heightIn(min = 40.dp)
+            .widthIn(min = 48.dp)
+            .clip(RoundedCornerShape(corner))
+            .background(container)
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = ripple(color = content),
+                role = Role.Tab,
+                onLongClickLabel = if (onLongClick != null) "管理" else null,
+                onLongClick = onLongClick,
+                onClick = onClick,
+            )
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Icon-only chip at the end of a segment row (same pill, same press morph). */
+@Composable
+internal fun SegmentIconChip(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val corner by animateDpAsState(if (pressed) ChipPressedCorner else ChipCorner, YoinMotion.fastSpatialSpec(), label = "iconChipCorner")
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(corner))
+            .background(scheme.surfaceContainerHigh)
+            .clickable(
+                interactionSource = interaction,
+                indication = ripple(color = scheme.onSurfaceVariant),
+                role = Role.Button,
+                onClickLabel = contentDescription,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
     }
 }
 

@@ -77,6 +77,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.util.IdUtils
+import com.gpo.pilipala.feature.feeds.FeedSourceSheet
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.BackButton
@@ -168,6 +169,8 @@ fun SearchScreen(route: Route.Search) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val haptics = LocalHapticFeedback.current
+    // History word whose 新建 Feed / 添加到 Feed sheet is open.
+    var historySheet by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         vm.onQuery(field.text)
@@ -246,9 +249,10 @@ fun SearchScreen(route: Route.Search) {
                     hotError = vm.hotError,
                     onReloadHot = vm::loadHot,
                     onPick = ::submit,
-                    onRemove = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        SearchHistoryStore.remove(it)
+                    onLongPress = {
+                        keyboard?.hide()
+                        focusManager.clearFocus()
+                        historySheet = it
                     },
                     onClearHistory = {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -257,6 +261,14 @@ fun SearchScreen(route: Route.Search) {
                 )
             }
         }
+    }
+
+    historySheet?.let { word ->
+        FeedSourceSheet(
+            keyword = word,
+            onDismiss = { historySheet = null },
+            onRemoveHistory = { SearchHistoryStore.remove(word) },
+        )
     }
 }
 
@@ -388,7 +400,7 @@ private fun SearchHome(
     hotError: String?,
     onReloadHot: () -> Unit,
     onPick: (String) -> Unit,
-    onRemove: (String) -> Unit,
+    onLongPress: (String) -> Unit,
     onClearHistory: () -> Unit,
 ) {
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -419,7 +431,7 @@ private fun SearchHome(
                 ) {
                     history.forEach { word ->
                         key(word) {
-                            SearchChip(word, onLongClick = { onRemove(word) }) { onPick(word) }
+                            SearchChip(word, onLongClick = { onLongPress(word) }) { onPick(word) }
                         }
                     }
                 }

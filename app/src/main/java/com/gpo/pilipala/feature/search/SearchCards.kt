@@ -1,11 +1,14 @@
 package com.gpo.pilipala.feature.search
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,12 +27,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +55,7 @@ import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import java.util.Locale
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.ui.draw.drawWithCache
@@ -233,6 +240,8 @@ internal fun LiveCard(hit: LiveHit, modifier: Modifier = Modifier) {
 
 // ── 用户 ────────────────────────────────────────────────────────────────────
 
+/** Long press (or the feed button) opens 新建 Feed / 添加到 Feed for this UP. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun UserRow(
     hit: UserHit,
@@ -240,6 +249,8 @@ internal fun UserRow(
     showFollow: Boolean,
     onToggleFollow: () -> Unit,
     modifier: Modifier = Modifier,
+    inFeed: Boolean = false,
+    onAddToFeed: (() -> Unit)? = null,
 ) {
     val nav = LocalNavigator.current
     val scheme = MaterialTheme.colorScheme
@@ -247,7 +258,10 @@ internal fun UserRow(
         modifier
             .fillMaxWidth()
             .clip(YoinContainerShapes.ListRow)
-            .clickable { nav.push(Route.Member(hit.mid, hit.face, hit.name)) }
+            .combinedClickable(
+                onLongClickLabel = if (onAddToFeed != null) "添加到 Feed" else null,
+                onLongClick = onAddToFeed,
+            ) { nav.push(Route.Member(hit.mid, hit.face, hit.name)) }
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -313,10 +327,42 @@ internal fun UserRow(
                 )
             }
         }
+        if (onAddToFeed != null) {
+            Spacer(Modifier.width(8.dp))
+            AddToFeedButton(inFeed, onAddToFeed)
+        }
         if (showFollow) {
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(if (onAddToFeed != null) 4.dp else 12.dp))
             FollowButton(following, onToggleFollow)
         }
+    }
+}
+
+/** Opens 新建 Feed / 添加到 Feed for the row's UP; tinted when a feed already mixes them. */
+@Composable
+private fun AddToFeedButton(inFeed: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val container by animateColorAsState(
+        if (inFeed) scheme.secondaryContainer else scheme.surfaceContainerHigh,
+        YoinMotion.defaultEffectsSpec(),
+        label = "feedButtonContainer",
+    )
+    val content by animateColorAsState(
+        if (inFeed) scheme.onSecondaryContainer else scheme.onSurfaceVariant,
+        YoinMotion.defaultEffectsSpec(),
+        label = "feedButtonContent",
+    )
+    FilledTonalIconButton(
+        onClick = onClick,
+        shapes = IconButtonDefaults.shapes(),
+        colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = container, contentColor = content),
+        modifier = Modifier.size(40.dp),
+    ) {
+        Icon(
+            if (inFeed) YoinSymbols.LibraryAdded else YoinSymbols.LibraryAdd,
+            contentDescription = "添加到 Feed",
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
