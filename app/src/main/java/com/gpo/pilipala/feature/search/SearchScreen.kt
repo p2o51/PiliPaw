@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.search
 
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -360,6 +361,7 @@ private fun SuggestionList(
     LazyColumn(
         Modifier
             .fillMaxSize()
+            .seamViewport()
             .imePadding(),
         contentPadding = PaddingValues(top = 4.dp, bottom = navBottom + 16.dp),
     ) {
@@ -407,6 +409,7 @@ private fun SearchHome(
     LazyColumn(
         Modifier
             .fillMaxSize()
+            .seamViewport()
             .imePadding(),
         contentPadding = PaddingValues(top = 4.dp, bottom = navBottom + 24.dp),
     ) {

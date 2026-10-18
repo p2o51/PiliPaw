@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.home
 
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -236,7 +237,7 @@ internal fun <T> PagedGrid(
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(columns),
                         state = state,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().seamViewport(state),
                         contentPadding = PaddingValues(
                             start = horizontalPadding,
                             end = horizontalPadding,

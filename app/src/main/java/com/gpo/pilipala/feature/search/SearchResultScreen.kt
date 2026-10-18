@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.search
 
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -496,7 +497,7 @@ private fun ResultGrid(vm: SearchTabViewModel) {
     LazyVerticalGrid(
         columns = columns,
         state = gridState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().seamViewport(gridState),
         contentPadding = PaddingValues(start = hPad, end = hPad, top = 4.dp, bottom = navBottom + 16.dp),
         horizontalArrangement = Arrangement.spacedBy(hSpace),
         verticalArrangement = Arrangement.spacedBy(vSpace),
