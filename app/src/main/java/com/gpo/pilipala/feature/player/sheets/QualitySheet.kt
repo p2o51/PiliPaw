@@ -1,7 +1,6 @@
 package com.gpo.pilipala.feature.player.sheets
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -9,7 +8,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,11 +34,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -54,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.feature.player.PiliPlayerController
+import com.gpo.pilipala.feature.player.PlayerPhase
 import com.gpo.pilipala.feature.player.Qualities
 import com.gpo.pilipala.feature.player.QualityOption
 import com.gpo.pilipala.feature.player.StreamPicker
@@ -62,7 +61,6 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -122,7 +120,7 @@ private fun nearestOpen(steps: List<QualityOption>, from: Int): Int? {
  * 画质: the quality as a bold figure, a mosaic that grows finer as the quality rises, and a
  * stepped slider over this video's qualities, low to high. Locked qualities (登录 / 大会员)
  * stay on the track behind a lock and spring back to the nearest open one when let go.
- * A quality applies when the handle settles (each switch reloads the stream).
+ * A quality applies when the finger lifts, not per detent (each switch reloads the stream).
  */
 @Composable
 internal fun QualitySliderPage(ctrl: PiliPlayerController) {
@@ -131,21 +129,22 @@ internal fun QualitySliderPage(ctrl: PiliPlayerController) {
     if (steps.isEmpty()) return
     val cs = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
     val loggedIn = BiliClient.isLoggedIn
-    val spring = YoinMotion.defaultSpatialSpec<Float>()
 
     val currentQn = ctrl.currentQn
     val current = steps.indexOfFirst { it.qn == currentQn }.takeIf { it >= 0 }
         ?: steps.indices.minBy { abs(steps[it].qn - currentQn) }
-    // While the finger is down the handle follows it; let go, it settles on a spring.
-    var drag by remember { mutableStateOf<Float?>(null) }
-    val settle = remember { Animatable(current.toFloat()) }
-    LaunchedEffect(current, steps.size) {
-        if (drag == null) settle.animateTo(current.toFloat(), spring)
-    }
-    val position = drag ?: settle.value
-    val hover = position.roundToInt().coerceIn(0, steps.lastIndex)
+    // The detent under the finger, while it is down.
+    var drag by remember { mutableStateOf<Int?>(null) }
+    // A non-DASH switch refetches before currentQn moves: the handle waits on the request
+    // until the new stream arrives (a new info resets this) or the load fails.
+    var asked by remember(pi) { mutableStateOf<Int?>(null) }
+    val failed = ctrl.phase is PlayerPhase.Error
+    LaunchedEffect(currentQn, failed) { asked = null }
+    val resting = asked ?: current
+    // The headline, tag, legend and labels show where the handle is going, never the
+    // detents it glides past on the way back.
+    val hover = (drag ?: resting).coerceIn(0, steps.lastIndex)
     val hovered = steps[hover]
     val hoverLocked = !hovered.available
     val (primary, secondary) = splitLabel(hovered.label)
@@ -183,30 +182,30 @@ internal fun QualitySliderPage(ctrl: PiliPlayerController) {
             )
             if (steps.size > 1) {
                 StepSlider(
-                    value = position,
+                    value = hover,
                     count = steps.size,
-                    onValueChange = { v ->
-                        val before = (drag ?: settle.value).roundToInt()
-                        drag = v
-                        val now = v.roundToInt().coerceIn(0, steps.lastIndex)
-                        if (now != before) {
+                    onValueChange = { i ->
+                        val now = i.coerceIn(0, steps.lastIndex)
+                        if (now != (drag ?: resting)) {
                             haptics.performHapticFeedback(
                                 if (steps[now].available) HapticFeedbackType.SegmentTick else HapticFeedbackType.SegmentFrequentTick,
                             )
                         }
+                        drag = now
                     },
                     onValueChangeFinished = {
-                        val from = drag ?: settle.value
-                        val landed = from.roundToInt().coerceIn(0, steps.lastIndex)
+                        val landed = drag ?: resting
+                        drag = null
+                        // Off a lock, the handle glides back to the nearest open quality.
                         val target = nearestOpen(steps, landed) ?: current
                         if (target != landed) haptics.performHapticFeedback(HapticFeedbackType.Reject)
-                        scope.launch {
-                            settle.snapTo(from)
-                            drag = null
-                            settle.animateTo(target.toFloat(), spring)
-                        }
                         val qn = steps[target].qn
-                        if (qn != ctrl.currentQn) ctrl.selectQuality(qn)
+                        if (qn != ctrl.currentQn && target != asked) {
+                            // DASH switches at once; a refetch keeps the handle on the request.
+                            // (Already in error, a further failure would go unseen: no hold.)
+                            if (!pi.isDash && ctrl.phase !is PlayerPhase.Error) asked = target
+                            ctrl.selectQuality(qn)
+                        }
                     },
                     description = "画质",
                     state = hovered.label,
@@ -302,9 +301,17 @@ private fun MosaicLegend(fidelity: Fidelity, locked: Boolean, modifier: Modifier
         cs.surfaceContainerLowest, cs.tertiaryContainer, cs.primaryContainer, cs.secondary, cs.tertiary, cs.primary, cs.onPrimaryContainer,
     )
     Box(modifier.clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize().clip(ContinuousRoundedCornerShape(14.dp))) {
-            drawMosaic(block.dp.toPx(), tones, vivid, fade, plain, wide)
-        }
+        Spacer(
+            Modifier
+                .fillMaxSize()
+                .clip(ContinuousRoundedCornerShape(14.dp))
+                .drawWithCache {
+                    // The picture is sampled again only when the block size moves; tone and
+                    // fade changes just repaint.
+                    val grid = sampleMosaic(size, block.dp.toPx())
+                    onDrawBehind { if (grid != null) drawMosaic(grid, tones, vivid, fade, plain, wide) }
+                },
+        )
         AnimatedVisibility(
             visible = locked,
             enter = fadeIn(YoinMotion.defaultEffectsSpec()) + scaleIn(YoinMotion.defaultSpatialSpec(), initialScale = 0.5f),
@@ -348,40 +355,66 @@ private fun picture(x: Float, y: Float, aspect: Float): Float {
     return v.coerceIn(0f, 1f)
 }
 
+/** The picture sampled at the centre of each block, row by row. */
+private class MosaicGrid(
+    val cell: Float,
+    val cols: Int,
+    val rows: Int,
+    val ox: Float,
+    val oy: Float,
+    val samples: FloatArray,
+)
+
+private fun sampleMosaic(size: Size, blockPx: Float): MosaicGrid? {
+    val w = size.width
+    val h = size.height
+    if (w <= 0f || h <= 0f) return null
+    val cell = blockPx.coerceAtLeast(3f)
+    val cols = ceil(w / cell).toInt()
+    val rows = ceil(h / cell).toInt()
+    val ox = (w - cols * cell) / 2f
+    val oy = (h - rows * cell) / 2f
+    val aspect = w / h
+    val samples = FloatArray(cols * rows)
+    for (r in 0 until rows) {
+        val cy = oy + (r + 0.5f) * cell
+        for (c in 0 until cols) {
+            samples[r * cols + c] = picture((ox + (c + 0.5f) * cell) / h, cy / h, aspect)
+        }
+    }
+    return MosaicGrid(cell, cols, rows, ox, oy, samples)
+}
+
 private fun DrawScope.drawMosaic(
-    blockPx: Float,
+    grid: MosaicGrid,
     tones: Float,
     vivid: Float,
     alpha: Float,
     plain: List<Color>,
     wide: List<Color>,
 ) {
-    val w = size.width
-    val h = size.height
-    if (w <= 0f || h <= 0f) return
-    val cell = blockPx.coerceAtLeast(3f)
-    val cols = ceil(w / cell).toInt()
-    val rows = ceil(h / cell).toInt()
-    val ox = (w - cols * cell) / 2f
-    val oy = (h - rows * cell) / 2f
+    val cell = grid.cell
     val inset = max(0.75f, cell * 0.09f)
-    val side = cell - inset * 2f
+    val side = Size(cell - inset * 2f, cell - inset * 2f)
     val corner = CornerRadius(cell * 0.22f)
     val levels = tones.coerceAtLeast(2f)
-    val aspect = w / h
-    for (r in 0 until rows) {
-        val cy = oy + (r + 0.5f) * cell
-        for (c in 0 until cols) {
-            val cx = ox + (c + 0.5f) * cell
-            val v = picture(cx / h, cy / h, aspect)
-            // HDR stretches the contrast before the tones are cut.
-            val stretched = (0.5f + (v - 0.5f) * (1f + 0.3f * vivid)).coerceIn(0f, 1f)
-            val tone = (floor(stretched * levels) / (levels - 1f)).coerceIn(0f, 1f)
-            val color = if (vivid <= 0.001f) ramp(plain, tone) else lerp(ramp(plain, tone), ramp(wide, tone), vivid)
+    // HDR stretches the contrast before the tones are cut.
+    val stretch = 1f + 0.3f * vivid
+    // The tones are cut into whole levels: mix each level's colour once, not once per block.
+    val palette = Array(floor(levels).toInt() + 1) { k ->
+        val tone = (k / (levels - 1f)).coerceIn(0f, 1f)
+        if (vivid <= 0.001f) ramp(plain, tone) else lerp(ramp(plain, tone), ramp(wide, tone), vivid)
+    }
+    for (r in 0 until grid.rows) {
+        val top = grid.oy + r * cell + inset
+        for (c in 0 until grid.cols) {
+            val v = grid.samples[r * grid.cols + c]
+            val stretched = (0.5f + (v - 0.5f) * stretch).coerceIn(0f, 1f)
+            val level = floor(stretched * levels).toInt().coerceIn(0, palette.lastIndex)
             drawRoundRect(
-                color = color,
-                topLeft = Offset(cx - cell / 2f + inset, cy - cell / 2f + inset),
-                size = Size(side, side),
+                color = palette[level],
+                topLeft = Offset(grid.ox + c * cell + inset, top),
+                size = side,
                 cornerRadius = corner,
                 alpha = alpha,
             )
