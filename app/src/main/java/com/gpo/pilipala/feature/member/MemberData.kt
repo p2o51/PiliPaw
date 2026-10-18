@@ -66,7 +66,7 @@ internal data class Relation(val attribute: Int = -1, val special: Boolean = fal
         get() = when (attribute) {
             1 -> "悄悄关注"
             2 -> "已关注"
-            6 -> "已互关"
+            6 -> "互相关注"
             128 -> "已拉黑"
             else -> "关注"
         }

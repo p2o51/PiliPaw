@@ -31,6 +31,7 @@ import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -76,6 +77,7 @@ import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.CoverBadge
 import com.gpo.pilipala.ui.components.DurationChip
+import com.gpo.pilipala.ui.components.FameCount
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.Tag
@@ -765,7 +767,7 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
                 contentPadding = pad,
                 modifier = Modifier.weight(1f),
             ) {
-                ActionLabel(PiliSymbols.Comment, stat.obj("comment").long("count"), "评论")
+                ActionLabel(PiliSymbols.Comment, stat.obj("comment").long("count"), "评论", fame = false)
             }
         }
         ToggleButton(
@@ -810,18 +812,34 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
                 transitionSpec = { fadeIn(fadeInSpec).togetherWith(fadeOut(fadeOutSpec)) },
                 label = "likeCount",
             ) { count ->
-                Text(if (count > 0) Fmt.count(count) else "点赞", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                CountLabel(count, "点赞", fame = true)
             }
         }
     }
     if (showForward) ForwardSheet(item) { showForward = false }
 }
 
+/** [fame]: 转发 / 点赞 counts are popularity — a line under 名声模式 (the button keeps its tap). */
 @Composable
-private fun ActionLabel(icon: ImageVector, count: Long, label: String) {
+private fun ActionLabel(icon: ImageVector, count: Long, label: String, fame: Boolean = true) {
     Icon(icon, null, Modifier.size(18.dp))
     Spacer(Modifier.width(6.dp))
-    Text(if (count > 0) Fmt.count(count) else label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    CountLabel(count, label, fame)
+}
+
+@Composable
+private fun CountLabel(count: Long, label: String, fame: Boolean) {
+    if (count > 0) {
+        FameCount(
+            Fmt.count(count),
+            style = MaterialTheme.typography.labelLarge,
+            lineColor = LocalContentColor.current,
+            revealable = false,
+            hide = fame,
+        )
+    } else {
+        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    }
 }
 
 // ── Sheets ──────────────────────────────────────────────────────────────────

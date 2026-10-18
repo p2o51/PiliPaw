@@ -56,9 +56,17 @@ private val VoteRegex = Regex("""\{vote:.*?\}""")
 private val CvRegex = Regex("^cv(\\d+)$")
 
 private const val UP_TAG_ID = "tag:up"
+private const val RELATION_TAG_ID = "tag:relation"
 
 /** Optional leading "name UP" used by the sub-reply preview rows. */
-internal data class RichPrefix(val name: String, val mid: Long, val face: String, val isUp: Boolean)
+internal data class RichPrefix(
+    val name: String,
+    val mid: Long,
+    val face: String,
+    val isUp: Boolean,
+    /** The user's relation with them: 2 关注, 6 互关 (an inline tag after the name), 0 none. */
+    val relation: Int = 0,
+)
 
 /** Inline emote sizes (em of the body text); 2+ = a package's big stickers, laid out larger as bilibili does. */
 private const val EmoteEm = 1.4f
@@ -96,7 +104,7 @@ internal fun ReplyRichText(
     var preview by remember { mutableStateOf<InlineEmotePreview?>(null) }
     val longPress by rememberUpdatedState(onEmoteLongPress)
     val hasLongPress = onEmoteLongPress != null
-    val inline = remember(content, prefix != null && prefix.isUp, density, hasLongPress) {
+    val inline = remember(content, prefix != null && prefix.isUp, prefix?.relation ?: 0, density, hasLongPress) {
         buildMap {
             content.emotes.forEach { (key, emote) ->
                 val big = emote.size >= 2
@@ -119,6 +127,29 @@ internal fun ReplyRichText(
                                 preview = InlineEmotePreview(previewModel, model, name, emote.pack, big, source)
                             },
                         )
+                    },
+                )
+            }
+            val relation = prefix?.relation ?: 0
+            if (relation != 0) {
+                put(
+                    RELATION_TAG_ID,
+                    InlineTextContent(Placeholder(2.7.em, 1.3.em, PlaceholderVerticalAlign.TextCenter)) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            if (relation == 6) {
+                                Tag(
+                                    "互关",
+                                    container = MaterialTheme.colorScheme.tertiaryContainer,
+                                    content = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                            } else {
+                                Tag(
+                                    "关注",
+                                    container = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    content = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                     },
                 )
             }
@@ -198,6 +229,10 @@ private fun buildReplyText(
         if (prefix.isUp) {
             append(' ')
             appendInlineContent(UP_TAG_ID, "UP")
+        }
+        if (prefix.relation != 0) {
+            append(' ')
+            appendInlineContent(RELATION_TAG_ID, if (prefix.relation == 6) "互关" else "关注")
         }
         append("  ")
     }

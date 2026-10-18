@@ -83,6 +83,7 @@ import com.gpo.pilipala.feature.library.toFavFolder
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
+import com.gpo.pilipala.ui.components.FameCount
 import com.gpo.pilipala.ui.components.LocalBottomBarInset
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.components.WidthClass
@@ -343,13 +344,14 @@ private fun StatsRow(u: UserInfo) {
         Row(Modifier.padding(6.dp)) {
             StatCell(Fmt.count(u.dynamicCount), "动态", Modifier.weight(1f)) { nav.push(Route.MemberDynamics(u.mid, u.name)) }
             StatCell(Fmt.count(u.following), "关注", Modifier.weight(1f)) { nav.push(Route.Follow(u.mid, u.name)) }
-            StatCell(Fmt.count(u.follower), "粉丝", Modifier.weight(1f)) { nav.push(Route.Fans(u.mid, u.name)) }
+            StatCell(Fmt.count(u.follower), "粉丝", Modifier.weight(1f), fame = true) { nav.push(Route.Fans(u.mid, u.name)) }
         }
     }
 }
 
+/** Number over label; [fame] (粉丝) draws a line under 名声模式, a tap on the line shows it. */
 @Composable
-private fun StatCell(value: String, label: String, modifier: Modifier, onClick: () -> Unit) {
+private fun StatCell(value: String, label: String, modifier: Modifier, fame: Boolean = false, onClick: () -> Unit) {
     Column(
         modifier
             .clip(YoinContainerShapes.ListRow)
@@ -366,7 +368,7 @@ private fun StatCell(value: String, label: String, modifier: Modifier, onClick: 
             transitionSpec = { fadeIn(enterFade) togetherWith fadeOut(exitFade) },
             label = "stat",
         ) { v ->
-            Text(v, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            FameCount(v, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, hide = fame)
         }
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

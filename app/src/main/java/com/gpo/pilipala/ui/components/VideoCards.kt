@@ -198,12 +198,30 @@ fun VideoCardH(
 /**
  * Icon + number pair. Information text, so onSurfaceVariant by default —
  * `outline` is a border token and falls under 4.5:1 at 11sp.
+ *
+ * Under 名声模式 a popularity number ([fame]: 播放, 弹幕, 点赞… glyphs by default) draws
+ * as [FameCount]'s line in [tint]; [revealable] lets a tap on it show the number
+ * (only where the pair is not inside a bigger clickable — cards keep their tap).
  */
 @Composable
-fun Stat(icon: ImageVector, text: String, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
+fun Stat(
+    icon: ImageVector,
+    text: String,
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    fame: Boolean = icon.isPopularityGlyph(),
+    revealable: Boolean = false,
+) {
     Row(modifier.seamText(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         Icon(icon, null, Modifier.size(14.dp), tint = tint)
-        Text(text, style = MaterialTheme.typography.labelSmall, color = tint)
+        FameCount(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            lineColor = tint,
+            revealable = revealable,
+            hide = fame,
+        )
     }
 }
 

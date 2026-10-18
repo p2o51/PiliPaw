@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.feature.video.ExpandableText
+import com.gpo.pilipala.ui.components.FameCount
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
@@ -99,12 +100,15 @@ internal fun BangumiHeader(
                     Text("分", style = MaterialTheme.typography.labelMedium, color = colors.primary, modifier = Modifier.padding(bottom = 3.dp))
                     if (d.ratingCount > 0) {
                         Spacer(Modifier.width(8.dp))
-                        Text(
-                            "${Fmt.count(d.ratingCount)}人评",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 4.dp),
-                        )
+                        // 名声模式: the raters count is a line (a tap shows it); 人评 stays.
+                        Row(Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            FameCount(
+                                Fmt.count(d.ratingCount),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.onSurfaceVariant,
+                            )
+                            Text("人评", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+                        }
                     }
                 } else {
                     Text("暂无评分", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
@@ -112,8 +116,8 @@ internal fun BangumiHeader(
             }
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Stat(PiliSymbols.Views, Fmt.count(d.views))
-                Stat(PiliSymbols.Danmaku, Fmt.count(d.danmakus))
+                Stat(PiliSymbols.Views, Fmt.count(d.views), revealable = true)
+                Stat(PiliSymbols.Danmaku, Fmt.count(d.danmakus), revealable = true)
             }
             Spacer(Modifier.height(6.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {

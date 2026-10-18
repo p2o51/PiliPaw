@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asLong
 import com.gpo.pilipala.core.net.bool
+import com.gpo.pilipala.core.net.has
 import com.gpo.pilipala.core.net.int
 import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.obj
@@ -80,6 +81,12 @@ internal data class Reply(
     val entryText: String,
     val upReplied: Boolean,
     val invisible: Boolean,
+    /**
+     * The user's relation with the commenter when the payload carries it
+     * (member.following / member.is_followed): 0 none, 2 关注, 6 互关; -1 = not in the
+     * payload (the list asks /x/relation/relations instead).
+     */
+    val relation: Int = -1,
 )
 
 @Immutable
@@ -182,7 +189,18 @@ internal fun parseReply(o: JsonObject, upperMid: Long, forceTop: Boolean = false
         entryText = ctrl.str("sub_reply_entry_text"),
         upReplied = ctrl.bool("up_reply"),
         invisible = o.bool("invisible"),
+        relation = payloadRelation(m),
     )
+}
+
+/** member.following (the user follows them) + member.is_followed (they follow the user), when present. */
+private fun payloadRelation(m: JsonObject?): Int {
+    if (!m.has("following")) return -1
+    return when {
+        !m.bool("following") -> 0
+        m.bool("is_followed") -> 6
+        else -> 2
+    }
 }
 
 internal fun parseEmotePackages(data: JsonObject?): List<EmotePackage> =

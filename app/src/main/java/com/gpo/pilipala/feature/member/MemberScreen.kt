@@ -116,6 +116,7 @@ import com.gpo.pilipala.ui.components.BackButton
 import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.ErrorState
 import com.gpo.pilipala.ui.components.ExpressivePageBackground
+import com.gpo.pilipala.ui.components.FameCount
 import com.gpo.pilipala.ui.components.LoadMoreEffect
 import com.gpo.pilipala.ui.components.LoadingFooter
 import com.gpo.pilipala.ui.components.LoadingState
@@ -741,9 +742,9 @@ private fun MemberHeader(
             ) {
                 val displayName = profile?.name ?: vm.initName
                 StatBlock(profile?.following ?: -1, "关注") { nav.push(Route.Follow(vm.mid, displayName)) }
-                StatBlock(profile?.fans ?: -1, "粉丝") { nav.push(Route.Fans(vm.mid, displayName)) }
-                StatBlock(profile?.likes ?: -1, "获赞", null)
-                if ((profile?.views ?: -1) > 0) StatBlock(profile!!.views, "播放", null)
+                StatBlock(profile?.fans ?: -1, "粉丝", fame = true) { nav.push(Route.Fans(vm.mid, displayName)) }
+                StatBlock(profile?.likes ?: -1, "获赞", fame = true, onClick = null)
+                if ((profile?.views ?: -1) > 0) StatBlock(profile!!.views, "播放", fame = true, onClick = null)
             }
         }
     }
@@ -828,8 +829,12 @@ private fun ExpandableSign(sign: String, onLongClick: () -> Unit) {
     )
 }
 
+/**
+ * Number over label. [fame]: a popularity count (粉丝 / 获赞 / 播放) — a line under 名声模式;
+ * a tap on the line shows it, a tap on the rest of the block still opens [onClick].
+ */
 @Composable
-private fun StatBlock(value: Long, label: String, onClick: (() -> Unit)?) {
+private fun StatBlock(value: Long, label: String, fame: Boolean = false, onClick: (() -> Unit)?) {
     Column(
         Modifier
             .clip(YoinContainerShapes.ListRow)
@@ -838,11 +843,16 @@ private fun StatBlock(value: Long, label: String, onClick: (() -> Unit)?) {
     ) {
         val fx = YoinMotion.defaultEffectsSpec<Float>()
         AnimatedContent(
-            targetState = if (value >= 0) Fmt.count(value) else "-",
+            targetState = value >= 0,
             transitionSpec = { fadeIn(fx) togetherWith fadeOut(fx) },
             label = "stat",
-        ) { text ->
-            Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        ) { known ->
+            FameCount(
+                if (known) Fmt.count(value.coerceAtLeast(0)) else "-",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                hide = fame && known,
+            )
         }
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

@@ -54,6 +54,7 @@ import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.ErrorState
+import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.LoadingFooter
 import com.gpo.pilipala.ui.components.LoadingState
 import com.gpo.pilipala.ui.components.VideoCardH
@@ -311,6 +312,7 @@ private fun IntroPane(
                                 following = vm.up.following,
                                 busy = vm.up.busy,
                                 onFollow = onFollow,
+                                mutual = vm.up.mutual,
                             )
                         }
                     }
@@ -375,7 +377,9 @@ private fun VideoActions(
     context: Context,
 ) {
     val a = vm.actions
-    fun label(n: Long, fallback: String) = if (n > 0) Fmt.count(n) else fallback
+    // 名声模式: the group takes plain labels, so a hidden count falls back to the action's name.
+    val fame = FameMode.on
+    fun label(n: Long, fallback: String) = if (n > 0 && !fame) Fmt.count(n) else fallback
     ConnectedActionGroup(
         listOf(
             ActionSpec(

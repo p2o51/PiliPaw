@@ -49,6 +49,7 @@ import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.CoverBadge
+import com.gpo.pilipala.ui.components.FameCount
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.Tag
@@ -140,10 +141,11 @@ internal fun MediaCard(hit: MediaHit, modifier: Modifier = Modifier) {
                         if (hit.scoreUsers > 0) {
                             Spacer(Modifier.width(6.dp))
                             Column {
-                                Text(
+                                FameCount(
                                     Fmt.count(hit.scoreUsers),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = scheme.onSurfaceVariant,
+                                    revealable = false,
                                 )
                                 Text("人评分", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
                             }
@@ -251,6 +253,7 @@ internal fun UserRow(
     modifier: Modifier = Modifier,
     inFeed: Boolean = false,
     onAddToFeed: (() -> Unit)? = null,
+    mutual: Boolean = false,
 ) {
     val nav = LocalNavigator.current
     val scheme = MaterialTheme.colorScheme
@@ -314,7 +317,7 @@ internal fun UserRow(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                CountPair(hit.fans, "粉丝")
+                CountPair(hit.fans, "粉丝", fame = true)
                 CountPair(hit.videos, "视频")
             }
             if (hit.sign.isNotEmpty()) {
@@ -333,7 +336,7 @@ internal fun UserRow(
         }
         if (showFollow) {
             Spacer(Modifier.width(if (onAddToFeed != null) 4.dp else 12.dp))
-            FollowButton(following, onToggleFollow)
+            FollowButton(following, mutual, onToggleFollow)
         }
     }
 }
@@ -366,14 +369,17 @@ private fun AddToFeedButton(inFeed: Boolean, onClick: () -> Unit) {
     }
 }
 
+/** [fame] (粉丝): a line under 名声模式; the row's tap keeps opening the space. */
 @Composable
-private fun CountPair(n: Long, label: String) {
+private fun CountPair(n: Long, label: String, fame: Boolean = false) {
     Row(verticalAlignment = Alignment.Bottom) {
-        Text(
+        FameCount(
             Fmt.count(n),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
+            revealable = false,
+            hide = fame,
         )
         Spacer(Modifier.width(3.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -391,8 +397,9 @@ private fun LevelTag(level: Int) {
     Tag("LV$level", container = container, content = content)
 }
 
+/** 关注 / 已关注, or 互相关注 when the user follows back ([mutual]). */
 @Composable
-private fun FollowButton(following: Boolean, onToggle: () -> Unit) {
+private fun FollowButton(following: Boolean, mutual: Boolean, onToggle: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     ToggleButton(
         checked = following,
@@ -406,19 +413,24 @@ private fun FollowButton(following: Boolean, onToggle: () -> Unit) {
         contentPadding = PaddingValues(horizontal = 14.dp),
         modifier = Modifier.heightIn(min = 36.dp),
     ) {
+        val label = when {
+            following && mutual -> "互相关注"
+            following -> "已关注"
+            else -> "关注"
+        }
         AnimatedContent(
-            targetState = following,
+            targetState = label,
             transitionSpec = fadeThrough(),
             label = "follow",
-        ) { f ->
+        ) { text ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    if (f) PiliSymbols.PersonCheck else PiliSymbols.PersonAdd,
+                    if (text != "关注") PiliSymbols.PersonCheck else PiliSymbols.PersonAdd,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text(if (f) "已关注" else "关注", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
             }
         }
     }

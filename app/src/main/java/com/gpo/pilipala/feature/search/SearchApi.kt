@@ -283,15 +283,18 @@ internal object SearchApi {
         return SearchPage(items, page, numPages)
     }
 
-    /** mid → following (attribute 1 悄悄关注 / 2 关注 / 6 互关). */
-    suspend fun relations(mids: List<Long>): Map<Long, Boolean> {
+    /**
+     * mid → relation attribute (0 none, 1 悄悄关注, 2 关注, 6 互相关注, 128 拉黑); every
+     * asked mid gets an entry (absent from the answer = 0). Read-only GET.
+     */
+    suspend fun relations(mids: List<Long>): Map<Long, Int> {
         if (mids.isEmpty() || !BiliClient.isLoggedIn) return emptyMap()
         val data = BiliClient.getData("/x/relation/relations", mapOf("fids" to mids.joinToString(","))).asObj
-            ?: return emptyMap()
-        return data.mapNotNull { (k, v) ->
+        val known = data?.mapNotNull { (k, v) ->
             val mid = k.toLongOrNull() ?: return@mapNotNull null
-            mid to (v.asObj.int("attribute") in setOf(1, 2, 6))
-        }.toMap()
+            mid to v.asObj.int("attribute")
+        }?.toMap().orEmpty()
+        return mids.associateWith { known[it] ?: 0 }
     }
 
     suspend fun setFollow(mid: Long, follow: Boolean) {

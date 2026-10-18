@@ -221,26 +221,54 @@ class ArchiveActions(private val scope: CoroutineScope) {
     }
 }
 
-/** Follow state + fans count for one UP (from /x/web-interface/card). */
+/**
+ * Follow state + fans count for one UP (from /x/web-interface/card), and whether the
+ * UP follows back ([mutual], from /x/relation: attribute 6 = 互相关注).
+ */
 @Stable
 class UpRelation(private val scope: CoroutineScope, private val onMessage: (String) -> Unit) {
     var mid by mutableLongStateOf(0L)
         private set
     var fans by mutableLongStateOf(-1L)
     var following by mutableStateOf(false)
+
+    /** Following each other: the follow button reads 互相关注 instead of 已关注. */
+    var mutual by mutableStateOf(false)
+        private set
     var busy by mutableStateOf(false)
         private set
+
+    private var relationJob: Job? = null
 
     fun bind(mid: Long) {
         if (mid == this.mid || mid == 0L) return
         this.mid = mid
         fans = -1
         following = false
+        mutual = false
         scope.launch {
             runCatching { BiliClient.getData("/x/web-interface/card", mapOf("mid" to mid)).asObj }
                 .onSuccess { d ->
+                    if (this@UpRelation.mid != mid) return@onSuccess
                     fans = d.obj("card").long("fans", d.long("follower"))
                     following = d.bool("following")
+                }
+        }
+        loadRelation()
+    }
+
+    /** Read-only GET /x/relation: 1 悄悄关注, 2 已关注, 6 互相关注 (logged in only). */
+    private fun loadRelation() {
+        val target = mid
+        if (!BiliClient.isLoggedIn || target == 0L || target == BiliClient.mid) return
+        relationJob?.cancel()
+        relationJob = scope.launch {
+            runCatching { BiliClient.getData("/x/relation", mapOf("fid" to target)).asObj }
+                .onSuccess { d ->
+                    if (mid != target || busy) return@onSuccess
+                    val attribute = d.int("attribute")
+                    following = attribute == 1 || attribute == 2 || attribute == 6
+                    mutual = attribute == 6
                 }
         }
     }
@@ -254,10 +282,13 @@ class UpRelation(private val scope: CoroutineScope, private val onMessage: (Stri
                 BiliClient.postData("/x/relation/modify", mapOf("fid" to mid, "act" to if (target) 1 else 2, "re_src" to 14))
             }.onSuccess {
                 following = target
+                if (!target) mutual = false
                 if (fans >= 0) fans = (fans + if (target) 1 else -1).coerceAtLeast(0)
                 onMessage(if (target) "已关注" else "已取消关注")
             }.onFailure { onMessage(it.friendlyMessage()) }
             busy = false
+            // A new follow of someone who already follows the user is 互相关注 at once.
+            if (target && following) loadRelation()
         }
     }
 }

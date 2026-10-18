@@ -160,6 +160,9 @@ internal class SearchTabViewModel(
     /** mid → following, for the 用户 tab. */
     val following = mutableStateMapOf<Long, Boolean>()
 
+    /** mids that follow the user back while followed (attribute 6): 互相关注. */
+    val mutual = mutableStateMapOf<Long, Boolean>()
+
     private var page = 0
     private var job: Job? = null
     private var generation = 0
@@ -230,7 +233,7 @@ internal class SearchTabViewModel(
         if (tab == SearchTab.User && BiliClient.isLoggedIn) {
             val mids = res.items.filterIsInstance<UserHit>().map { it.mid }
             runCatching { withContext(Dispatchers.Default) { SearchApi.relations(mids) } }
-                .getOrNull()?.let { following.putAll(it) }
+                .getOrNull()?.let { putRelations(it) }
         }
         return res
     }
@@ -264,14 +267,33 @@ internal class SearchTabViewModel(
         refresh()
     }
 
+    private fun putRelations(attributes: Map<Long, Int>) {
+        attributes.forEach { (mid, a) ->
+            following[mid] = a == 1 || a == 2 || a == 6
+            mutual[mid] = a == 6
+        }
+    }
+
     fun toggleFollow(mid: Long, onError: (String) -> Unit) {
         val now = following[mid] == true
+        val wasMutual = mutual[mid] == true
         following[mid] = !now
+        if (now) mutual[mid] = false
         viewModelScope.launch {
-            runCatching { SearchApi.setFollow(mid, !now) }.onFailure {
-                following[mid] = now
-                onError(it.friendlyMessage())
-            }
+            runCatching { SearchApi.setFollow(mid, !now) }
+                .onSuccess {
+                    // Followed someone who follows the user: 互相关注 (read-only relation check).
+                    if (!now) {
+                        runCatching { SearchApi.relations(listOf(mid)) }.getOrNull()
+                            ?.takeIf { following[mid] == true }
+                            ?.let { putRelations(it) }
+                    }
+                }
+                .onFailure {
+                    following[mid] = now
+                    mutual[mid] = wasMutual
+                    onError(it.friendlyMessage())
+                }
         }
     }
 }
@@ -553,6 +575,7 @@ private fun ResultGrid(vm: SearchTabViewModel) {
                 is UserHit -> UserRow(
                     hit = hit,
                     following = vm.following[hit.mid] == true,
+                    mutual = vm.mutual[hit.mid] == true,
                     showFollow = hit.mid != BiliClient.mid,
                     onToggleFollow = {
                         if (!BiliClient.isLoggedIn) {

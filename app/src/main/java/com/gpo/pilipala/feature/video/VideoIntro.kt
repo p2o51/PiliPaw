@@ -56,6 +56,7 @@ import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
+import com.gpo.pilipala.ui.components.FameCount
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
@@ -111,8 +112,8 @@ internal fun VideoHeader(d: VideoDetail, onSeek: ((Long) -> Unit)?, modifier: Mo
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Stat(PiliSymbols.Views, Fmt.count(d.view))
-            Stat(PiliSymbols.Danmaku, Fmt.count(d.danmaku))
+            Stat(PiliSymbols.Views, Fmt.count(d.view), revealable = true)
+            Stat(PiliSymbols.Danmaku, Fmt.count(d.danmaku), revealable = true)
             Text(
                 Fmt.date(d.pubdate, "yyyy-MM-dd HH:mm"),
                 style = MaterialTheme.typography.labelSmall,
@@ -191,7 +192,10 @@ internal fun VideoHeader(d: VideoDetail, onSeek: ((Long) -> Unit)?, modifier: Mo
     }
 }
 
-/** UP card: avatar, name, fans, follow toggle. */
+/**
+ * UP card: avatar, name, fans, follow toggle. Under 名声模式 the fans count is a line;
+ * a tap on the line shows it, the rest of the card still opens the space.
+ */
 @Composable
 internal fun UpCard(
     mid: Long,
@@ -202,6 +206,7 @@ internal fun UpCard(
     busy: Boolean,
     onFollow: () -> Unit,
     modifier: Modifier = Modifier,
+    mutual: Boolean = false,
 ) {
     val nav = LocalNavigator.current
     Row(
@@ -220,12 +225,13 @@ internal fun UpCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val effects = YoinMotion.defaultEffectsSpec<Float>()
                 AnimatedContent(
-                    targetState = fans,
+                    targetState = fans >= 0,
                     transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
                     label = "fans",
-                ) { f ->
-                    Text(
-                        if (f >= 0) Fmt.count(f) else "",
+                ) { known ->
+                    // Keyed on arrival only: a count that moves (follow / unfollow) keeps a revealed number shown.
+                    FameCount(
+                        if (known) Fmt.count(fans.coerceAtLeast(0)) else "",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -237,12 +243,13 @@ internal fun UpCard(
                 }
             }
         }
-        FollowToggle(following, busy, onFollow)
+        FollowToggle(following, busy, onFollow, mutual = mutual)
     }
 }
 
+/** 关注 / 已关注, or 互相关注 when the UP follows back ([mutual]). */
 @Composable
-internal fun FollowToggle(following: Boolean, busy: Boolean, onFollow: () -> Unit) {
+internal fun FollowToggle(following: Boolean, busy: Boolean, onFollow: () -> Unit, mutual: Boolean = false) {
     val haptic = LocalHapticFeedback.current
     val colors = MaterialTheme.colorScheme
     val container by animateColorAsState(
@@ -273,15 +280,20 @@ internal fun FollowToggle(following: Boolean, busy: Boolean, onFollow: () -> Uni
         contentPadding = PaddingValues(horizontal = 14.dp),
     ) {
         val effects = YoinMotion.defaultEffectsSpec<Float>()
+        val label = when {
+            following && mutual -> "互相关注"
+            following -> "已关注"
+            else -> "关注"
+        }
         AnimatedContent(
-            following,
+            label,
             transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
             label = "follow",
-        ) { f ->
+        ) { text ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (f) PiliSymbols.PersonCheck else PiliSymbols.PersonAdd, null, Modifier.size(18.dp))
+                Icon(if (text != "关注") PiliSymbols.PersonCheck else PiliSymbols.PersonAdd, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(if (f) "已关注" else "关注", style = MaterialTheme.typography.labelLarge)
+                Text(text, style = MaterialTheme.typography.labelLarge)
             }
         }
     }

@@ -5,6 +5,7 @@ import com.gpo.pilipala.core.net.BiliException
 import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asObj
 import com.gpo.pilipala.core.net.bool
+import com.gpo.pilipala.core.net.int
 import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
@@ -117,6 +118,20 @@ internal object ReplyApi {
 
     suspend fun delete(oid: Long, type: Int, rpid: Long) {
         BiliClient.postData("/x/v2/reply/del", mapOf("oid" to oid, "type" to type, "rpid" to rpid))
+    }
+
+    /**
+     * Read-only batch lookup of the user's relation with [mids] (GET /x/relation/relations):
+     * mid → attribute (1 悄悄关注, 2 关注, 6 互关, 128 拉黑). Mids it leaves out have none.
+     */
+    suspend fun relations(mids: List<Long>): Map<Long, Int> {
+        if (mids.isEmpty()) return emptyMap()
+        val data = BiliClient.getData("/x/relation/relations", mapOf("fids" to mids.joinToString(","))).asObj
+            ?: return emptyMap()
+        return data.mapNotNull { (k, v) ->
+            val mid = k.toLongOrNull() ?: return@mapNotNull null
+            mid to v.asObj.int("attribute")
+        }.toMap()
     }
 
     suspend fun emotePanel(): List<EmotePackage> {

@@ -22,6 +22,9 @@ import kotlinx.coroutines.launch
 @Immutable
 internal data class LikeState(val liked: Boolean, val count: Long)
 
+/** Mids per /x/relation/relations request. */
+private const val RELATION_BATCH = 40
+
 /** Where a new comment goes: root = 0 for a top-level comment. */
 @Immutable
 internal data class ComposeTarget(
@@ -56,6 +59,54 @@ internal abstract class BaseReplyViewModel(val oid: Long, val type: Int) : ViewM
     var upperMid: Long = 0
         protected set
     private val liking = mutableSetOf<Long>()
+
+    /**
+     * mid → the user's relation with a commenter, only the ones worth a tag: 2 = 关注
+     * (悄悄关注 too), 6 = 互关. Filled per loaded page, logged in only, without holding
+     * the page back; rows read it and their tag fades in once it is known.
+     */
+    val relations = mutableStateMapOf<Long, Int>()
+    private val relationAsked = HashSet<Long>()
+
+    fun relationOf(mid: Long): Int = relations[mid] ?: 0
+
+    /** Learns the relations for a page of replies (and their previews): payload first, then one batched GET. */
+    protected fun learnRelations(replies: List<Reply>) {
+        if (!BiliClient.isLoggedIn || replies.isEmpty()) return
+        val me = BiliClient.mid
+        val unknown = LinkedHashSet<Long>()
+        fun visit(r: Reply) {
+            val mid = r.member.mid
+            if (mid != 0L && mid != me && mid !in relationAsked) {
+                if (r.relation >= 0) {
+                    relationAsked += mid
+                    noteRelation(mid, r.relation)
+                } else {
+                    unknown += mid
+                }
+            }
+            r.replies.forEach { visit(it) }
+        }
+        replies.forEach { visit(it) }
+        if (unknown.isEmpty()) return
+        relationAsked += unknown
+        viewModelScope.launch {
+            unknown.chunked(RELATION_BATCH).forEach { chunk ->
+                runCatching { ReplyApi.relations(chunk) }
+                    .onSuccess { found -> found.forEach { (mid, a) -> noteRelation(mid, a) } }
+                    // Asked again with the next page.
+                    .onFailure { if (it !is CancellationException) relationAsked -= chunk.toSet() }
+            }
+        }
+    }
+
+    private fun noteRelation(mid: Long, attribute: Int) {
+        when (attribute) {
+            1, 2 -> relations[mid] = 2
+            6 -> relations[mid] = 6
+            else -> relations.remove(mid)
+        }
+    }
 
     fun likeState(r: Reply): LikeState = likes[r.rpid] ?: LikeState(r.liked, r.like)
 
@@ -152,6 +203,7 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
             readOnly = page.readOnly
         }
         val topIds = top.map { it.rpid }.toSet()
+        learnRelations(if (cursor == null) page.top + page.replies else page.replies)
         Page(
             items = page.replies.filter { it.rpid !in topIds },
             hasMore = !page.isEnd && page.replies.isNotEmpty(),
@@ -246,6 +298,7 @@ internal class ReplyThreadViewModel(oid: Long, type: Int, val rootRpid: Long) : 
             page.root?.let { root = it }
             count = page.count
         }
+        learnRelations(listOfNotNull(page.root.takeIf { pn == 1 }) + page.replies)
         Page(
             items = page.replies,
             hasMore = page.replies.isNotEmpty() && pn.toLong() * ReplyApi.PAGE_SIZE < page.count,
