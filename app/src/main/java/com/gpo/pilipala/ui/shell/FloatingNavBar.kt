@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.ui.components.WidthClass
+import com.gpo.pilipala.ui.components.seam.seamBarSource
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinMotion
 
@@ -53,7 +54,8 @@ fun floatingBarInset(): Dp = if (widthClass() == WidthClass.Compact) 92.dp else 
 
 /**
  * Yoin's floating Button Group, rebuilt for four tabs: a pill surface
- * (surfaceContainerHigh, no shadow) holding connected buttons. The selected
+ * (surfaceContainerHigh, no shadow — the seams' bottom field parts it from the
+ * content) holding connected buttons. The selected
  * one widens with a label on primaryContainer; a pressed one blooms
  * tertiaryContainer; pressing a button pushes its neighbours (shape-morph
  * feel) — all with the fast spatial spring.
@@ -79,10 +81,13 @@ fun FloatingNavBar(
             .wrapContentWidth(Alignment.CenterHorizontally)
             .widthIn(max = if (compact) 480.dp else 600.dp),
     ) {
+        // Opaque and shadowless: the content runs on under it as the seams' halftone
+        // field (ui/components/seam), which is what separates bar and content.
+        val barColor = MaterialTheme.colorScheme.surfaceContainerHigh
         Surface(
+            modifier = Modifier.seamBarSource(MaterialTheme.shapes.extraLarge, barColor),
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 8.dp,
+            color = barColor,
             shadowElevation = 0.dp,
         ) {
             Row(

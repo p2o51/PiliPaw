@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.feature.home.feedItemMotion
 import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.components.readingWidth
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.theme.YoinLightColorScheme
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinShapes
@@ -104,7 +105,9 @@ private fun CompactBoard(
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         state = listState,
-        modifier = modifier.fillMaxSize(),
+        // The zone chips above are pinned: rows sink under the tide line, and graphics
+        // break into the floating bar's halftone field below (ui/components/seam).
+        modifier = modifier.fillMaxSize().seamViewport(listState),
         contentPadding = PaddingValues(start = margin, end = margin, top = 8.dp, bottom = bottomPadding),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -148,7 +151,7 @@ private fun MediumBoard(
     LazyVerticalGrid(
         columns = GridCells.Fixed(1),
         state = listState,
-        modifier = modifier.fillMaxSize().readingWidth(),
+        modifier = modifier.fillMaxSize().readingWidth().seamViewport(listState),
         contentPadding = PaddingValues(start = margin, end = margin, top = 8.dp, bottom = bottomPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -215,6 +218,7 @@ private fun ExpandedBoard(
             Modifier
                 .weight(0.4f)
                 .fillMaxHeight()
+                .seamViewport(podiumScroll)
                 .verticalScroll(podiumScroll)
                 .padding(top = 8.dp, bottom = bottomPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -228,7 +232,7 @@ private fun ExpandedBoard(
         LazyVerticalGrid(
             columns = GridCells.Fixed(1),
             state = listState,
-            modifier = Modifier.weight(0.6f).fillMaxHeight(),
+            modifier = Modifier.weight(0.6f).fillMaxHeight().seamViewport(listState),
             contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {

@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.gpo.pilipala.core.util.Images
+import com.gpo.pilipala.ui.components.seam.seamGraphic
 import com.gpo.pilipala.ui.theme.YoinArtworkShapes
 
 /**
@@ -23,7 +24,8 @@ import com.gpo.pilipala.ui.theme.YoinArtworkShapes
  * and the CDN asked for a size close to the slot ([thumbWidth]). Pass
  * [thumbHeight] too when the slot crops (long pictures in a clamped slot):
  * the CDN then crops to that box, so a 1080×9000 picture never arrives —
- * or decodes — whole.
+ * or decodes — whole. It is a seam graphic ([seamGraphic]): inside a
+ * seamViewport it dissolves at the pinned chrome and the floating bar.
  */
 @Composable
 fun NetImage(
@@ -43,6 +45,9 @@ fun NetImage(
     }
     Box(
         modifier = modifier
+            // A graphic for the seams (ui/components/seam): sinks under the tide line,
+            // dots in the floating bar's field. A no-op outside a seamViewport.
+            .seamGraphic()
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {

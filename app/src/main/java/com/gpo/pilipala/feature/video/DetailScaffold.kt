@@ -50,6 +50,7 @@ import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.ExpressivePageBackground
 import com.gpo.pilipala.ui.components.LocalSnackbarHost
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.theme.LocalPiliDark
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import kotlinx.coroutines.launch
@@ -147,7 +148,10 @@ internal fun DetailScaffold(
                             beyondViewportPageCount = 1,
                             key = { sideTabs.getOrNull(it)?.label ?: it },
                         ) { page ->
-                            sidePage(page, PaddingValues(bottom = navBottom + 16.dp))
+                            // Each tab's list sinks under the tide line at the tab row (ui/components/seam).
+                            Box(Modifier.fillMaxSize().seamViewport()) {
+                                sidePage(page, PaddingValues(bottom = navBottom + 16.dp))
+                            }
                         }
                     }
                 }
@@ -164,7 +168,11 @@ internal fun DetailScaffold(
                     modifier = Modifier.weight(1f),
                     beyondViewportPageCount = 1,
                 ) { page ->
-                    compactPage(page, PaddingValues(bottom = navBottom + 16.dp))
+                    // Intro and comments sink under the tide line at the tab row instead of being
+                    // cut there; the mask shows the page's own wash beneath (ui/components/seam).
+                    Box(Modifier.fillMaxSize().seamViewport()) {
+                        compactPage(page, PaddingValues(bottom = navBottom + 16.dp))
+                    }
                 }
             }
         }

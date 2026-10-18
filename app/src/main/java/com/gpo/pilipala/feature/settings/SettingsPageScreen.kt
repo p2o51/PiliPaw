@@ -82,6 +82,8 @@ import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.components.seam.SeamTopPreference
+import com.gpo.pilipala.ui.components.seam.currentSeamTopStyle
 import com.gpo.pilipala.ui.theme.ThemeSettings
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
@@ -131,6 +133,7 @@ private fun ColumnScope.StyleBody() {
     val accent by ThemeSettings.accentSeed.state.collectAsState()
     val cover by AppSettings.coverColor.state.collectAsState()
     val homeTab by AppSettings.homeDefaultTab.state.collectAsState()
+    val seamStyle = currentSeamTopStyle()
     // Wallpaper colours exist from 8.1; the system's own dynamic scheme from 12.
     val dynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1
     val systemStyleSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -194,6 +197,17 @@ private fun ColumnScope.StyleBody() {
                 summary = "详情页跟随封面配色",
                 checked = cover,
                 onCheckedChange = { AppSettings.set(AppSettings.coverColor, it) },
+            )
+        }
+    }
+    SettingsGroup("动效") {
+        item {
+            SettingsToggleItem(
+                title = "滚动边缘",
+                icon = TideGlyph,
+                choices = SettingsChoices.seamTopStyle,
+                selected = seamStyle,
+                onSelect = { SeamTopPreference.select(it) },
             )
         }
     }

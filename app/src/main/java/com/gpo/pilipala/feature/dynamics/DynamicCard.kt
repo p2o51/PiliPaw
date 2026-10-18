@@ -81,6 +81,8 @@ import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.components.seam.seamGraphic
+import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
@@ -114,6 +116,9 @@ internal fun DynamicCard(
         Column(
             modifier
                 .fillMaxWidth()
+                // A tinted card is one print for the seams (it dots in the floating bar's
+                // field); every text block in it carries seamText and lifts out whole.
+                .seamGraphic()
                 .clip(YoinContainerShapes.Card)
                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
                 // In detail mode the card still opens what it links to (article, video, live…).
@@ -174,7 +179,7 @@ private fun AuthorRow(item: DynItem) {
             onClick = if (isPgc || mid <= 0) null else { { nav.push(Route.Member(mid, face, name)) } },
         )
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f).seamText(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 name,
                 style = MaterialTheme.typography.titleSmall,
@@ -202,7 +207,7 @@ private fun AuthorRow(item: DynItem) {
         if (isTop) {
             Tag("置顶", Modifier.padding(horizontal = 4.dp))
         }
-        IconButton(onClick = { showMore = true }, shapes = IconButtonDefaults.shapes()) {
+        IconButton(onClick = { showMore = true }, shapes = IconButtonDefaults.shapes(), modifier = Modifier.seamText()) {
             Icon(YoinSymbols.MoreVertical, contentDescription = "更多", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -227,7 +232,7 @@ private fun DynamicBody(
             "#" + topic.str("name"),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.overflowClickable(
+            modifier = Modifier.seamText().overflowClickable(
                 horizontal = 8.dp,
                 vertical = 14.dp,
                 shape = LinkShape,
@@ -240,11 +245,12 @@ private fun DynamicBody(
     val textStyle = if (nested) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge
     if (detail && !nested) {
         androidx.compose.foundation.text.selection.SelectionContainer {
-            RichTextView(rich, style = textStyle)
+            RichTextView(rich, Modifier.seamText(textStyle.fontSize), style = textStyle)
         }
     } else {
         RichTextView(
             rich,
+            Modifier.seamText(textStyle.fontSize),
             style = textStyle,
             collapsedLines = if (nested) 4 else 6,
             expandable = !nested,
@@ -489,7 +495,7 @@ private fun ForwardBlock(orig: DynItem, viewer: ImageViewerState) {
             QuietNotice(orig.json.major.obj("none").str("tips").ifEmpty { "源动态已被删除" })
             return@Column
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.seamText(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val name = a.str("name")
             val mid = a.long("mid")
             val isPgc = a.str("type") == "AUTHOR_TYPE_PGC"
@@ -566,7 +572,7 @@ private fun VideoBlock(
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 2.dp),
+                modifier = Modifier.padding(horizontal = 2.dp).seamText(),
             )
         }
     }
@@ -595,6 +601,7 @@ private fun LiveBlock(
                     Text(
                         watched,
                         modifier = Modifier
+                            .seamText()
                             .clip(ContinuousRoundedCornerShape(6.dp))
                             .background(Color.Black.copy(alpha = 0.55f))
                             .padding(horizontal = 6.dp, vertical = 2.dp),
@@ -614,12 +621,12 @@ private fun LiveBlock(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(PiliSymbols.Live, null, Modifier.size(14.dp), tint = Color.White)
-                    Text(area, style = MaterialTheme.typography.labelSmall, color = Color.White)
+                    Icon(PiliSymbols.Live, null, Modifier.size(14.dp).seamText(), tint = Color.White)
+                    Text(area, style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.seamText())
                 }
             }
         }
-        Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.seamText())
     }
 }
 
@@ -680,7 +687,7 @@ private fun RowBlock(
                 Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
             }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f).seamText(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (!subtitle.isNullOrEmpty()) {
                 Text(
@@ -698,7 +705,7 @@ private fun RowBlock(
 
 @Composable
 private fun QuietNotice(text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.seamText(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Icon(YoinSymbols.Info, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
         Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -729,7 +736,8 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
     val fadeOutSpec = YoinMotion.fastEffectsSpec<Float>()
 
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 40.dp),
+        // The quiet buttons are labels: they lift out of the card's print whole.
+        Modifier.fillMaxWidth().heightIn(min = 40.dp).seamText(),
         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
     ) {
         Button(

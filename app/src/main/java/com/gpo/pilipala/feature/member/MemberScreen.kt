@@ -127,6 +127,9 @@ import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.components.WidthClass
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.components.seam.seamGraphic
+import com.gpo.pilipala.ui.components.seam.seamText
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.CoverTheme
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
@@ -449,6 +452,9 @@ private fun MemberContent(vm: MemberViewModel) {
                     Modifier
                         .width(380.dp)
                         .fillMaxHeight()
+                        // The header column runs up under the overlay bar: it sinks under the
+                        // tide line there instead of showing through the bar.
+                        .seamViewport(wideScroll, topChrome = pinnedTop)
                         .verticalScroll(wideScroll)
                         .padding(bottom = navBottom + 16.dp),
                 ) { header() }
@@ -907,10 +913,12 @@ private fun HomeTab(vm: MemberViewModel, contentPadding: PaddingValues, onArchiv
         scheme.secondaryContainer to scheme.onSecondaryContainer,
         scheme.tertiaryContainer to scheme.onTertiaryContainer,
     )
+    val gridState = rememberLazyGridState()
     LazyVerticalGrid(
         columns = GridCells.Adaptive(112.dp),
-        state = rememberLazyGridState(),
-        modifier = Modifier.fillMaxSize(),
+        state = gridState,
+        // Under the pinned tab row: tiles and rows sink under the tide line.
+        modifier = Modifier.fillMaxSize().seamViewport(gridState),
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
@@ -925,11 +933,12 @@ private fun HomeTab(vm: MemberViewModel, contentPadding: PaddingValues, onArchiv
             val (bg, fg) = palette[i % palette.size]
             Surface(
                 onClick = tile.onClick,
+                modifier = Modifier.seamGraphic(),
                 shape = YoinContainerShapes.Card,
                 color = bg,
                 contentColor = fg,
             ) {
-                Column(Modifier.padding(14.dp)) {
+                Column(Modifier.padding(14.dp).seamText()) {
                     Icon(tile.icon, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.height(18.dp))
                     Text(tile.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -963,7 +972,8 @@ private fun androidx.compose.foundation.lazy.grid.LazyGridScope.recentSection(
                 .padding(top = 14.dp)
                 .clip(YoinContainerShapes.ListRow)
                 .clickable(onClick = onMore)
-                .padding(vertical = 6.dp),
+                .padding(vertical = 6.dp)
+                .seamText(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -1010,7 +1020,7 @@ private fun CollectionsTab(vm: MemberViewModel, contentPadding: PaddingValues) {
         pager.items.isEmpty() -> EmptyState("暂无合集")
         else -> LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().seamViewport(listState),
             contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -1032,7 +1042,8 @@ private fun CollectionRow(mid: Long, c: MemberCollection) {
                 .padding(horizontal = 8.dp)
                 .clip(YoinContainerShapes.ListRow)
                 .clickable(onClick = open)
-                .padding(horizontal = 8.dp, vertical = 10.dp),
+                .padding(horizontal = 8.dp, vertical = 10.dp)
+                .seamText(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {

@@ -38,6 +38,8 @@ import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.pageSharedSource
+import com.gpo.pilipala.ui.components.seam.seamGraphic
+import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.yoin.symbols.PiliSymbols
@@ -95,12 +97,13 @@ fun VideoCardV(
             .clip(YoinContainerShapes.Card)
             .combinedClickable(onLongClick = onLongClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) }),
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f)) {
+        // Cover, scrim and badge are one print for the seams; the labels on it lift out whole.
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).seamGraphic()) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 360.dp)
             CoverStats(item, Modifier.align(Alignment.BottomCenter))
             if (item.badge.isNotEmpty()) CoverBadge(item.badge, Modifier.align(Alignment.TopEnd).padding(6.dp))
         }
-        Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 10.dp)) {
+        Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 10.dp).seamText()) {
             Text(
                 item.title,
                 style = MaterialTheme.typography.titleSmall,
@@ -144,7 +147,7 @@ fun VideoCardH(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.width(coverWidth).aspectRatio(16f / 10f)) {
+        Box(Modifier.width(coverWidth).aspectRatio(16f / 10f).seamGraphic()) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = coverWidth)
             if (item.duration > 0) {
                 DurationChip(Fmt.duration(item.duration), Modifier.align(Alignment.BottomEnd).padding(4.dp))
@@ -158,7 +161,7 @@ fun VideoCardH(
                 )
             }
         }
-        Column(Modifier.weight(1f).height(coverWidth * 10f / 16f), verticalArrangement = Arrangement.SpaceBetween) {
+        Column(Modifier.weight(1f).height(coverWidth * 10f / 16f).seamText(), verticalArrangement = Arrangement.SpaceBetween) {
             Text(
                 item.title,
                 style = MaterialTheme.typography.titleSmall,
@@ -198,7 +201,7 @@ fun VideoCardH(
  */
 @Composable
 fun Stat(icon: ImageVector, text: String, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+    Row(modifier.seamText(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         Icon(icon, null, Modifier.size(14.dp), tint = tint)
         Text(text, style = MaterialTheme.typography.labelSmall, color = tint)
     }
@@ -212,7 +215,7 @@ private fun CoverStats(item: VideoItem, modifier: Modifier) {
         if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku), tint = Color.White)
         Spacer(Modifier.weight(1f))
         if (item.duration > 0) {
-            Text(Fmt.duration(item.duration), style = MaterialTheme.typography.labelSmall, color = Color.White)
+            Text(Fmt.duration(item.duration), style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.seamText())
         }
     }
 }
@@ -259,6 +262,7 @@ fun DurationChip(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         modifier = modifier
+            .seamText()
             .clip(ContinuousRoundedCornerShape(6.dp))
             .background(Color.Black.copy(alpha = 0.6f))
             .padding(horizontal = 5.dp, vertical = 1.dp),
@@ -276,6 +280,7 @@ fun CoverBadge(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         modifier = modifier
+            .seamText()
             .clip(ContinuousRoundedCornerShape(6.dp))
             .background(MaterialTheme.colorScheme.tertiary)
             .padding(horizontal = 6.dp, vertical = 2.dp),
@@ -296,6 +301,7 @@ fun Tag(
     Text(
         text,
         modifier = modifier
+            .seamText()
             .clip(ContinuousRoundedCornerShape(4.dp))
             .background(container)
             .padding(horizontal = 4.dp, vertical = 1.dp),

@@ -147,6 +147,7 @@ fun FavScreen(route: Route.Fav) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(168.dp),
                 state = gridState,
+                modifier = Modifier.librarySeam(gridState, listPadding),
                 contentPadding = PaddingValues(
                     start = 12.dp,
                     end = 12.dp,

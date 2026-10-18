@@ -168,6 +168,7 @@ fun LaterScreen() {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(RowGridMinCell),
                 state = gridState,
+                modifier = Modifier.librarySeam(gridState, listPadding),
                 contentPadding = listPadding,
             ) {
                 item(key = "__play", span = { GridItemSpan(maxLineSpan) }) {

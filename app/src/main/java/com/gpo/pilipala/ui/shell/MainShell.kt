@@ -26,6 +26,7 @@ import com.gpo.pilipala.feature.home.HomeScreen
 import com.gpo.pilipala.feature.mine.MineScreen
 import com.gpo.pilipala.feature.rank.RankScreen
 import com.gpo.pilipala.ui.components.LocalBottomBarInset
+import com.gpo.pilipala.ui.components.seam.ProvideSeamBarField
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
@@ -59,36 +60,40 @@ fun MainShell() {
     val reselects = remember { MutableSharedFlow<Int>(extraBufferCapacity = 1) }
     BackHandler(enabled = selected != 0) { selected = 0 }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        CompositionLocalProvider(LocalBottomBarInset provides floatingBarInset()) {
-            val enterFade = YoinMotion.defaultEffectsSpec<Float>()
-            val enterScale = YoinMotion.defaultSpatialSpec<Float>()
-            val exitFade = YoinMotion.fastEffectsSpec<Float>()
-            AnimatedContent(
-                targetState = selected,
-                transitionSpec = {
-                    (fadeIn(enterFade) + scaleIn(enterScale, initialScale = 0.98f)).togetherWith(fadeOut(exitFade))
-                },
-                label = "shellSection",
-            ) { index ->
-                holder.SaveableStateProvider(index) {
-                    val mine = remember(index) { reselects.filter { it == index }.map { } }
-                    CompositionLocalProvider(LocalTabReselect provides mine) {
-                        when (index) {
-                            0 -> HomeScreen()
-                            1 -> RankScreen()
-                            2 -> DynamicsScreen()
-                            else -> MineScreen()
+    // The floating bar reports where it sits; main-tab lists marked with seamViewport
+    // break their graphics into the halftone field around it (Yoin's dissolve).
+    ProvideSeamBarField {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+            CompositionLocalProvider(LocalBottomBarInset provides floatingBarInset()) {
+                val enterFade = YoinMotion.defaultEffectsSpec<Float>()
+                val enterScale = YoinMotion.defaultSpatialSpec<Float>()
+                val exitFade = YoinMotion.fastEffectsSpec<Float>()
+                AnimatedContent(
+                    targetState = selected,
+                    transitionSpec = {
+                        (fadeIn(enterFade) + scaleIn(enterScale, initialScale = 0.98f)).togetherWith(fadeOut(exitFade))
+                    },
+                    label = "shellSection",
+                ) { index ->
+                    holder.SaveableStateProvider(index) {
+                        val mine = remember(index) { reselects.filter { it == index }.map { } }
+                        CompositionLocalProvider(LocalTabReselect provides mine) {
+                            when (index) {
+                                0 -> HomeScreen()
+                                1 -> RankScreen()
+                                2 -> DynamicsScreen()
+                                else -> MineScreen()
+                            }
                         }
                     }
                 }
             }
+            FloatingNavBar(
+                tabs = tabs,
+                selected = selected,
+                onSelect = { if (it == selected) reselects.tryEmit(it) else selected = it },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
-        FloatingNavBar(
-            tabs = tabs,
-            selected = selected,
-            onSelect = { if (it == selected) reselects.tryEmit(it) else selected = it },
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
     }
 }

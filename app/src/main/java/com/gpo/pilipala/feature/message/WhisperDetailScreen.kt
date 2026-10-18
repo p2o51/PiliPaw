@@ -100,6 +100,8 @@ import com.gpo.pilipala.ui.components.LoadingState
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.components.seam.seamRemainingPx
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
@@ -277,7 +279,9 @@ private fun MessageList(
     LazyColumn(
         state = listState,
         reverseLayout = true,
-        modifier = Modifier.fillMaxSize(),
+        // Older messages scroll up under the top bar and sink under the tide line there.
+        // Reversed, the distance to the top is how far the list can still go back.
+        modifier = Modifier.fillMaxSize().seamViewport(scrolledPx = { listState.seamRemainingPx() }, remainingPx = null),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

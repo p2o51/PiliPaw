@@ -188,6 +188,7 @@ internal fun UserList(
         LazyVerticalGrid(
             columns = GridCells.Adaptive(RowGridMinCell),
             state = gridState,
+            modifier = Modifier.librarySeam(gridState, listPadding),
             contentPadding = listPadding,
         ) {
             items(pager.items, key = { it.mid }) { u ->

@@ -25,6 +25,7 @@ import com.gpo.pilipala.ui.components.LoadingFooter
 import com.gpo.pilipala.ui.components.LoadingState
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.readingWidth
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.yoin.symbols.PiliSymbols
 
 internal class MemberDynamicsViewModel(mid: Long) : ViewModel() {
@@ -54,7 +55,8 @@ fun MemberDynamicsList(
     LoadMoreEffect(state) { pager.loadMore() }
 
     LazyColumn(
-        modifier = modifier,
+        // Under the member page's tab row (or a top bar): cards sink under the tide line.
+        modifier = modifier.seamViewport(state),
         state = state,
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(12.dp),

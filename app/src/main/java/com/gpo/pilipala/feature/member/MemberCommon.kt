@@ -59,6 +59,8 @@ import com.gpo.pilipala.ui.components.RefreshBox
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.VideoCardH
 import com.gpo.pilipala.ui.components.VideoItem
+import com.gpo.pilipala.ui.components.seam.seamText
+import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.yoin.symbols.PiliSymbols
@@ -92,7 +94,8 @@ internal fun MemberVideoGrid(
         LazyVerticalGrid(
             columns = GridCells.Adaptive(RowCardMinWidth),
             state = state,
-            modifier = Modifier.fillMaxWidth(),
+            // Under the member page's tab row or a top bar: rows sink under the tide line.
+            modifier = Modifier.fillMaxWidth().seamViewport(state),
             contentPadding = contentPadding,
         ) {
             header?.invoke(this)
@@ -223,7 +226,7 @@ internal fun ArticleRow(article: MemberArticle, modifier: Modifier = Modifier) {
             .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.weight(1f).seamText(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 article.title,
                 style = MaterialTheme.typography.titleSmall,
