@@ -165,10 +165,15 @@ object CdnRouter {
         return when (mode) {
             "fixed" -> CdnHosts.swap(url, CdnSettings.fixedHost.value) ?: url
             "auto" -> {
-                val target = session?.activeHost ?: return url
-                if (CdnHosts.hostOf(url) == target) url
-                else if (kind == CdnHosts.Kind.Akamai) siblingSwap(url, target) ?: url
-                else CdnHosts.swap(url, target) ?: url
+                val s = session ?: return url
+                val target = s.activeHost ?: return url
+                when {
+                    CdnHosts.hostOf(url) == target -> url
+                    // Akamai only accepts its own signed URL: use the issued one for these bytes.
+                    target.endsWith(".akamaized.net") -> issuedOn(s, url, target) ?: url
+                    kind == CdnHosts.Kind.Akamai -> siblingSwap(url, target) ?: url
+                    else -> CdnHosts.swap(url, target) ?: url
+                }
             }
             else -> url
         }
@@ -183,6 +188,14 @@ object CdnRouter {
             CdnHosts.classify(it) == CdnHosts.Kind.Upos && runCatching { android.net.Uri.parse(it).path }.getOrNull() == path
         } ?: return null
         return CdnHosts.swap(sibling, target)
+    }
+
+    /** The issued URL on [host] for the same representation (same path) as [url], if Bilibili issued one. */
+    private fun issuedOn(s: Session, url: String, host: String): String? {
+        val path = runCatching { android.net.Uri.parse(url).path }.getOrNull() ?: return null
+        return (s.videoUrls + s.audioUrls).firstOrNull {
+            CdnHosts.hostOf(it) == host && runCatching { android.net.Uri.parse(it).path }.getOrNull() == path
+        }
     }
 
     fun isVideoUrl(original: String): Boolean = session?.videoUrls?.contains(original) == true
@@ -217,6 +230,18 @@ object CdnRouter {
             list.removeAll { now - it > 30_000 }
         }
         remember(host, 0, failed = true)
+        // A line we switched to that fails: go back to what Bilibili issued and stop
+        // switching for this video. Playback must never be worse than without us.
+        if (s.activeHost != null && host == s.activeHost) {
+            synchronized(s) {
+                s.activeHost = null
+                s.switches = 4
+                s.abortGeneration++
+            }
+            android.util.Log.i("PiliCdn", "switched line $host failed, back to native")
+            _status.value = _status.value.copy(switched = false, note = "已切回原生线路")
+            return
+        }
         if (CdnSettings.mode.value == "auto" && CdnSettings.autoSwitch.value && synchronized(list) { list.size } >= 2) {
             maybeRace(s, original, host, 0, 0, "线路连续出错")
         }
@@ -264,6 +289,7 @@ object CdnRouter {
                 }
             }
             if (session !== s) return@launch
+            android.util.Log.i("PiliCdn", "race why=$why current=$current results=$results switch=$switchNow")
             val note = when {
                 switchNow -> {
                     val (region, vendor) = CdnHosts.describe(best!!.first)

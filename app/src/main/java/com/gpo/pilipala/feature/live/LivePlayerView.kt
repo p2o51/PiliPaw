@@ -36,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -129,12 +130,16 @@ internal fun LivePlayerView(
     ) {
         Box(Modifier.fillMaxSize().turnedContent(turned) { turnAngle.value }) {
             if (live) {
-                ContentFrame(
-                    player = vm.player,
-                    modifier = Modifier.fillMaxSize(),
-                    surfaceType = surfaceType,
-                    contentScale = ContentScale.Fit,
-                )
+                // A TextureView keeps its old buffer size across a window resize (rotation) and
+                // draws the picture small in a corner on some devices: give it a fresh view instead.
+                key(surfaceType, if (surfaceType == SURFACE_TYPE_TEXTURE_VIEW) configuration.screenWidthDp * 10_000 + configuration.screenHeightDp else 0) {
+                    ContentFrame(
+                        player = vm.player,
+                        modifier = Modifier.fillMaxSize(),
+                        surfaceType = surfaceType,
+                        contentScale = ContentScale.Fit,
+                    )
+                }
                 LiveDanmakuLayer(vm.incoming, enabled = vm.danmakuOn && !pip, big = fullscreen, modifier = Modifier.fillMaxSize())
             } else {
                 val cover = info?.cover?.ifEmpty { info.background }.orEmpty()

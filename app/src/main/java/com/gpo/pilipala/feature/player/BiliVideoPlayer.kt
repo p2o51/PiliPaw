@@ -32,6 +32,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -296,13 +297,17 @@ fun BiliVideoPlayer(
             .onGloballyPositioned { yInWindow = it.positionInWindow().y },
     ) {
         Box(Modifier.fillMaxSize().turnedContent(turned) { turnAngle.value }) {
-            ContentFrame(
-                player = ctrl.player,
-                modifier = Modifier.fillMaxSize(),
-                surfaceType = surfaceType,
-                contentScale = ContentScale.Fit,
-                shutter = {},
-            )
+            // A TextureView keeps its old buffer size across a window resize (rotation) and
+            // draws the picture small in a corner on some devices: give it a fresh view instead.
+            key(surfaceType, if (surfaceType == SURFACE_TYPE_TEXTURE_VIEW) configuration.screenWidthDp * 10_000 + configuration.screenHeightDp else 0) {
+                ContentFrame(
+                    player = ctrl.player,
+                    modifier = Modifier.fillMaxSize(),
+                    surfaceType = surfaceType,
+                    contentScale = ContentScale.Fit,
+                    shutter = {},
+                )
+            }
 
             PlayerChromeTheme {
                 PlayerLayers(

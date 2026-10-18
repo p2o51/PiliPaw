@@ -187,6 +187,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     // Overseas line routing (feature/player/cdn): every media open goes through CdnRouter.
     private val progressiveFactory by lazy {
         ProgressiveMediaSource.Factory(com.gpo.pilipala.feature.player.cdn.CdnDataSource.Factory(dataSourceFactory))
+            .setLoadErrorHandlingPolicy(com.gpo.pilipala.feature.player.cdn.CdnLoadErrorPolicy())
     }
 
     private val listener = object : Player.Listener {
