@@ -1,6 +1,8 @@
 package com.gpo.pilipala.feature.video
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -19,6 +21,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
@@ -46,6 +50,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -54,8 +60,11 @@ import com.gpo.pilipala.ui.components.ErrorState
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
+import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** 投币: 1 or 2 coins (capped by [maxCoins]), optional like. */
 @Composable
@@ -71,7 +80,7 @@ internal fun CoinSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text("投币", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(20.dp))
+            CoinFlip(count, Modifier.padding(vertical = 8.dp))
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
@@ -128,6 +137,85 @@ internal fun CoinSheet(
                 Text("投币", style = MaterialTheme.typography.titleSmall)
             }
         }
+    }
+}
+
+private val CoinSize = 72.dp
+
+/** The coin's disc inside its 24-unit glyph (radius 9.25), plus a margin of the sheet's colour. */
+private val CoinRim = CoinSize * (18.5f / 24f) + 6.dp
+
+/** How far the second coin sits from the first once stacked. */
+private val CoinStackX = 26.dp
+private val CoinStackY = 10.dp
+
+/**
+ * The coins about to be given, purely a picture of [count]: every switch flips the coin
+ * over in 3D (always the same way round, hopping a little as it turns edge-on), and for
+ * 2 a second coin turns in and lands behind it, up and to the right.
+ */
+@Composable
+private fun CoinFlip(count: Int, modifier: Modifier = Modifier) {
+    val flipSpec = YoinMotion.defaultSpatialSpec<Float>(YoinMotionRole.Expressive)
+    val flip = remember { Animatable(0f) }
+    // [half turns so far, the count they were made for]
+    val turns = remember { intArrayOf(0, count) }
+    LaunchedEffect(count) {
+        if (count != turns[1]) {
+            turns[1] = count
+            turns[0]++
+        }
+        // A switch mid-flip carries on from where the coin is, velocity and all.
+        flip.animateTo(turns[0] * 180f, flipSpec)
+    }
+    val stacked by animateFloatAsState(
+        if (count >= 2) 1f else 0f,
+        YoinMotion.defaultSpatialSpec(YoinMotionRole.Expressive),
+        label = "coinStack",
+    )
+    val tint = MaterialTheme.colorScheme.tertiary
+    val rim = BottomSheetDefaults.ContainerColor
+    Box(modifier.fillMaxWidth().height(CoinSize + 32.dp), contentAlignment = Alignment.Center) {
+        CoinFace(
+            tint = tint,
+            rim = rim,
+            modifier = Modifier.graphicsLayer {
+                val s = stacked
+                translationX = (CoinStackX * 0.5f).toPx() * s
+                translationY = -CoinStackY.toPx() * s
+                rotationY = (1f - s) * -150f
+                cameraDistance = 12f * density
+                alpha = s.coerceIn(0f, 1f)
+                scaleX = 0.9f
+                scaleY = 0.9f
+            },
+        )
+        CoinFace(
+            tint = tint,
+            rim = rim,
+            modifier = Modifier.graphicsLayer {
+                val phase = flip.value / 180f
+                // 0 at rest (a face to the front), 1 edge-on.
+                val hop = (abs(phase - phase.roundToInt()) * 2f).coerceIn(0f, 1f)
+                val s = stacked
+                translationX = -(CoinStackX * 0.5f).toPx() * s
+                translationY = -hop * 14.dp.toPx() + (CoinStackY * 0.4f).toPx() * s
+                rotationY = flip.value
+                cameraDistance = 12f * density
+                val grow = 1f + 0.08f * hop
+                scaleX = grow
+                scaleY = grow
+            },
+        )
+    }
+}
+
+/** One coin: the filled coin glyph on a disc of the sheet's colour that parts it from the coin behind. */
+@Composable
+private fun CoinFace(tint: Color, rim: Color, modifier: Modifier) {
+    Box(modifier.size(CoinSize), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(CoinRim).clip(CircleShape).background(rim))
+        Icon(PiliSymbols.CoinFilled, contentDescription = null, modifier = Modifier.size(CoinSize), tint = tint)
     }
 }
 
