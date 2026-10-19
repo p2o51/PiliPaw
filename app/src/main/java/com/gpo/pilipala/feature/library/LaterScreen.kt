@@ -49,7 +49,10 @@ import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.feature.player.PlayQueues
 import com.gpo.pilipala.feature.player.QueueItem
+import com.gpo.pilipala.feature.videomenu.VideoCardMenu
+import com.gpo.pilipala.feature.videomenu.VideoMenuAction
 import com.gpo.pilipala.feature.widget.WidgetStore
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Page
@@ -161,9 +164,11 @@ fun LaterScreen() {
         YoinMotion.defaultSpatialSpec(),
         label = "toolbarRoom",
     )
+    // 仅听声音 next to the play buttons: the queue starts (and stays) audio-only.
+    var listen by rememberSaveable { mutableStateOf(false) }
     val startQueue: (Boolean, String?) -> Unit = { shuffle, from ->
         val route = vm.queueRoute(shuffle, from)
-        if (route != null) nav.push(route) else toast("没有可播放的视频")
+        if (route != null) nav.push(route.copy(audioOnly = listen)) else toast("没有可播放的视频")
     }
 
     LibraryScaffold(
@@ -224,6 +229,8 @@ fun LaterScreen() {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                             QueuePlayButtons(
                                 loading = false,
+                                listening = listen,
+                                onListeningChange = { listen = it },
                                 onPlay = { startQueue(false, null) },
                                 onShuffle = { startQueue(true, null) },
                             )
@@ -283,16 +290,17 @@ fun LaterScreen() {
     }
 
     sheet?.let { item ->
-        ItemActionSheet(
-            title = item.title,
-            cover = item.cover,
-            actions = listOfNotNull(
+        VideoCardMenu(
+            item,
+            onDismiss = { sheet = null },
+            watchLater = false,
+            extras = listOfNotNull(
                 if (item.target == null && item.bvid.isNotEmpty()) {
-                    SheetAction("从这里播放", YoinSymbols.Playlist) { startQueue(false, item.bvid) }
+                    VideoMenuAction("从这里播放", YoinSymbols.Playlist) { startQueue(false, item.bvid) }
                 } else {
                     null
                 },
-                SheetAction("移除", YoinSymbols.Delete, destructive = true) {
+                VideoMenuAction("移除", YoinSymbols.Delete, destructive = true) {
                     scope.launch {
                         runCatching { vm.remove(listOf(item)) }
                             .onSuccess { toast("已移除") }
@@ -300,7 +308,6 @@ fun LaterScreen() {
                     }
                 },
             ),
-            onDismiss = { sheet = null },
         )
     }
     confirm?.let { c ->

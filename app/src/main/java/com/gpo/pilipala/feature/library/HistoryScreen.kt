@@ -70,6 +70,9 @@ import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.feature.videomenu.VideoCardMenu
+import com.gpo.pilipala.feature.videomenu.VideoMenuAction
+import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.navigation.LinkRouter
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
@@ -430,34 +433,29 @@ fun HistoryScreen() {
     }
 
     sheet?.let { e ->
-        ItemActionSheet(
-            title = e.title,
-            cover = e.cover,
-            actions = buildList {
-                if (e.business == "archive" && e.oid > 0) {
-                    add(
-                        SheetAction("稍后再看", PiliSymbols.WatchLater) {
-                            scope.launch {
-                                runCatching { addToLater(e.oid) }
-                                    .onSuccess { toast("已添加") }
-                                    .onFailure { toast(it.friendlyMessage()) }
-                            }
-                        },
-                    )
-                }
-                if (e.authorMid > 0) {
-                    add(SheetAction("访问 ${e.authorName}", YoinSymbols.Person) { nav.push(Route.Member(e.authorMid, e.authorFace, e.authorName)) })
-                }
-                add(
-                    SheetAction("删除记录", YoinSymbols.Delete, destructive = true) {
-                        scope.launch {
-                            runCatching { vm.delete(listOf(e)) }
-                                .onSuccess { toast("已删除") }
-                                .onFailure { toast(it.friendlyMessage()) }
-                        }
-                    },
-                )
-            },
+        VideoCardMenu(
+            item = VideoItem(
+                bvid = e.bvid,
+                aid = if (e.business == "archive") e.oid else 0,
+                cid = if (e.business == "archive") e.cid else 0,
+                title = e.title,
+                cover = e.cover,
+                duration = e.duration,
+                ownerMid = e.authorMid,
+                ownerName = e.authorName,
+                ownerFace = e.authorFace,
+                progress = e.progress,
+            ),
+            isVideo = e.business == "archive" && (e.bvid.isNotEmpty() || e.oid > 0),
+            extras = listOf(
+                VideoMenuAction("删除记录", YoinSymbols.Delete, destructive = true) {
+                    scope.launch {
+                        runCatching { vm.delete(listOf(e)) }
+                            .onSuccess { toast("已删除") }
+                            .onFailure { toast(it.friendlyMessage()) }
+                    }
+                },
+            ),
             onDismiss = { sheet = null },
         )
     }

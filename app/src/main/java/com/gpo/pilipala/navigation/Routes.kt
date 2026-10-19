@@ -22,6 +22,8 @@ sealed interface Route : NavKey {
         val progress: Long = 0,
         /** In-memory play queue (`PlayQueues`) this video plays from; empty = a single video. */
         val playlistId: String = "",
+        /** 仅听声音 from the start: no picture stream, lyrics up at once; a queue keeps it across items. */
+        val audioOnly: Boolean = false,
     ) : Route
 
     @Serializable data class Bangumi(

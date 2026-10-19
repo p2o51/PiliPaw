@@ -42,6 +42,7 @@ import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.feature.videomenu.VideoCardMenu
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.FameMode
@@ -165,27 +166,7 @@ private fun SubDetailContent(route: Route.SubDetail, vm: SubDetailViewModel) {
     }
 
     sheet?.let { item ->
-        ItemActionSheet(
-            title = item.title,
-            cover = item.cover,
-            actions = buildList {
-                if (item.aid > 0) {
-                    add(
-                        SheetAction("稍后再看", PiliSymbols.WatchLater) {
-                            scope.launch {
-                                runCatching { addToLater(item.aid) }
-                                    .onSuccess { toast("已添加") }
-                                    .onFailure { toast(it.friendlyMessage()) }
-                            }
-                        },
-                    )
-                }
-                if (item.ownerMid > 0) {
-                    add(SheetAction("访问 ${item.ownerName}", YoinSymbols.Person) { nav.push(Route.Member(item.ownerMid, name = item.ownerName)) })
-                }
-            },
-            onDismiss = { sheet = null },
-        )
+        VideoCardMenu(item, onDismiss = { sheet = null })
     }
     if (confirm) {
         ConfirmDialog(

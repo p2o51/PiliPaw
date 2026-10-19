@@ -139,7 +139,7 @@ object PlayQueues {
     fun get(id: String): PlayQueue? = if (id.isEmpty()) null else synchronized(this) { queues[id] }
 
     /** The video page for the queue's current item, with the queue attached. */
-    fun route(q: PlayQueue): Route.Video {
+    fun route(q: PlayQueue, audioOnly: Boolean = false): Route.Video {
         val item = q.current
         return Route.Video(
             bvid = item.bvid,
@@ -148,6 +148,7 @@ object PlayQueues {
             cover = item.cover,
             title = item.title,
             playlistId = q.id,
+            audioOnly = audioOnly,
         )
     }
 }
@@ -163,6 +164,15 @@ internal suspend fun resolveFirstCid(item: QueueItem): Long {
 fun BiliPlayerState.attachQueue(queue: PlayQueue?) {
     (this as? PiliPlayerController)?.attachQueue(queue)
 }
+
+/** 仅听声音 on the player behind this state (through its queue when one is attached). */
+fun BiliPlayerState.setAudioOnly(on: Boolean) {
+    (this as? PiliPlayerController)?.listenOnly(on)
+}
+
+/** Whether the player behind this state plays only the sound. */
+val BiliPlayerState.listening: Boolean
+    get() = (this as? PiliPlayerController)?.audioOnly == true
 
 /** Plays item [index] of the attached queue. */
 fun BiliPlayerState.playQueueItem(index: Int) {
