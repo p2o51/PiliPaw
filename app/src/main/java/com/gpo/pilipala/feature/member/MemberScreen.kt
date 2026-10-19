@@ -173,6 +173,7 @@ internal class MemberViewModel(val mid: Long, val initFace: String, val initName
         if (cursor == null) archiveTotal = r.total
         r.page
     }
+    val search = ArchiveSearch(viewModelScope, mid) { order }
     val collections = Pager<MemberCollection>(viewModelScope, dedupKey = { "${it.category}-${it.id}" }) { cursor ->
         MemberRepo.collections(mid, cursor?.toIntOrNull() ?: 1)
     }
@@ -212,6 +213,7 @@ internal class MemberViewModel(val mid: Long, val initFace: String, val initName
         order = o
         archive.update { emptyList() }
         archive.refresh()
+        search.onOrderChanged()
     }
 
     /** act: 1 follow, 2 unfollow, 5 block, 6 unblock. */
@@ -445,19 +447,23 @@ private fun MemberContent(vm: MemberViewModel) {
         }
     }
     val listPadding = PaddingValues(top = 4.dp, bottom = navBottom + 16.dp)
+    // Hoisted: survives the 投稿 page leaving the pager window and a search round trip.
+    val archiveListState = rememberLazyGridState()
     val body: @Composable () -> Unit = {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize(), key = { it }) { page ->
             when (page) {
                 0 -> HomeTab(vm, listPadding, onArchive = { scope.launch { pagerState.animateScrollToPage(1) } })
-                1 -> MemberVideoGrid(
-                    pager = vm.archive,
-                    modifier = Modifier.fillMaxSize(),
+                1 -> ArchiveListWithSearch(
+                    search = vm.search,
+                    archive = vm.archive,
+                    order = vm.order,
+                    total = vm.archiveTotal,
+                    onOrder = vm::changeOrder,
+                    listState = archiveListState,
                     contentPadding = listPadding,
-                    emptyLabel = "暂无投稿",
+                    modifier = Modifier.fillMaxSize(),
                     refreshable = false,
-                ) {
-                    archiveSortHeader(vm.order, vm.archiveTotal, vm::changeOrder)
-                }
+                )
                 2 -> MemberDynamicsList(vm.mid, Modifier.fillMaxSize(), contentPadding = listPadding)
                 else -> CollectionsTab(vm, listPadding)
             }

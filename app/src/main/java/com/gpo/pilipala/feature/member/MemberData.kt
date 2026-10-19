@@ -102,6 +102,10 @@ internal enum class ArchiveOrder(val key: String, val label: String) {
     Stow("stow", "最多收藏"),
 }
 
+/** App-feed search fallback: stop a load once this many hits are in, or after this many pages. */
+private const val AppSearchMinHits = 10
+private const val AppSearchMaxPages = 8
+
 internal object MemberRepo {
 
     // ── Profile ───────────────────────────────────────────────────────────
@@ -177,19 +181,21 @@ internal object MemberRepo {
      * cursor: null = first page, "<n>" = web page n, "app:<aid>" = app cursor.
      * The web endpoint (wbi + dm params) is risk-controlled (-352 / 412) on many
      * networks; on that we switch to the app-signed space/archive/cursor feed.
+     * [keyword] searches inside the uploads (web filters server-side; the app
+     * feed has no keyword, so there we filter titles page by page).
      */
-    suspend fun archive(mid: Long, cursor: String?, order: ArchiveOrder, ps: Int = 30): ArchivePage =
-        withContext(Dispatchers.Default) { loadArchive(mid, cursor, order, ps) }
+    suspend fun archive(mid: Long, cursor: String?, order: ArchiveOrder, keyword: String = "", ps: Int = 30): ArchivePage =
+        withContext(Dispatchers.Default) { loadArchive(mid, cursor, order, keyword, ps) }
 
-    private suspend fun loadArchive(mid: Long, cursor: String?, order: ArchiveOrder, ps: Int): ArchivePage {
-        if (cursor?.startsWith("app:") == true) return appArchive(mid, cursor.removePrefix("app:"), order)
+    private suspend fun loadArchive(mid: Long, cursor: String?, order: ArchiveOrder, keyword: String, ps: Int): ArchivePage {
+        if (cursor?.startsWith("app:") == true) return appArchive(mid, cursor.removePrefix("app:"), order, keyword)
         val pn = cursor?.toIntOrNull() ?: 1
         val params = mapOf(
             "mid" to mid,
             "ps" to ps,
             "tid" to 0,
             "pn" to pn,
-            "keyword" to "",
+            "keyword" to keyword,
             "order" to order.key,
             "platform" to "web",
             "web_location" to 1550101,
@@ -198,7 +204,7 @@ internal object MemberRepo {
         val root = try {
             BiliClient.getData("/x/space/wbi/arc/search", params, wbi = true).asObj
         } catch (e: BiliException) {
-            if (pn == 1 && (e.code == -352 || e.code == -412 || e.code == 412)) return appArchive(mid, "", order)
+            if (pn == 1 && (e.code == -352 || e.code == -412 || e.code == 412)) return appArchive(mid, "", order, keyword)
             throw e
         }
         val list = root.obj("list").arr("vlist").objects().map { it.archiveItem(mid) }
@@ -207,7 +213,25 @@ internal object MemberRepo {
         return ArchivePage(Page(list, hasMore, (pn + 1).toString()), total)
     }
 
-    private suspend fun appArchive(mid: Long, aid: String, order: ArchiveOrder): ArchivePage {
+    private suspend fun appArchive(mid: Long, aid: String, order: ArchiveOrder, keyword: String): ArchivePage {
+        if (keyword.isEmpty()) return appArchivePage(mid, aid, order)
+        // No keyword on the app feed: walk a few cursor pages and keep the title hits. The
+        // total is unknown (-1); a load that finds nothing ends the list.
+        val hits = ArrayList<VideoItem>()
+        var cursor = aid
+        var hasMore = true
+        var scanned = 0
+        while (hasMore && hits.size < AppSearchMinHits && scanned < AppSearchMaxPages) {
+            val r = appArchivePage(mid, cursor, order)
+            hits += r.page.items.filter { it.title.contains(keyword, ignoreCase = true) }
+            hasMore = r.page.hasMore
+            cursor = r.page.nextCursor.orEmpty().removePrefix("app:")
+            scanned++
+        }
+        return ArchivePage(Page(hits, hasMore, "app:$cursor"), -1)
+    }
+
+    private suspend fun appArchivePage(mid: Long, aid: String, order: ArchiveOrder): ArchivePage {
         val params = mutableMapOf(
             "vmid" to mid.toString(),
             "order" to order.key,
