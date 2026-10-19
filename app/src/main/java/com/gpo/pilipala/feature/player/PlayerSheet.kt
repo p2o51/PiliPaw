@@ -460,6 +460,15 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
     }
     SegmentedGroup(playback)
 
+    PictureFitChoice()
+    LocalPlayerShot.current?.let { shot ->
+        Spacer(Modifier.height(8.dp))
+        SegmentedGroup(listOf(RowSpec(ScreenshotSymbol, "截图") {
+            onClose()
+            shot()
+        }))
+    }
+
     SectionLabel("播放")
     val sleepValue = if (ctrl.sleepMinutes > 0) {
         val left = ((ctrl.sleepDeadline - SystemClock.elapsedRealtime()) / 60_000L).coerceAtLeast(0L) + 1

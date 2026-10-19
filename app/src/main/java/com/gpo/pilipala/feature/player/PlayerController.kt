@@ -162,6 +162,10 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     var shots by mutableStateOf<VideoShots?>(null)
         private set
 
+    /** 高能进度条: the audience heat over the video; null until loaded or when it has none. */
+    var heat by mutableStateOf<HeatCurve?>(null)
+        private set
+
     /** Fullscreen that came from rotating the phone (so rotating back exits it). */
     var fullscreenByRotation = false
 
@@ -362,6 +366,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         subtitleJob?.cancel()
         chapters = emptyList()
         shots = null
+        heat = null
         seekGeneration++
         exo?.stop()
         exo?.clearMediaItems()
@@ -422,6 +427,9 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         }
         sideJobs += scope.launch {
             runCatching { VideoShotsApi.get(t) }.onSuccess { shots = it }
+        }
+        sideJobs += scope.launch {
+            runCatching { HeatApi.get(t) }.onSuccess { heat = it }
         }
     }
 

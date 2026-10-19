@@ -184,6 +184,20 @@ internal fun PlayerSeekBar(
         contentAlignment = Alignment.Center,
     ) {
         val ink = LocalPlayerInk.current
+        // 高能进度条: the audience's heat as a soft hill standing on the track.
+        val heat = ctrl.heat
+        val heatColor = (if (ink == VideoInk) MaterialTheme.colorScheme.primary else ink.trackPlayed).copy(alpha = 0.42f)
+        val heatModifier = remember(heat, duration, heatColor) {
+            Modifier.fillMaxSize().heatArea(
+                heat = heat,
+                durationMs = duration,
+                color = heatColor,
+                height = 9.dp,
+                baseline = { size -> size / 2f - (3.dp + 5.dp * grow.value).toPx() / 2f - 1.dp.toPx() },
+                alpha = { 0.6f + 0.4f * grow.value.coerceIn(0f, 1f) },
+            )
+        }
+        Spacer(heatModifier)
         Canvas(
             Modifier
                 .fillMaxSize()
