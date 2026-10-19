@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBarDefaults
@@ -36,6 +37,7 @@ internal class MemberArchiveViewModel(val mid: Long) : ViewModel() {
         if (cursor == null) total = r.total
         r.page
     }
+    val search = ArchiveSearch(viewModelScope, mid) { order }
 
     init {
         pager.refresh()
@@ -46,6 +48,7 @@ internal class MemberArchiveViewModel(val mid: Long) : ViewModel() {
         order = o
         pager.update { emptyList() }
         pager.refresh()
+        search.onOrderChanged()
     }
 }
 
@@ -54,6 +57,7 @@ fun MemberArchiveScreen(route: Route.MemberArchive) {
     val vm = viewModel { MemberArchiveViewModel(route.mid) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val listState = rememberLazyGridState()
     Scaffold(
         modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
@@ -63,19 +67,23 @@ fun MemberArchiveScreen(route: Route.MemberArchive) {
                 title = "投稿",
                 subtitle = route.name.ifEmpty { null },
                 scrollBehavior = scrollBehavior,
+                actions = { SearchToggle(vm.search.open, vm.search::toggle) },
             )
         },
     ) { padding ->
         // The user's own uploads count as their own for 名声模式.
         FameSelf(route.mid) {
-            MemberVideoGrid(
-                pager = vm.pager,
-                modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
+            ArchiveListWithSearch(
+                search = vm.search,
+                archive = vm.pager,
+                order = vm.order,
+                total = vm.total,
+                onOrder = vm::changeOrder,
+                listState = listState,
                 contentPadding = PaddingValues(top = 4.dp, bottom = navBottom + 16.dp),
-                emptyLabel = "暂无投稿",
-            ) {
-                archiveSortHeader(vm.order, vm.total, vm::changeOrder)
-            }
+                modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
+                toggleInHeader = false,
+            )
         }
     }
 }

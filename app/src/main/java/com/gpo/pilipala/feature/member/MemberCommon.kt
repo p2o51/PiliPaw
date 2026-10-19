@@ -1,6 +1,38 @@
 package com.gpo.pilipala.feature.member
 
 import androidx.compose.foundation.rememberScrollState
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import com.gpo.pilipala.ui.theme.YoinMotion
+import kotlinx.coroutines.CoroutineScope
 import androidx.compose.foundation.horizontalScroll
 import android.content.ClipData
 import android.content.Context
@@ -191,15 +223,20 @@ internal fun <T> ConnectedToggleRow(
     }
 }
 
-/** Sort header used by the archive tab and the full archive page. */
+/**
+ * Sort header used by the archive tab and the full archive page; [onSearch]
+ * adds the search toggle at its end (a close glyph while [searching]).
+ */
 internal fun LazyGridScope.archiveSortHeader(
     order: ArchiveOrder,
     total: Long,
     onOrder: (ArchiveOrder) -> Unit,
+    searching: Boolean = false,
+    onSearch: (() -> Unit)? = null,
 ) {
     fullSpan("sort") {
         Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = if (onSearch != null) 4.dp else 16.dp, top = 4.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ConnectedToggleRow(
@@ -213,8 +250,202 @@ internal fun LazyGridScope.archiveSortHeader(
             if (total > 0) {
                 Stat(PiliSymbols.Video, Fmt.count(total), Modifier.padding(start = 12.dp))
             }
+            if (onSearch != null) {
+                SearchToggle(searching, onSearch, Modifier.padding(start = 4.dp))
+            }
         }
     }
+}
+
+/** Search / close glyph that springs between the two; used in the sort row and top bars. */
+@Composable
+internal fun SearchToggle(searching: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val fadeInSpec = YoinMotion.defaultEffectsSpec<Float>()
+    val fadeOutSpec = YoinMotion.fastEffectsSpec<Float>()
+    val scaleSpec = YoinMotion.fastSpatialSpec<Float>()
+    IconButton(onClick = onClick, shapes = IconButtonDefaults.shapes(), modifier = modifier) {
+        AnimatedContent(
+            targetState = searching,
+            transitionSpec = {
+                (fadeIn(fadeInSpec) + scaleIn(scaleSpec, initialScale = 0.6f))
+                    .togetherWith(fadeOut(fadeOutSpec) + scaleOut(scaleSpec, targetScale = 0.6f))
+            },
+            label = "searchToggle",
+        ) { on ->
+            Icon(if (on) YoinSymbols.Close else YoinSymbols.Search, contentDescription = if (on) "关闭搜索" else "搜索")
+        }
+    }
+}
+
+// ── Search inside the uploads ───────────────────────────────────────────────
+
+/**
+ * In-page search over one UP's uploads. It owns its own pager, so the plain
+ * list keeps its items (and, with a hoisted grid state, its scroll) while
+ * results show; an empty keyword means the plain list is on screen.
+ */
+@Stable
+internal class ArchiveSearch(
+    scope: CoroutineScope,
+    private val mid: Long,
+    private val order: () -> ArchiveOrder,
+) {
+    var open by mutableStateOf(false)
+        private set
+    var query by mutableStateOf("")
+        private set
+    /** The submitted keyword; non-empty while results replace the list. */
+    var keyword by mutableStateOf("")
+        private set
+    var total by mutableLongStateOf(-1L)
+        private set
+    val pager = Pager<VideoItem>(scope, dedupKey = { it.key() }) { cursor ->
+        val r = MemberRepo.archive(mid, cursor, order(), keyword = keyword)
+        if (cursor == null) total = r.total
+        r.page
+    }
+
+    fun toggle() {
+        if (open) close() else open = true
+    }
+
+    fun close() {
+        open = false
+        query = ""
+        reset()
+    }
+
+    fun onQuery(q: String) {
+        query = q
+        // Clearing the field goes straight back to the list.
+        if (q.isBlank() && keyword.isNotEmpty()) reset()
+    }
+
+    fun submit() {
+        val k = query.trim()
+        if (k.isEmpty()) return reset()
+        keyword = k
+        total = -1L
+        pager.update { emptyList() }
+        pager.refresh()
+    }
+
+    /** The shared sort changed: results follow it. */
+    fun onOrderChanged() {
+        if (keyword.isEmpty()) return
+        pager.update { emptyList() }
+        pager.refresh()
+    }
+
+    // The old results stay in the pager so they fade out intact; the next submit clears them.
+    private fun reset() {
+        keyword = ""
+    }
+}
+
+/**
+ * The 投稿 list with its search: the field drops in above the grid, a
+ * submitted keyword brings the results grid in, clearing or closing springs
+ * back to [listState]'s list exactly where it was.
+ */
+@Composable
+internal fun ArchiveListWithSearch(
+    search: ArchiveSearch,
+    archive: Pager<VideoItem>,
+    order: ArchiveOrder,
+    total: Long,
+    onOrder: (ArchiveOrder) -> Unit,
+    listState: LazyGridState,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+    refreshable: Boolean = true,
+    // The full archive page puts the toggle in its top bar instead.
+    toggleInHeader: Boolean = true,
+) {
+    BackHandler(enabled = search.open) { search.close() }
+    val onSearch: (() -> Unit)? = if (toggleInHeader) search::toggle else null
+    val fadeInSpec = YoinMotion.defaultEffectsSpec<Float>()
+    val fadeOutSpec = YoinMotion.fastEffectsSpec<Float>()
+    val scaleSpec = YoinMotion.defaultSpatialSpec<Float>()
+    Column(modifier) {
+        AnimatedVisibility(
+            visible = search.open,
+            enter = expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
+            exit = shrinkVertically(YoinMotion.fastSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
+        ) {
+            ArchiveSearchField(search.query, onChange = search::onQuery, onSearch = search::submit)
+        }
+        AnimatedContent(
+            targetState = search.keyword,
+            transitionSpec = {
+                (fadeIn(fadeInSpec) + scaleIn(scaleSpec, initialScale = 0.96f)).togetherWith(fadeOut(fadeOutSpec))
+            },
+            // Only list and results swap with motion; a second keyword just reloads the results grid.
+            contentKey = { it.isNotEmpty() },
+            modifier = Modifier.weight(1f),
+            label = "archiveSearch",
+        ) { keyword ->
+            if (keyword.isNotEmpty()) {
+                // A new keyword starts at the top.
+                val resultsState = remember(keyword) { LazyGridState() }
+                MemberVideoGrid(
+                    pager = search.pager,
+                    modifier = Modifier.fillMaxSize(),
+                    state = resultsState,
+                    contentPadding = contentPadding,
+                    emptyLabel = "无结果",
+                    refreshable = refreshable,
+                ) {
+                    archiveSortHeader(order, search.total, onOrder, searching = search.open, onSearch = onSearch)
+                }
+            } else {
+                MemberVideoGrid(
+                    pager = archive,
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = contentPadding,
+                    emptyLabel = "暂无投稿",
+                    refreshable = refreshable,
+                ) {
+                    archiveSortHeader(order, total, onOrder, searching = search.open, onSearch = onSearch)
+                }
+            }
+        }
+    }
+}
+
+/** Filled pill search field (no indicator line, no outline); the IME action submits. */
+@Composable
+private fun ArchiveSearchField(value: String, onChange: (String) -> Unit, onSearch: () -> Unit) {
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    TextField(
+        value = value,
+        onValueChange = onChange,
+        placeholder = { Text("搜索投稿") },
+        leadingIcon = { Icon(YoinSymbols.Search, null) },
+        trailingIcon = if (value.isNotEmpty()) {
+            { IconButton(onClick = { onChange("") }) { Icon(YoinSymbols.Close, contentDescription = "清除") } }
+        } else null,
+        singleLine = true,
+        shape = RoundedCornerShape(28.dp),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = {
+            keyboard?.hide()
+            onSearch()
+        }),
+        colors = TextFieldDefaults.colors(
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .focusRequester(focus),
+    )
 }
 
 /** 专栏 row: text on the left, cover on the right, stats as icon + number pairs. */
