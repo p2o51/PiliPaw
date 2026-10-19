@@ -41,7 +41,9 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconToggleButton
@@ -124,6 +126,27 @@ import com.gpo.pilipala.ui.components.SheetInsets
 
 /** Videos the live preview mixes. */
 private const val PreviewCount = 8
+
+/** A one-tap start for a new feed. */
+internal class FeedTemplate(val name: String, val sources: List<FeedSource>, val mix: FeedMix)
+
+private val FeedTemplates = listOf(
+    FeedTemplate(
+        "数码",
+        listOf(FeedSource.Keyword("数码评测"), FeedSource.Keyword("手机开箱")),
+        FeedMix.Mixed,
+    ),
+    FeedTemplate(
+        "新番",
+        listOf(FeedSource.Keyword("新番", KeywordOrder.Pubdate), FeedSource.Keyword("番剧解说", KeywordOrder.Pubdate)),
+        FeedMix.Latest,
+    ),
+    FeedTemplate(
+        "做饭",
+        listOf(FeedSource.Keyword("家常菜"), FeedSource.Keyword("烘焙")),
+        FeedMix.Mixed,
+    ),
+)
 
 // ── ViewModel ───────────────────────────────────────────────────────────────
 
@@ -252,6 +275,18 @@ internal class FeedEditorViewModel(route: Route.FeedEditor) : ViewModel() {
         }
     }
 
+    /** Fills an empty new feed from [template]: its name, sources and order. */
+    fun applyTemplate(template: FeedTemplate) {
+        name = TextFieldValue(template.name, TextRange(template.name.length))
+        sources = template.sources
+        mix = template.mix
+    }
+
+    /** Removes the feed being edited; home drops its tab. */
+    fun delete() {
+        editing?.let { FeedStore.delete(it.id) }
+    }
+
     private fun add(source: FeedSource): SourceAdd = when {
         contains(source) -> SourceAdd.Duplicate
         full -> SourceAdd.Full
@@ -339,6 +374,7 @@ fun FeedEditorScreen(route: Route.FeedEditor) {
     val haptics = LocalHapticFeedback.current
     val keyboard = LocalSoftwareKeyboardController.current
     var picker by rememberSaveable { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val wc = widthClass()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -359,6 +395,10 @@ fun FeedEditorScreen(route: Route.FeedEditor) {
                 keyboard?.hide()
                 picker = true
             },
+            onTemplate = {
+                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                vm.applyTemplate(it)
+            },
         )
     }
 
@@ -372,6 +412,7 @@ fun FeedEditorScreen(route: Route.FeedEditor) {
             title = if (vm.editing == null) "新建 Feed" else "编辑 Feed",
             action = if (vm.editing == null) "创建" else "保存",
             enabled = vm.canSave,
+            onDelete = if (vm.editing != null) ({ confirmDelete = true }) else null,
             onSave = {
                 if (vm.save()) {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -438,10 +479,38 @@ fun FeedEditorScreen(route: Route.FeedEditor) {
     }
 
     if (picker) UpPickerSheet(vm, onDismiss = { picker = false })
+    val editing = vm.editing
+    if (confirmDelete && editing != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            icon = { Icon(YoinSymbols.Delete, contentDescription = null) },
+            title = { Text("删除") },
+            text = { Text(editing.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        confirmDelete = false
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        keyboard?.hide()
+                        vm.delete()
+                        nav.pop()
+                    },
+                    shapes = ButtonDefaults.shapes(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }, shapes = ButtonDefaults.shapes()) { Text("取消") }
+            },
+        )
+    }
 }
 
 @Composable
-private fun EditorTopBar(title: String, action: String, enabled: Boolean, onSave: () -> Unit) {
+private fun EditorTopBar(title: String, action: String, enabled: Boolean, onDelete: (() -> Unit)?, onSave: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -458,6 +527,12 @@ private fun EditorTopBar(title: String, action: String, enabled: Boolean, onSave
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.width(12.dp))
+        if (onDelete != null) {
+            IconButton(onClick = onDelete, shapes = IconButtonDefaults.shapes()) {
+                Icon(YoinSymbols.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+            }
+            Spacer(Modifier.width(4.dp))
+        }
         Button(
             onClick = onSave,
             enabled = enabled,
@@ -474,6 +549,7 @@ private fun LazyGridScope.editorForm(
     vm: FeedEditorViewModel,
     onAddKeyword: (String) -> Unit,
     onAddUp: () -> Unit,
+    onTemplate: (FeedTemplate) -> Unit,
 ) {
     val full: (androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope.() -> GridItemSpan) = { GridItemSpan(maxLineSpan) }
     item(key = "name", span = full, contentType = "field") {
@@ -498,6 +574,24 @@ private fun LazyGridScope.editorForm(
     }
     item(key = "sourcesTitle", span = full, contentType = "title") {
         FeedSectionTitle("来源", trailing = "${vm.sources.size}/$MaxSources")
+    }
+    if (vm.editing == null && vm.sources.isEmpty()) {
+        item(key = "templates", span = full, contentType = "picks") {
+            FlowRow(
+                Modifier
+                    .fillMaxWidth()
+                    .animateItem(
+                        fadeInSpec = YoinMotion.defaultEffectsSpec(),
+                        placementSpec = YoinMotion.defaultSpatialSpec(),
+                        fadeOutSpec = YoinMotion.fastEffectsSpec(),
+                    )
+                    .padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FeedTemplates.forEach { t -> SearchChip(t.name) { onTemplate(t) } }
+            }
+        }
     }
     items(vm.sources, key = { "src:" + it.key }, span = { GridItemSpan(maxLineSpan) }, contentType = { "source" }) { source ->
         SourceRow(

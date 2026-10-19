@@ -1,6 +1,18 @@
 package com.gpo.pilipala.feature.home
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import com.gpo.yoin.symbols.YoinSymbols
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -108,8 +120,9 @@ internal fun CollapsingHeader(
  * surfaceContainerHigh when off) that animate their colours on the effects
  * spring and tighten their corners while pressed. The row scrolls and keeps
  * the selected chip in view. Chips for which [longClickable] holds answer a
- * long press with [onLongClick]; [trailing] sits after the last chip (the
- * home row's "+").
+ * long press with [onLongClick]; the selected one of them also grows a small
+ * trailing chevron (on the spatial spring) that opens the same [onLongClick], so the
+ * menu has a visible door. [trailing] sits after the last chip (the home row's "+").
  */
 @Composable
 internal fun SegmentTabs(
@@ -155,6 +168,7 @@ internal fun SegmentTabs(
                     onSelect(i)
                 },
                 onLongClick = if (onLongClick != null && longClickable(i)) ({ onLongClick(i) }) else null,
+                showAction = onLongClick != null && i == selected && longClickable(i),
                 modifier = Modifier
                     .onPlaced { c ->
                         bounds[i] = c.positionInParent().x.roundToInt() to c.size.width
@@ -178,9 +192,12 @@ private fun SegmentChip(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    showAction: Boolean = false,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    // The chevron's room comes out of the end padding, so the chip grows by less than the glyph.
+    val endPad by animateDpAsState(if (showAction && onLongClick != null) 6.dp else 16.dp, YoinMotion.defaultSpatialSpec(), label = "segmentEndPad")
     val container by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
         YoinMotion.defaultEffectsSpec(),
@@ -207,28 +224,65 @@ private fun SegmentChip(
                 onLongClick = onLongClick,
                 onClick = onClick,
             )
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(start = 16.dp, end = endPad, top = 8.dp, bottom = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            AnimatedVisibility(
+                visible = showAction && onLongClick != null,
+                enter = expandHorizontally(YoinMotion.defaultSpatialSpec(), expandFrom = Alignment.Start) +
+                    fadeIn(YoinMotion.defaultEffectsSpec()) +
+                    scaleIn(YoinMotion.fastSpatialSpec(), initialScale = 0.4f),
+                exit = shrinkHorizontally(YoinMotion.defaultSpatialSpec(), shrinkTowards = Alignment.Start) +
+                    fadeOut(YoinMotion.fastEffectsSpec()) +
+                    scaleOut(YoinMotion.fastSpatialSpec(), targetScale = 0.4f),
+            ) {
+                Box(
+                    Modifier
+                        .padding(start = 4.dp)
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(content.copy(alpha = 0.16f))
+                        .clickable(
+                            role = Role.Button,
+                            onClickLabel = "管理",
+                            onClick = { onLongClick?.invoke() },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(YoinSymbols.ChevronDown, contentDescription = "管理", modifier = Modifier.size(18.dp), tint = content)
+                }
+            }
+        }
     }
 }
 
-/** Icon-only chip at the end of a segment row (same pill, same press morph). */
+/**
+ * Chip at the end of a segment row (same pill, same press morph): the icon alone, or
+ * the icon with a short [label] beside it. The label comes and goes on the spatial
+ * spring, the pill's width following it.
+ */
 @Composable
 internal fun SegmentIconChip(
     icon: ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    label: String? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val corner by animateDpAsState(if (pressed) ChipPressedCorner else ChipCorner, YoinMotion.fastSpatialSpec(), label = "iconChipCorner")
     val scheme = MaterialTheme.colorScheme
-    Box(
+    // Keeps the text on screen while the label folds away.
+    val lastLabel = remember { arrayOf(label.orEmpty()) }
+    if (label != null) lastLabel[0] = label
+    val shownLabel = lastLabel[0]
+    Row(
         modifier
-            .size(40.dp)
+            .height(40.dp)
+            .widthIn(min = 40.dp)
             .clip(RoundedCornerShape(corner))
             .background(scheme.surfaceContainerHigh)
             .clickable(
@@ -237,10 +291,22 @@ internal fun SegmentIconChip(
                 role = Role.Button,
                 onClickLabel = contentDescription,
                 onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
+            )
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
+        Icon(icon, contentDescription = if (label == null) contentDescription else null, modifier = Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
+        AnimatedVisibility(
+            visible = label != null,
+            enter = expandHorizontally(YoinMotion.defaultSpatialSpec(), expandFrom = Alignment.Start) + fadeIn(YoinMotion.defaultEffectsSpec()),
+            exit = shrinkHorizontally(YoinMotion.defaultSpatialSpec(), shrinkTowards = Alignment.Start) + fadeOut(YoinMotion.fastEffectsSpec()),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.width(6.dp))
+                Text(shownLabel, style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, maxLines = 1)
+                Spacer(Modifier.width(6.dp))
+            }
+        }
     }
 }
 
