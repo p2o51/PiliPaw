@@ -325,6 +325,8 @@ private fun SeedSwatch(color: Color, label: String, selected: Boolean, onClick: 
 @Composable
 private fun PairSwatch(primary: Color, accent: Color, label: String, selected: Boolean, onClick: () -> Unit) {
     val luminance = (primary.luminance() + accent.luminance()) / 2f
+    // Repainted every frame of the morph's turn: one path, rewound.
+    val path = remember { Path() }
     MorphSwatch(
         label = label,
         selected = selected,
@@ -332,7 +334,8 @@ private fun PairSwatch(primary: Color, accent: Color, label: String, selected: B
         onClick = onClick,
         paint = {
             drawRect(primary)
-            val path = Path().apply {
+            path.apply {
+                rewind()
                 moveTo(size.width, 0f)
                 lineTo(size.width, size.height)
                 lineTo(0f, size.height)

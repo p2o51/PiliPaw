@@ -44,6 +44,11 @@ internal class TripleBurst(val count: Int) {
     /** Glyph scale (1 at rest; kicked above 1 as its slot lands). */
     val pop = List(count) { Animatable(1f) }
 
+    /** Scratch for [drawTripleBloom]: one path (and its Compose view) and one matrix, reused per frame. */
+    internal val bloomPath = android.graphics.Path()
+    internal val bloomComposePath = bloomPath.asComposePath()
+    internal val bloomMatrix = android.graphics.Matrix()
+
     /** How much of slot [k]'s bloom shows right now (draw-phase read). */
     fun bloomShown(k: Int): Float = if (k !in 0 until count) 0f else bloom[k].value * (1f - fade[k].value)
 }
@@ -108,14 +113,17 @@ internal fun DrawScope.drawTripleBloom(burst: TripleBurst, k: Int, center: Offse
     val a = 1f - burst.fade[k].value
     if (g <= 0.001f || a <= 0.001f) return
     val r = radius * g
-    val path = BloomMorph.toPath(g.coerceIn(0f, 1f))
-    val m = android.graphics.Matrix()
+    // Drawn every frame of the burst: the path and matrix are the burst's own, reused.
+    val path = burst.bloomPath
+    path.rewind()
+    BloomMorph.toPath(g.coerceIn(0f, 1f), path)
+    val m = burst.bloomMatrix
     m.setTranslate(-0.5f, -0.5f)
     m.postScale(r * 2f, r * 2f)
     m.postRotate(g * 50f + k * 20f)
     m.postTranslate(center.x, center.y)
     path.transform(m)
-    drawPath(path.asComposePath(), color, alpha = a.coerceIn(0f, 1f))
+    drawPath(burst.bloomComposePath, color, alpha = a.coerceIn(0f, 1f))
 }
 
 /** Slot [k]'s sparks: [SparkCount] dots flying from [from] to [to] px out of [center], shrinking. */
