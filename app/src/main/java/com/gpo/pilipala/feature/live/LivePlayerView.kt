@@ -46,6 +46,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
@@ -91,6 +93,8 @@ internal fun LivePlayerView(
     onPip: (() -> Unit)? = null,
     /** Where the picture's frame sits in the window, asked for by the PiP hint at the moment of the tap. */
     pictureBounds: PictureBounds? = null,
+    /** Fullscreen predictive back (LiveFullscreenBack.kt): fades the controls, learns whether the picture is turned. */
+    back: LiveBackState? = null,
 ) {
     val info = vm.info
     // On its way into PiP (or there): only the clean picture, no chrome or danmaku.
@@ -131,7 +135,9 @@ internal fun LivePlayerView(
     LaunchedEffect(turnTarget) { turnAngle.animateTo(turnTarget, turnSpec) }
     // A SurfaceView cannot be rotated; the turned picture (and its spring back) draws through a TextureView.
     val turning by remember { derivedStateOf { turnAngle.value != 0f } }
-    val surfaceType = if (turned || turning) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
+    // Fullscreen draws through one too, so the back gesture can shrink it toward the inline slot.
+    val surfaceType = if (turned || turning || (fullscreen && !pip)) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
+    if (back != null) SideEffect { back.turned = turned || turning }
     // Window insets describe the unturned window; the turned frame has no bars to avoid.
     val chromeInsets = fullscreen && !turned
     // The PiP hint reads the frame when 小窗 is tapped, not on layout: the spring back from a
@@ -218,7 +224,7 @@ internal fun LivePlayerView(
                 exit = if (pipClean) ExitTransition.None else fadeOut(YoinMotion.defaultEffectsSpec()),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().then(if (back != null) Modifier.graphicsLayer { alpha = back.chromeAlpha() } else Modifier)) {
                     // Top bar
                     Row(
                         Modifier

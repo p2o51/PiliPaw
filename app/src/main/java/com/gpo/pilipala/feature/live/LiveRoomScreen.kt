@@ -66,6 +66,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -167,7 +170,13 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
 
     FullscreenEffect(fullscreen, portrait = vm.isPortraitStream)
     DarkStatusBarEffect(enabled = !fullscreen && wc != WidthClass.Expanded)
-    BackHandler(enabled = fullscreen) { fullscreen = false }
+    // Fullscreen back follows the finger toward the inline slot (LiveFullscreenBack.kt).
+    val back = remember { LiveBackState() }
+    val windowInfo = LocalWindowInfo.current
+    val window = remember(windowInfo) { { windowInfo.containerSize } }
+    LiveFullscreenBackHandler(back, enabled = fullscreen && !pip, window = window) { fullscreen = false }
+    val density = LocalDensity.current
+    val inlineBack = { radius: Dp -> Modifier.liveBackInline(back, with(density) { radius.toPx() }, window) }
     // App to background: background play keeps the audio (the PiP window closing does not).
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         if (pip || activity?.isInPictureInPictureMode == true) vm.pauseForBackground() else vm.onAppStopped()
@@ -195,7 +204,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
         val toggleFs: () -> Unit = { fullscreen = !fullscreen }
         when {
             pip -> LivePlayerView(vm, true, toggleFs, onBack, Modifier.fillMaxSize(), pip = true)
-            fullscreen -> LivePlayerView(vm, true, toggleFs, onBack, Modifier.fillMaxSize(), onPip = onPip, pictureBounds = pictureBounds)
+            fullscreen -> LivePlayerView(vm, true, toggleFs, onBack, Modifier.fillMaxSize().liveBackFrame(back), onPip = onPip, pictureBounds = pictureBounds, back = back)
             wc == WidthClass.Expanded -> Row(
                 Modifier
                     .fillMaxSize()
@@ -209,6 +218,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
                         Modifier
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
+                            .then(inlineBack(16.dp))
                             .clip(YoinContainerShapes.Card),
                         onPip = onPip,
                         pictureBounds = pictureBounds,
@@ -231,7 +241,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
             }
             else -> Column(Modifier.fillMaxSize()) {
                 Box(Modifier.background(Color.Black).statusBarsPadding()) {
-                    LivePlayerView(vm, false, toggleFs, onBack, Modifier.fillMaxWidth().aspectRatio(16f / 9f), onPip = onPip, pictureBounds = pictureBounds)
+                    LivePlayerView(vm, false, toggleFs, onBack, Modifier.fillMaxWidth().aspectRatio(16f / 9f).then(inlineBack(0.dp)), onPip = onPip, pictureBounds = pictureBounds)
                 }
                 AnchorBlock(vm, route)
                 Box(
