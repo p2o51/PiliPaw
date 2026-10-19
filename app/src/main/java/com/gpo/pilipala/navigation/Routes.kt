@@ -78,6 +78,10 @@ sealed interface Route : NavKey {
     @Serializable data class Follow(val mid: Long, val name: String = "") : Route
     @Serializable data class Fans(val mid: Long, val name: String = "") : Route
     @Serializable data object Blacklist : Route
+    /** 离线缓存 (feature/download). */
+    @Serializable data object Downloads : Route
+    /** A finished cache, played from its file ([id]: the cache's id). */
+    @Serializable data class OfflinePlayer(val id: String) : Route
 
     // ── Messages ────────────────────────────────────────────────────────────
     @Serializable data object Messages : Route

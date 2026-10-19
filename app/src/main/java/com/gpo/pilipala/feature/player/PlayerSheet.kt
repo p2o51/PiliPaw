@@ -91,7 +91,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
 
-internal enum class SheetPage { Main, Quality, Audio, Codec, Speed, Danmaku, Sleep, Subtitle, DanmakuBlock, Chapters }
+internal enum class SheetPage { Main, Quality, Audio, Codec, Speed, Danmaku, Sleep, Subtitle, DanmakuBlock, Chapters, Cache }
 
 private val SleepOptions = listOf(0, 15, 30, 45, 60, 90)
 
@@ -244,6 +244,7 @@ internal fun PlayerSheetPages(
                     SheetPage.Subtitle -> "字幕"
                     SheetPage.DanmakuBlock -> "屏蔽词"
                     SheetPage.Chapters -> "章节"
+                    SheetPage.Cache -> "缓存"
                 },
                 onBack = when {
                     p == SheetPage.DanmakuBlock -> {
@@ -266,6 +267,7 @@ internal fun PlayerSheetPages(
                 SheetPage.Subtitle -> SubtitlePage(ctrl, close)
                 SheetPage.DanmakuBlock -> DanmakuBlockRulesEditor()
                 SheetPage.Chapters -> ChaptersPage(ctrl, close)
+                SheetPage.Cache -> com.gpo.pilipala.feature.download.CachePage(ctrl, close)
             }
         }
     }
@@ -457,6 +459,7 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
             add(RowSpec(YoinSymbols.Playlist, "章节", value = "${ctrl.chapters.size}") { onOpen(SheetPage.Chapters) })
         }
         add(RowSpec(PiliSymbols.Danmaku, "弹幕设置") { onOpen(SheetPage.Danmaku) })
+        if (t != null) add(RowSpec(YoinSymbols.Download, "缓存") { onOpen(SheetPage.Cache) })
     }
     SegmentedGroup(playback)
 

@@ -177,6 +177,8 @@ private val appEntryProvider = entryProvider<NavKey> {
     entry<Route.FavDetail> { FavDetailScreen(it) }
     entry<Route.Later> { LaterScreen() }
     entry<Route.History> { HistoryScreen() }
+    entry<Route.Downloads> { com.gpo.pilipala.feature.download.DownloadsScreen() }
+    entry<Route.OfflinePlayer> { com.gpo.pilipala.feature.download.OfflinePlayerScreen(it) }
     entry<Route.Subscription> { SubscriptionScreen(it) }
     entry<Route.SubDetail> { SubDetailScreen(it) }
     entry<Route.Follow> { FollowScreen(it) }

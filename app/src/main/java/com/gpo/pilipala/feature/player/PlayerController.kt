@@ -204,6 +204,9 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     var hasPrevious by mutableStateOf(false)
         private set
 
+    /** The cached files playing instead of the network streams (null: online). */
+    private var localMedia: com.gpo.pilipala.feature.download.LocalMedia? = null
+
     private val dataSourceFactory by lazy {
         OkHttpDataSource.Factory(BiliClient.http).setDefaultRequestProperties(BiliClient.mediaHeaders())
     }
@@ -374,7 +377,10 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         loadJob = scope.launch {
             try {
                 val wish = AppSettings.defaultVideoQuality.value
-                val pi = PlayUrlApi.fetch(t, wish)
+                // 离线缓存 (feature/download): a finished cache of this cid plays from its file.
+                val local = com.gpo.pilipala.feature.download.DownloadStore.localMedia(context, t.cid)
+                localMedia = local
+                val pi = local?.playInfo() ?: PlayUrlApi.fetch(t, wish)
                 withContext(Dispatchers.Default) { CodecSupport.warm(pi) }
                 info = pi
                 currentQn = StreamPicker.videoQn(pi, wish)
@@ -1013,6 +1019,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     }
 
     private fun buildSource(pi: PlayInfo): MediaSource? {
+        localMedia?.let { return it.source(context, ::metadataItem) }
         if (pi.isDash) {
             val v = StreamPicker.video(pi, currentQn, currentCodec) ?: return null
             currentQn = v.id
