@@ -51,6 +51,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A start that lands on an instance already told to stop brings it back into use.
+        instance = this
         val s = hosted
         if (s == null) {
             stopSelf()
@@ -97,6 +99,9 @@ class PlaybackService : MediaSessionService() {
                 if (service.isSessionAdded(session)) service.removeSession(session)
                 service.stopSelf()
             }
+            // The stopped instance lives on until onDestroy; a session added to it now would be
+            // dropped there with no service left. The next attach starts the service again.
+            instance = null
         }
 
         /** Tapping the notification returns to the page that is playing [t]. */

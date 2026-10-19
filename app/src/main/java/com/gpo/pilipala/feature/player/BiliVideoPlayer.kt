@@ -225,7 +225,8 @@ fun BiliVideoPlayer(
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
                     val inPipNow = activity?.isInPictureInPictureMode == true
-                    if (!AppSettings.backgroundPlay.value && !inPipNow && ctrl.isPlaying) {
+                    // 仅听声音 is listening: it carries on in the background whatever 后台播放 says.
+                    if (!AppSettings.backgroundPlay.value && !ctrl.audioOnly && !inPipNow && ctrl.isPlaying) {
                         ctrl.pause()
                         resumeOnReturn = true
                     }
@@ -242,7 +243,7 @@ fun BiliVideoPlayer(
                     if (latestInPip) {
                         // The PiP window was dismissed.
                         ctrl.pause()
-                    } else if (AppSettings.backgroundPlay.value) {
+                    } else if (AppSettings.backgroundPlay.value || ctrl.audioOnly) {
                         ctrl.setBackground(true)
                     }
                 }
@@ -652,6 +653,12 @@ fun BiliVideoPlayer(
                         LyricsPane(
                             ctrl = ctrl,
                             cover = target?.cover.orEmpty(),
+                            // Fullscreen: the docked transport rides up over the bottom bar's band.
+                            bottomLift = if (controls && !inline) {
+                                { reveal().coerceIn(0f, 1f) * with(density) { bottomBand.toPx() } }
+                            } else {
+                                { 0f }
+                            },
                             onBackgroundTap = {
                                 if (full) {
                                     ui.visible = !ui.visible

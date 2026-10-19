@@ -29,6 +29,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.runtime.CompositionLocalProvider
+import com.gpo.pilipala.ui.theme.withTabularFigures
+import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.yoin.symbols.rememberPlayPauseSymbolPainter
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -73,11 +87,14 @@ import kotlinx.coroutines.flow.filter
 /**
  * 仅听声音: the picture's place shows the subtitles as lyrics, the way Yoin shows a song's.
  * The current cue is large, bold and in primary, its neighbours step back with distance,
- * and the list springs to keep the current cue in the middle. Tap a cue to play from it;
- * drag to read ahead (following resumes a few seconds after the finger lets go). Without
+ * and the list springs to keep the current cue in the middle. Tap a cue's text to play from
+ * it; drag to read ahead (following resumes a few seconds after the finger lets go). Without
  * subtitles the cover shows with a quiet label. Wide frames keep the cover beside the lines.
+ * A compact transport (previous / play-pause / next, seek bar and times) stays docked at the
+ * bottom, like a music app's, whether or not the player chrome shows.
  *
- * [onBackgroundTap]: a tap off the lines (the chrome toggles, as on the picture).
+ * [onBackgroundTap]: a tap off the cue texts (the chrome toggles, as on the picture).
+ * [bottomLift]: how far (px) the transport rises to clear the fullscreen bottom bar.
  */
 @Composable
 internal fun LyricsPane(
@@ -85,75 +102,173 @@ internal fun LyricsPane(
     cover: String,
     onBackgroundTap: () -> Unit,
     modifier: Modifier = Modifier,
+    bottomLift: () -> Float = { 0f },
 ) {
     val latestBackgroundTap by rememberUpdatedState(onBackgroundTap)
-    BoxWithConstraints(
+    Column(
         modifier
             .fillMaxSize()
             .lyricsBackdrop()
             .pointerInput(Unit) { detectTapGestures(onTap = { latestBackgroundTap() }) },
     ) {
-        val wide = maxWidth >= 560.dp && maxWidth > maxHeight * 1.3f
-        val lines = ctrl.subtitleLines
-        val waiting = !ctrl.subtitlesReady || ctrl.subtitleLoading
-        val state = when {
-            lines.isNotEmpty() -> LyricsState.Lines
-            waiting -> LyricsState.Waiting
-            else -> LyricsState.Empty
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            LyricsContent(ctrl = ctrl, cover = cover, frameW = maxWidth, frameH = maxHeight)
         }
-        val emptyLabel = if (ctrl.subtitles.isNotEmpty() && ctrl.subtitleIndex < 0) "字幕已关闭" else "暂无字幕"
-        val frameH = maxHeight
-        val frameW = maxWidth
-        val enter = YoinMotion.defaultEffectsSpec<Float>()
-        val exit = YoinMotion.fastEffectsSpec<Float>()
-        AnimatedContent(
-            targetState = state,
-            transitionSpec = {
-                fadeIn(enter) togetherWith fadeOut(exit)
-            },
-            label = "lyricsState",
-            modifier = Modifier.fillMaxSize(),
-        ) { s ->
-            when {
-                s == LyricsState.Lines && wide -> Row(
-                    Modifier.fillMaxSize().padding(horizontal = 32.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.weight(0.42f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                        NetImage(
-                            url = cover,
-                            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-                            thumbWidth = 480.dp,
-                        )
-                    }
-                    Spacer(Modifier.width(24.dp))
-                    LyricsList(
-                        lines = lines,
-                        positionMs = { ctrl.positionMs },
-                        onSeek = { ctrl.seekTo(it) },
-                        frameHeight = frameH,
-                        horizontalPadding = 0.dp,
-                        modifier = Modifier.weight(0.58f).fillMaxHeight(),
+        LyricsTransport(
+            ctrl = ctrl,
+            modifier = Modifier.graphicsLayer { translationY = -bottomLift() },
+        )
+    }
+}
+
+@Composable
+private fun LyricsContent(ctrl: PiliPlayerController, cover: String, frameW: Dp, frameH: Dp) {
+    val wide = frameW >= 560.dp && frameW > frameH * 1.3f
+    val lines = ctrl.subtitleLines
+    val waiting = !ctrl.subtitlesReady || ctrl.subtitleLoading
+    val state = when {
+        lines.isNotEmpty() -> LyricsState.Lines
+        waiting -> LyricsState.Waiting
+        else -> LyricsState.Empty
+    }
+    val emptyLabel = if (ctrl.subtitles.isNotEmpty() && ctrl.subtitleIndex < 0) "字幕已关闭" else "暂无字幕"
+    val enter = YoinMotion.defaultEffectsSpec<Float>()
+    val exit = YoinMotion.fastEffectsSpec<Float>()
+    AnimatedContent(
+        targetState = state,
+        transitionSpec = {
+            fadeIn(enter) togetherWith fadeOut(exit)
+        },
+        label = "lyricsState",
+        modifier = Modifier.fillMaxSize(),
+    ) { s ->
+        when {
+            s == LyricsState.Lines && wide -> Row(
+                Modifier.fillMaxSize().padding(horizontal = 32.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.weight(0.42f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    NetImage(
+                        url = cover,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                        thumbWidth = 480.dp,
                     )
                 }
-                s == LyricsState.Lines -> LyricsList(
+                Spacer(Modifier.width(24.dp))
+                LyricsList(
                     lines = lines,
                     positionMs = { ctrl.positionMs },
                     onSeek = { ctrl.seekTo(it) },
                     frameHeight = frameH,
-                    horizontalPadding = if (frameW >= 600.dp) 40.dp else 24.dp,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                else -> CoverWithLabel(
-                    cover = cover,
-                    label = if (s == LyricsState.Empty) emptyLabel else null,
-                    frameWidth = frameW,
-                    frameHeight = frameH,
+                    horizontalPadding = 0.dp,
+                    modifier = Modifier.weight(0.58f).fillMaxHeight(),
                 )
             }
+            s == LyricsState.Lines -> LyricsList(
+                lines = lines,
+                positionMs = { ctrl.positionMs },
+                onSeek = { ctrl.seekTo(it) },
+                frameHeight = frameH,
+                horizontalPadding = if (frameW >= 600.dp) 40.dp else 24.dp,
+                modifier = Modifier.fillMaxSize(),
+            )
+            else -> CoverWithLabel(
+                cover = cover,
+                label = if (s == LyricsState.Empty) emptyLabel else null,
+                frameWidth = frameW,
+                frameHeight = frameH,
+            )
         }
     }
 }
+
+/**
+ * The docked transport: 上一个, a filled play / pause in the cover's primary, 下一个 (it steps
+ * back while there is nothing to go to), then the playhead, a slim seek bar and the duration.
+ * Its own [SeekScrub], so the chrome's seek bubble keeps following the chrome's bar.
+ */
+@Composable
+private fun LyricsTransport(ctrl: PiliPlayerController, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val ink = remember(scheme) {
+        PlayerInk(
+            content = scheme.onSurface,
+            contentVariant = scheme.onSurfaceVariant,
+            pill = scheme.secondaryContainer,
+            pillContent = scheme.onSecondaryContainer,
+            trackRest = scheme.onSurface.copy(alpha = 0.14f),
+            trackBuffered = scheme.onSurface.copy(alpha = 0.26f),
+            trackPlayed = scheme.primary,
+        )
+    }
+    val scrub = remember { SeekScrub() }
+    val playing = ctrl.isPlaying || (ctrl.playWhenReady && !ctrl.ended)
+    val nextAlpha by animateFloatAsState(
+        targetValue = if (ctrl.hasNext) 1f else 0.38f,
+        animationSpec = YoinMotion.defaultEffectsSpec(),
+        label = "transportNext",
+    )
+    val timeStyle = MaterialTheme.typography.labelMedium.withTabularFigures()
+    val d = ctrl.durationMs
+    val shownMs = scrub.fraction?.let { (it * d).toLong() } ?: ctrl.positionMs
+    CompositionLocalProvider(LocalPlayerInk provides ink) {
+        Row(
+            modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                .height(TransportHeight)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(
+                onClick = { ctrl.skipPrevious() },
+                shapes = IconButtonDefaults.shapes(),
+                colors = IconButtonDefaults.iconButtonColors(contentColor = scheme.onSurface),
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(YoinSymbols.SkipPreviousFilled, contentDescription = "上一个")
+            }
+            FilledIconButton(
+                onClick = { ctrl.togglePlay() },
+                shapes = IconButtonDefaults.shapes(),
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = scheme.primary,
+                    contentColor = scheme.onPrimary,
+                ),
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(rememberPlayPauseSymbolPainter(playing), contentDescription = if (playing) "暂停" else "播放")
+            }
+            IconButton(
+                onClick = { ctrl.skipNext() },
+                enabled = ctrl.hasNext,
+                shapes = IconButtonDefaults.shapes(),
+                colors = IconButtonDefaults.iconButtonColors(
+                    contentColor = scheme.onSurface,
+                    disabledContentColor = scheme.onSurface,
+                ),
+                modifier = Modifier.size(44.dp).graphicsLayer { alpha = nextAlpha },
+            ) {
+                Icon(YoinSymbols.SkipNextFilled, contentDescription = "下一个")
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(clock(shownMs), style = timeStyle, color = scheme.onSurface, maxLines = 1)
+            Spacer(Modifier.width(10.dp))
+            PlayerSeekBar(
+                ctrl = ctrl,
+                scrub = scrub,
+                onPoke = {},
+                frame = { null },
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(clock(d), style = timeStyle, color = scheme.onSurfaceVariant, maxLines = 1)
+            Spacer(Modifier.width(8.dp))
+        }
+    }
+}
+
+private val TransportHeight = 60.dp
 
 private enum class LyricsState { Waiting, Lines, Empty }
 
@@ -315,21 +430,23 @@ private fun LyricRow(
     } else {
         style.copy(fontWeight = FontWeight.Medium)
     }
-    Text(
-        text = text,
-        style = lineStyle,
-        color = color,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap)
-            .padding(vertical = 6.dp)
-            .graphicsLayer {
-                this.alpha = alpha
-                scaleX = scale
-                scaleY = scale
-                transformOrigin = TransformOrigin(0f, 0.5f)
-            },
-    )
+    // Only the text itself takes the tap (as drawn, scale included): the rest of the row,
+    // the gaps and the margins belong to the pane, where a tap toggles the chrome.
+    Box(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Text(
+            text = text,
+            style = lineStyle,
+            color = color,
+            modifier = Modifier
+                .graphicsLayer {
+                    this.alpha = alpha
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin(0f, 0.5f)
+                }
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap),
+        )
+    }
 }
 
 /** The last cue that has started (a gap keeps the previous one lit); -1 before the first. */

@@ -649,6 +649,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         firstFrameRendered = false
         if (exo != null && info?.isDash == true && phase !is PlayerPhase.Error) reprepare()
         refreshSessionControls()
+        syncBackgroundHost()
     }
 
     private fun applyVideoTrack() {
@@ -769,6 +770,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         if (bg == backgrounded) return
         backgrounded = bg
         applyVideoTrack()
+        syncBackgroundHost()
     }
 
     override fun release() {
@@ -870,10 +872,13 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         return p
     }
 
-    /** Hands the session to [PlaybackService] (notification + foreground) while background play wants it. */
+    /** Hands the session to [PlaybackService] (notification + foreground) while background play or 仅听声音 wants it. */
     private fun syncBackgroundHost() {
         val s = session ?: return
-        val want = hostWanted && AppSettings.backgroundPlay.value
+        // 仅听声音 is listening: it always gets the notification and keeps playing in the
+        // background, whatever 后台播放 says. So does a page already in the background
+        // (the picture just came back from the notification: let it be until the page returns).
+        val want = hostWanted && (AppSettings.backgroundPlay.value || audioOnly || backgrounded)
         if (want == hosted) return
         hosted = want
         if (want) PlaybackService.attach(context, s) else PlaybackService.detach(s)
