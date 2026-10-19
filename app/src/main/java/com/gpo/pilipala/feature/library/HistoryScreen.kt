@@ -233,13 +233,12 @@ internal class HistoryViewModel : ViewModel() {
         searchPager.update { emptyList() }
     }
 
-    /** kid = comma-joined "{business}_{kid}"; each landed chunk leaves both lists at once. */
+    /** kid = "{business}_{kid}", one request each (as the web and Flutter clients do); each landed one leaves both lists. */
     suspend fun delete(entries: List<HistoryEntry>) {
-        entries.map { it.key }.distinct().chunked(50).forEach { chunk ->
-            BiliClient.postData("/x/v2/history/delete", mapOf("kid" to chunk.joinToString(","), "jsonp" to "jsonp"))
-            val gone = chunk.toSet()
-            pager.update { l -> l.filterNot { it.key in gone } }
-            searchPager.update { l -> l.filterNot { it.key in gone } }
+        entries.map { it.key }.distinct().forEach { key ->
+            BiliClient.postData("/x/v2/history/delete", mapOf("kid" to key, "jsonp" to "jsonp"))
+            pager.update { l -> l.filterNot { it.key == key } }
+            searchPager.update { l -> l.filterNot { it.key == key } }
         }
     }
 }

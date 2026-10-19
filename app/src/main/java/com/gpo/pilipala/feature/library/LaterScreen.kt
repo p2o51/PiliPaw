@@ -99,15 +99,19 @@ internal class LaterViewModel : ViewModel() {
         pager.refresh()
     }
 
-    /** aid = comma-joined avids. */
+    /** One request per aid (the endpoint takes a single one); each landed one leaves the list. */
     suspend fun remove(items: List<VideoItem>) {
         val aids = items.map { it.aid }.distinct()
         if (aids.isEmpty()) return
-        BiliClient.postData("/x/v2/history/toview/del", mapOf("aid" to aids.joinToString(","), "jsonp" to "jsonp"))
-        WidgetStore.laterChanged()
-        val gone = aids.toSet()
-        pager.update { l -> l.filterNot { it.aid in gone } }
-        count = (count - aids.size).coerceAtLeast(0)
+        try {
+            aids.forEach { aid ->
+                BiliClient.postData("/x/v2/history/toview/del", mapOf("aid" to aid, "jsonp" to "jsonp"))
+                pager.update { l -> l.filterNot { it.aid == aid } }
+                count = (count - 1).coerceAtLeast(0)
+            }
+        } finally {
+            WidgetStore.laterChanged()
+        }
     }
 
     suspend fun clearWatched() {
