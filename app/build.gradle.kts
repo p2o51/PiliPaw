@@ -12,8 +12,8 @@ android {
         applicationId = "com.gpo.pilipala"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.4.13"
+        versionCode = 24
+        versionName = "0.4.14"
     }
 
     buildTypes {
