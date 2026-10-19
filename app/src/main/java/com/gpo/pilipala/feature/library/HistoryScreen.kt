@@ -63,6 +63,7 @@ import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asBool
 import com.gpo.pilipala.core.net.asObj
 import com.gpo.pilipala.core.net.asString
+import com.gpo.pilipala.core.net.bool
 import com.gpo.pilipala.core.net.int
 import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.obj
@@ -193,8 +194,9 @@ internal class HistoryViewModel : ViewModel() {
         if (kw.isEmpty()) {
             Page(emptyList(), hasMore = false)
         } else {
+            // The web client's history search (web-goblin's older path is gone: a 404 page).
             val data = BiliClient.getData(
-                "/x/web-goblin/history/search",
+                "/x/web-interface/history/search",
                 mapOf("pn" to pn, "keyword" to kw, "business" to "all"),
             ).asObj
             val today = LocalDate.now(HistoryZone)
@@ -202,7 +204,8 @@ internal class HistoryViewModel : ViewModel() {
             val page = data.obj("page")
             val total = page.int("total")
             val size = page.int("size").takeIf { it > 0 } ?: list.size
-            Page(list, hasMore = list.isNotEmpty() && (total <= 0 || pn * size < total), nextCursor = (pn + 1).toString())
+            val more = if (data?.containsKey("has_more") == true) data.bool("has_more") else total <= 0 || pn * size < total
+            Page(list, hasMore = list.isNotEmpty() && more, nextCursor = (pn + 1).toString())
         }
     }
 

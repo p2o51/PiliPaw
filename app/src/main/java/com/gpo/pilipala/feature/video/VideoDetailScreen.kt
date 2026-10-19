@@ -68,6 +68,7 @@ import com.gpo.pilipala.feature.reply.ReplyList
 import com.gpo.pilipala.feature.video.portrait.PortraitVideoLayout
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.navigation.transition.LocalPageSettled
 import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.ErrorState
 import com.gpo.pilipala.ui.components.FameMode
@@ -146,10 +147,26 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     val immersiveOn = vm.immersive == true
     // A route that does not know the picture's shape opens classic; when the detail then
     // says portrait, the picture flies from the classic slot into the pager like 全屏 does,
-    // instead of the page cross-fading into another layout around it.
+    // instead of the page cross-fading into another layout around it. A decision that lands
+    // while the page is still growing from its card waits for the landing: the classic slot's
+    // rect is the scaled one inside the container until then, and the grow carries the
+    // classic page it started with.
     val decided = remember { arrayOf(vm.immersive) }
-    if (decided[0] == null && immersiveOn && handoff.flight == null) handoff.toImmersive()
+    val holdClassic = remember { booleanArrayOf(false) }
+    val settled = LocalPageSettled.current
+    if (decided[0] == null && immersiveOn) {
+        if (settled) {
+            if (handoff.flight == null) handoff.toImmersive()
+        } else {
+            holdClassic[0] = true
+        }
+    }
     decided[0] = vm.immersive
+    if (holdClassic[0] && settled) {
+        holdClassic[0] = false
+        if (immersiveOn && handoff.flight == null) handoff.toImmersive()
+    }
+    val showImmersive = immersiveOn && !holdClassic[0]
     // 缩小 (immersive → classic) and 全屏 on a portrait picture (classic → immersive), for this visit only.
     val toImmersive: () -> Unit = {
         if (vm.immersive != true && vm.queue == null) {
@@ -214,12 +231,12 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         // is made once the detail arrives, then only the user's 缩小 / 全屏 changes it.
         val effects = YoinMotion.defaultEffectsSpec<Float>()
         AnimatedContent(
-            targetState = immersiveOn,
+            targetState = showImmersive,
             transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
             label = "videoLayout",
         ) { on ->
             // Only the layout being shown carries the player, and neither while it flies.
-            val hosts = on == (vm.immersive == true) && handoff.flight == null
+            val hosts = on == showImmersive && handoff.flight == null
             if (on) {
                 PortraitVideoLayout(
                     vm = vm,

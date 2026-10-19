@@ -38,7 +38,8 @@
                 android:tint="@color/widget_preview_on_block" />
         </FrameLayout>
 
-        <Space
+        <!-- A gap; RemoteViews inflates no <Space> (the picker then shows "Can't add widget"). -->
+        <FrameLayout
             android:layout_width="8dp"
             android:layout_height="match_parent" />
 
