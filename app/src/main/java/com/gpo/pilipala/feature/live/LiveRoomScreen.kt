@@ -175,6 +175,21 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
     val windowInfo = LocalWindowInfo.current
     val window = remember(windowInfo) { { windowInfo.containerSize } }
     LiveFullscreenBackHandler(back, enabled = fullscreen && !pip, window = window) { fullscreen = false }
+    // The bridge frame leaves once the inline view draws its own picture (or after a moment).
+    val bridged = back.bridge != null
+    DisposableEffect(bridged) {
+        val listener = object : androidx.media3.common.Player.Listener {
+            override fun onRenderedFirstFrame() { back.bridge = null }
+        }
+        if (bridged) vm.player.addListener(listener)
+        onDispose { vm.player.removeListener(listener) }
+    }
+    LaunchedEffect(bridged) {
+        if (bridged) {
+            delay(BridgeMaxMs)
+            back.bridge = null
+        }
+    }
     val density = LocalDensity.current
     val inlineBack = { radius: Dp -> Modifier.liveBackInline(back, with(density) { radius.toPx() }, window) }
     // App to background: background play keeps the audio (the PiP window closing does not).
@@ -631,3 +646,6 @@ private fun FullscreenEffect(fullscreen: Boolean, portrait: Boolean) {
 private fun DarkStatusBarEffect(enabled: Boolean) {
     LightBarIcons(enabled = enabled, status = true)
 }
+
+/** A bridge frame never outstays this, even if the inline view's first frame is never reported. */
+private const val BridgeMaxMs = 1500L

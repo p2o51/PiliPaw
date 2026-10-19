@@ -1,20 +1,31 @@
 package com.gpo.pilipala.feature.live
 
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
+import android.view.Window
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
@@ -32,6 +43,10 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
+import kotlin.math.roundToInt
 import kotlin.math.min
 
 /**
@@ -60,6 +75,12 @@ internal class LiveBackState {
     internal var target: Rect? = null
     internal var targetRadius: Float = 0f
     internal var release: Rect? = null
+
+    /**
+     * The fullscreen picture as it was let go, drawn over the inline slot until the inline
+     * view shows its own first frame: the inline view is a new SurfaceView, black until then.
+     */
+    var bridge by mutableStateOf<ImageBitmap?>(null)
 
     /** Set by the fullscreen view: a software-turned picture exits without following the finger. */
     internal var turned: Boolean = false
@@ -97,6 +118,11 @@ internal fun Modifier.liveBackInline(st: LiveBackState, radiusPx: Float, window:
         st.inline = Rect(c.positionInWindow(), c.size.toSize())
         st.inlineWindow = window()
         st.inlineRadius = radiusPx
+    }.drawWithContent {
+        drawContent()
+        st.bridge?.let { b ->
+            drawImage(b, dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()))
+        }
     }.graphicsLayer {
         val s = st.settle.value
         val from = st.release
@@ -170,6 +196,7 @@ internal fun LiveFullscreenBackHandler(
     onExit: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val activity = LocalActivity.current
     val density = LocalDensity.current
     val latestExit by rememberUpdatedState(onExit)
     val latestWindow by rememberUpdatedState(window)
@@ -203,6 +230,7 @@ internal fun LiveFullscreenBackHandler(
         }
         val pose = if (inline != null) st.poseNow() else null
         if (pose != null) {
+            st.bridge = activity?.window?.let { copyPicture(it, pose) }
             st.release = pose
             st.settle.snapTo(1f)
         }
@@ -216,3 +244,25 @@ internal fun LiveFullscreenBackHandler(
         }
     }
 }
+
+/** The window's pixels under [rect] (the let-go picture), or null when the copy fails or takes too long. */
+private suspend fun copyPicture(window: Window, rect: Rect): ImageBitmap? {
+    val left = rect.left.roundToInt()
+    val top = rect.top.roundToInt()
+    val w = rect.width.roundToInt()
+    val h = rect.height.roundToInt()
+    if (w <= 1 || h <= 1) return null
+    val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    val src = android.graphics.Rect(left, top, left + w, top + h)
+    val ok = withTimeoutOrNull(BridgeCopyTimeoutMs) {
+        suspendCancellableCoroutine { c ->
+            runCatching {
+                PixelCopy.request(window, src, bitmap, { result -> if (c.isActive) c.resume(result == PixelCopy.SUCCESS) }, Handler(Looper.getMainLooper()))
+            }.onFailure { if (c.isActive) c.resume(false) }
+        }
+    } == true
+    return if (ok) bitmap.asImageBitmap() else null
+}
+
+/** The copy usually lands within a frame; past this the exit goes ahead without the bridge. */
+private const val BridgeCopyTimeoutMs = 120L

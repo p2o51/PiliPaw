@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -77,15 +78,17 @@ class WatchWidgetReceiver : GlanceAppWidgetReceiver() {
  * 继续看 on the home screen: the video last left part-way, large, with its cover and how
  * far you got; beside or below it the first 稍后再看 entries when logged in.
  *
- * The app's own colours ([WidgetColors]), the system's widget corner radius, and
- * a layout per size bucket ([SizeMode.Responsive]): small shows 继续看 alone, medium puts
- * the list beside it, large and tall stack the list under it with thumbnails.
+ * The app's own colours ([WidgetColors]), the system's widget corner radius, and a layout
+ * per size class: small shows 继续看 alone, medium puts the list beside it, large and tall
+ * stack the list under it with thumbnails. [SizeMode.Exact], so a layout knows the real
+ * height (portrait and landscape cells differ) and the list fills it instead of stopping
+ * at a bucket's minimum; [Small]…[Tall] are the class thresholds.
  *
  * A tap opens the video at its progress through the same intents as the launcher
  * shortcut (AppShortcuts → MainActivity), or the 稍后再看 page from the list's header.
  */
 class WatchWidget : GlanceAppWidget() {
-    override val sizeMode: SizeMode = SizeMode.Responsive(setOf(Small, Medium, Large, Tall))
+    override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         // The first frame draws what is loaded here. The session then stays up for a while,
@@ -212,12 +215,17 @@ private fun WatchContent(data: WatchData) {
     }
 }
 
-/** Medium: 继续看 and the list side by side. */
+/** Medium: 继续看 and the list side by side; without 继续看, the list alone. */
 @Composable
 private fun MediumLayout(data: WatchData) {
     val resume = data.resume
     if (resume != null && data.later.isEmpty()) {
         ResumeRow(resume, data.resumeCover)
+        return
+    }
+    if (resume == null) {
+        // Nothing to resume: the list with thumbnails takes the whole widget.
+        LaterList(data, rows = listRowsFor(LocalSize.current.height), thumbs = true, modifier = GlanceModifier.fillMaxSize(), fill = true)
         return
     }
     Row(GlanceModifier.fillMaxSize()) {
@@ -226,7 +234,7 @@ private fun MediumLayout(data: WatchData) {
         }
         if (resume != null && data.later.isNotEmpty()) Spacer(GlanceModifier.width(12.dp))
         if (data.later.isNotEmpty()) {
-            LaterList(data, rows = 2, thumbs = false, modifier = GlanceModifier.defaultWeight().fillMaxHeight())
+            LaterList(data, rows = listRowsFor(LocalSize.current.height, thumbs = false), thumbs = false, modifier = GlanceModifier.defaultWeight().fillMaxHeight(), fill = true)
         }
     }
 }
@@ -241,9 +249,15 @@ private fun StackLayout(data: WatchData, rows: Int) {
         }
         if (data.later.isNotEmpty()) {
             if (resume != null) Spacer(GlanceModifier.height(12.dp))
-            // Without 继续看 the list has the whole height.
-            val n = if (resume == null) rows + 1 else rows
-            LaterList(data, rows = n.coerceAtMost(WidgetData.MaxLaterRows), thumbs = true, modifier = GlanceModifier.fillMaxWidth())
+            // Without 继续看 the list has the whole height: as many rows as fit.
+            val n = if (resume == null) listRowsFor(LocalSize.current.height) else rows.coerceAtMost(WidgetData.MaxLaterRows)
+            LaterList(
+                data,
+                rows = n,
+                thumbs = true,
+                modifier = if (resume == null) GlanceModifier.fillMaxSize() else GlanceModifier.fillMaxWidth(),
+                fill = resume == null,
+            )
         }
     }
 }
@@ -340,9 +354,13 @@ private fun Cover(cover: Bitmap?, progress: Float?, modifier: GlanceModifier) {
     }
 }
 
-/** 稍后再看: a header that opens the page, then the first [rows] entries. */
+/**
+ * 稍后再看: a header that opens the page, then the first [rows] entries. With [fill] (the list
+ * alone in the widget) a full list's thumbnail rows share the height, taking up what is left
+ * under the last whole row.
+ */
 @Composable
-private fun LaterList(data: WatchData, rows: Int, thumbs: Boolean, modifier: GlanceModifier) {
+private fun LaterList(data: WatchData, rows: Int, thumbs: Boolean, modifier: GlanceModifier, fill: Boolean = false) {
     val context = LocalContext.current
     val colors = GlanceTheme.colors
     Column(modifier) {
@@ -357,18 +375,21 @@ private fun LaterList(data: WatchData, rows: Int, thumbs: Boolean, modifier: Gla
                 Text(data.laterCount.toString(), style = style(colors.onSurfaceVariant, 12.sp, FontWeight.Medium), maxLines = 1)
             }
         }
-        Spacer(GlanceModifier.height(6.dp))
+        Spacer(GlanceModifier.height(ListHeaderGap))
+        val stretch = fill && data.later.size >= rows
         data.later.take(rows).forEachIndexed { i, e ->
-            if (i > 0) Spacer(GlanceModifier.height(4.dp))
+            if (i > 0) Spacer(GlanceModifier.height(RowGap))
             if (thumbs) {
-                ThumbRow(e, data.laterThumbs.getOrNull(i))
+                val size = if (stretch) GlanceModifier.defaultWeight() else GlanceModifier.height(ThumbRowHeight)
+                ThumbRow(e, data.laterThumbs.getOrNull(i), size)
             } else {
                 Box(
-                    GlanceModifier
+                    (if (stretch) GlanceModifier.defaultWeight() else GlanceModifier)
                         .fillMaxWidth()
                         .block(colors.secondaryContainer)
                         .padding(horizontal = 10.dp, vertical = 7.dp)
                         .clickable(open(laterIntent(context, e))),
+                    contentAlignment = Alignment.CenterStart,
                 ) {
                     Text(e.title.ifBlank { e.bvid }, style = style(colors.onSecondaryContainer, 12.sp), maxLines = 1)
                 }
@@ -377,14 +398,27 @@ private fun LaterList(data: WatchData, rows: Int, thumbs: Boolean, modifier: Gla
     }
 }
 
+// The list's geometry (LaterList / ThumbRow): header, the gap under it, a row and the gap between rows.
+private val ListHeader = 22.dp
+private val ListHeaderGap = 6.dp
+private val ThumbRowHeight = 44.dp
+private val TextRowHeight = 30.dp
+private val RowGap = 4.dp
+
+/** How many rows (thumbnail or title-only) fill a widget [height] tall under the list's header. */
+private fun listRowsFor(height: Dp, thumbs: Boolean = true): Int {
+    val room = height - Pad * 2 - ListHeader - ListHeaderGap + RowGap
+    val row = if (thumbs) ThumbRowHeight else TextRowHeight
+    return (room / (row + RowGap)).toInt().coerceIn(1, WidgetData.MaxListRows)
+}
+
 @Composable
-private fun ThumbRow(e: LaterEntry, thumb: Bitmap?) {
+private fun ThumbRow(e: LaterEntry, thumb: Bitmap?, size: GlanceModifier) {
     val context = LocalContext.current
     val colors = GlanceTheme.colors
     Row(
-        GlanceModifier
+        size
             .fillMaxWidth()
-            .height(44.dp)
             .block(colors.secondaryContainer)
             .padding(4.dp)
             .clickable(open(laterIntent(context, e))),

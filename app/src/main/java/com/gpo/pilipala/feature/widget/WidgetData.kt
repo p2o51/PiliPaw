@@ -30,8 +30,11 @@ internal class WatchData(
 )
 
 internal object WidgetData {
-    /** The tallest layout shows this many 稍后再看 rows. */
+    /** The tallest layout shows this many 稍后再看 rows under 继续看. */
     const val MaxLaterRows = 4
+
+    /** With nothing to resume the list has the whole widget: up to this many rows (no cover then). */
+    const val MaxListRows = 8
 
     // Every bitmap of one update travels in a single RemoteViews parcel (shared by the size
     // buckets): about 0.5MB at most, under the binder's 1MB.
@@ -48,7 +51,7 @@ internal object WidgetData {
         val cover = async { resume?.let { cover(context, it.cover, CoverW, CoverH) } }
         val cache = withContext(Dispatchers.IO) { WidgetStore.laterForWidget(context) }
         val later = cache?.items.orEmpty().filter { it.epId > 0 || it.bvid != resume?.bvid }
-        val thumbs = later.take(MaxLaterRows).map { async { cover(context, it.cover, ThumbW, ThumbH) } }.awaitAll()
+        val thumbs = later.take(if (resume == null) MaxListRows else MaxLaterRows).map { async { cover(context, it.cover, ThumbW, ThumbH) } }.awaitAll()
         WatchData(
             resume = resume,
             resumeCover = cover.await(),

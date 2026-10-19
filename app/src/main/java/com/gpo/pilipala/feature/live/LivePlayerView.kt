@@ -172,7 +172,8 @@ internal fun LivePlayerView(
                 // The video view is rebuilt whenever its frame changes size (inline ⇄ fullscreen,
                 // window resize). On some devices a resized SurfaceView keeps its old size and the
                 // picture sits small in a corner of the fullscreen frame; a new view is laid out
-                // at the right size from its first frame. Costs at most a black frame at the switch.
+                // at the right size from its first frame. Costs at most a black frame at the switch
+                // (after a back gesture the let-go picture covers it: LiveBackState.bridge).
                 key(surfaceType, fullscreen, configuration.screenWidthDp, configuration.screenHeightDp) {
                     ContentFrame(
                         player = vm.player,
