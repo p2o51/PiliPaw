@@ -65,6 +65,7 @@ import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.ErrorState
@@ -495,11 +496,14 @@ internal fun JsonObject.favMediaToVideo(): VideoItem {
 internal fun FolderCard(
     folder: FavFolder,
     modifier: Modifier = Modifier,
+    /** The page it opens, for the card-grown transition. */
+    route: Route? = null,
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Column(
         modifier
+            .then(if (route != null) Modifier.pageSharedSource(route) else Modifier)
             .clip(YoinContainerShapes.Card)
             .combinedClickable(onLongClick = onLongClick, onClick = onClick)
             .padding(bottom = 8.dp),

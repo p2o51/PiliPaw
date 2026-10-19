@@ -30,6 +30,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.node.PointerInputModifierNode
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
@@ -127,14 +131,25 @@ private class PageSharedSourceElement(
 /**
  * Registered while attached; [onPlaced] only stores the coordinates
  * reference (no math, no allocation) — [PageTransitions.beforePush]
- * resolves the card's bounds from it.
+ * resolves the card's bounds from it. Two cards can share a key (the same
+ * video in two rows, or on a pager's neighbouring page): a press makes the
+ * touched one the source, whichever was placed last.
  */
 private class PageSharedSourceNode(
     private var transitions: PageTransitions,
     private var key: String,
     private var solid: Color,
     private var shape: Shape?,
-) : Modifier.Node(), LayoutAwareModifierNode {
+) : Modifier.Node(), LayoutAwareModifierNode, PointerInputModifierNode {
+    override fun onPointerEvent(pointerEvent: PointerEvent, pass: PointerEventPass, bounds: IntSize) {
+        if (pass != PointerEventPass.Initial || pointerEvent.type != PointerEventType.Press) return
+        val c = coordinates ?: return
+        transitions.noteSourceCoordinates(key, c)
+        noteLook(c)
+    }
+
+    override fun onCancelPointerInput() = Unit
+
     private var coordinates: LayoutCoordinates? = null
 
     override fun onAttach() {

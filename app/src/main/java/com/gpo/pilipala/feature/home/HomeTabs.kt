@@ -333,10 +333,12 @@ internal fun BangumiTab(state: LazyGridState, reselect: Flow<Unit>, headerBehavi
 @Composable
 private fun BangumiCard(item: BangumiItem, modifier: Modifier = Modifier, showProgress: Boolean = false) {
     val nav = LocalNavigator.current
+    val route = Route.Bangumi(seasonId = item.seasonId, cover = item.cover)
     Column(
         modifier
+            .pageSharedSource(route)
             .clip(YoinContainerShapes.Card)
-            .clickable { nav.push(Route.Bangumi(seasonId = item.seasonId, cover = item.cover)) },
+            .clickable { nav.push(route) },
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(3f / 4f)) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 240.dp)

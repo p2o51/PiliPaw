@@ -161,16 +161,18 @@ fun FavScreen(route: Route.Fav) {
             ) {
                 sectionHeader("h_created", if (vm.isOwner) "我创建的" else "创建的收藏夹")
                 items(vm.created.items, key = { "c${it.id}" }) { folder ->
+                    val route = Route.FavDetail(folder.id, folder.title, folder.cover)
                     FolderCard(
                         folder,
                         modifier = Modifier.animateItem(),
+                        route = route,
                         onLongClick = if (vm.isOwner) {
                             {
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 sheetFolder = folder
                             }
                         } else null,
-                        onClick = { nav.push(Route.FavDetail(folder.id, folder.title, folder.cover)) },
+                        onClick = { nav.push(route) },
                     )
                 }
                 pagerFooter(vm.created)

@@ -485,10 +485,12 @@ private fun FolderSection(vm: MineViewModel, user: UserInfo?) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(vm.folders, key = { it.id }) { f ->
+                        val route = Route.FavDetail(f.id, f.title, f.cover)
                         FolderCard(
                             f,
                             modifier = Modifier.width(168.dp).animateItem(),
-                            onClick = { nav.push(Route.FavDetail(f.id, f.title, f.cover)) },
+                            route = route,
+                            onClick = { nav.push(route) },
                         )
                     }
                 }

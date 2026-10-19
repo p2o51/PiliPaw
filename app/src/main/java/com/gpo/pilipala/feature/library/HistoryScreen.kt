@@ -56,6 +56,7 @@ import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.LinkRouter
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.CoverBadge
 import com.gpo.pilipala.ui.components.DurationChip
 import com.gpo.pilipala.ui.components.LoadMoreEffect
@@ -217,13 +218,9 @@ fun HistoryScreen() {
 
     fun open(e: HistoryEntry) {
         when {
-            e.business == "pgc" && e.epid > 0 -> nav.push(Route.Bangumi(epId = e.epid, cover = e.cover))
-            e.business == "live" -> if (e.liveStatus == 1) nav.push(Route.LiveRoom(e.oid, e.cover, e.title)) else toast("未开播")
+            e.business == "live" && e.liveStatus != 1 -> toast("未开播")
             e.business.startsWith("article") -> nav.push(Route.Read(if (e.cid > 0) e.cid else e.oid, e.title))
-            e.bvid.isNotEmpty() -> nav.push(
-                Route.Video(bvid = e.bvid, cid = e.cid, aid = e.oid, cover = e.cover, title = e.title, progress = e.progress.coerceAtLeast(0)),
-            )
-            e.uri.isNotEmpty() -> nav.openUrl(e.uri, e.title)
+            else -> e.route()?.let(nav::push) ?: run { if (e.uri.isNotEmpty()) nav.openUrl(e.uri, e.title) }
         }
     }
 
@@ -289,7 +286,7 @@ fun HistoryScreen() {
                     item(key = e.key, contentType = "entry") {
                         HistoryCard(
                             e,
-                            modifier = Modifier.animateItem(),
+                            modifier = Modifier.animateItem().then(e.route()?.let { Modifier.pageSharedSource(it) } ?: Modifier),
                             onClick = { open(e) },
                             onLongClick = {
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -349,6 +346,15 @@ fun HistoryScreen() {
             onDismiss = { confirmClear = false },
         )
     }
+}
+
+/** The page an entry opens with a card-grown transition: video, bangumi episode, live room. */
+private fun HistoryEntry.route(): Route? = when {
+    business == "pgc" && epid > 0 -> Route.Bangumi(epId = epid, cover = cover)
+    business == "live" -> Route.LiveRoom(oid, cover, title)
+    business.startsWith("article") -> null
+    bvid.isNotEmpty() -> Route.Video(bvid = bvid, cid = cid, aid = oid, cover = cover, title = title, progress = progress.coerceAtLeast(0))
+    else -> null
 }
 
 @Composable

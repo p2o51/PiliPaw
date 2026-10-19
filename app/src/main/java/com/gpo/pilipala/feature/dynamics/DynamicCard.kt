@@ -73,6 +73,7 @@ import com.gpo.pilipala.core.util.IdUtils
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Navigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.CoverBadge
 import com.gpo.pilipala.ui.components.DurationChip
@@ -293,9 +294,7 @@ private fun MajorContent(item: JsonObject, blockColor: Color) {
                 play = a.obj("stat").str("play"),
                 danmaku = a.obj("stat").str("danmaku"),
                 badge = a.obj("badge").str("text").takeIf { it != "投稿视频" },
-                onClick = if (bvid.isEmpty()) null else {
-                    { nav.push(Route.Video(bvid, aid = aid, cover = a.str("cover"), title = a.str("title"))) }
-                },
+                source = if (bvid.isEmpty()) null else Route.Video(bvid, aid = aid, cover = a.str("cover"), title = a.str("title")),
             )
         }
         "MAJOR_TYPE_UGC_SEASON" -> major.obj("ugc_season")?.let { s ->
@@ -307,9 +306,7 @@ private fun MajorContent(item: JsonObject, blockColor: Color) {
                 play = s.obj("stat").str("play"),
                 danmaku = s.obj("stat").str("danmaku"),
                 badge = "合集",
-                onClick = if (aid <= 0) null else {
-                    { nav.push(Route.Video(IdUtils.av2bv(aid), aid = aid, cover = s.str("cover"), title = s.str("title"))) }
-                },
+                source = if (aid <= 0) null else Route.Video(IdUtils.av2bv(aid), aid = aid, cover = s.str("cover"), title = s.str("title")),
             )
         }
         "MAJOR_TYPE_PGC" -> major.obj("pgc")?.let { p ->
@@ -320,7 +317,7 @@ private fun MajorContent(item: JsonObject, blockColor: Color) {
                 play = p.obj("stat").str("play"),
                 danmaku = p.obj("stat").str("danmaku"),
                 badge = p.obj("badge").str("text").ifEmpty { null },
-                onClick = { nav.push(Route.Bangumi(seasonId = p.long("season_id"), epId = p.long("epid"), cover = p.str("cover"))) },
+                source = Route.Bangumi(seasonId = p.long("season_id"), epId = p.long("epid"), cover = p.str("cover")),
             )
         }
         "MAJOR_TYPE_LIVE_RCMD" -> parseLiveRcmd(major)?.let { l ->
@@ -330,7 +327,7 @@ private fun MajorContent(item: JsonObject, blockColor: Color) {
                 area = l.area,
                 watched = l.watched,
                 isLive = l.isLive,
-                onClick = { nav.push(Route.LiveRoom(l.roomId, l.cover, l.title)) },
+                source = Route.LiveRoom(l.roomId, l.cover, l.title),
             )
         }
         "MAJOR_TYPE_LIVE" -> major.obj("live")?.let { l ->
@@ -341,7 +338,8 @@ private fun MajorContent(item: JsonObject, blockColor: Color) {
                 subtitle = l.str("desc_first"),
                 badge = l.obj("badge").str("text").ifEmpty { null },
                 color = blockColor,
-                onClick = { nav.push(Route.LiveRoom(l.long("id"), l.str("cover"), l.str("title"))) },
+                source = Route.LiveRoom(l.long("id"), l.str("cover"), l.str("title")),
+                onClick = null,
             )
         }
         "MAJOR_TYPE_ARTICLE" -> major.obj("article")?.let { ar ->
@@ -425,7 +423,8 @@ private fun AdditionalContent(item: JsonObject, blockColor: Color) {
                 subtitle = u.str("desc_second"),
                 badge = u.str("duration").ifEmpty { null },
                 color = blockColor,
-                onClick = { if (bvid != null) nav.push(Route.Video(bvid, cover = u.str("cover"), title = u.str("title"))) else nav.openUrl(normalizeUrl(u.str("jump_url"))) },
+                source = bvid?.let { Route.Video(it, cover = u.str("cover"), title = u.str("title")) },
+                onClick = { nav.openUrl(normalizeUrl(u.str("jump_url"))) },
             )
         }
         "ADDITIONAL_TYPE_RESERVE" -> add.obj("reserve")?.let { r ->
@@ -545,13 +544,16 @@ private fun VideoBlock(
     play: String,
     danmaku: String,
     badge: String?,
-    onClick: (() -> Unit)?,
+    /** The page it opens (card-grown); null: not tappable. */
+    source: Route?,
 ) {
+    val nav = LocalNavigator.current
     Column(
         Modifier
             .fillMaxWidth()
+            .then(if (source != null) Modifier.pageSharedSource(source) else Modifier)
             .clip(CoverShape)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(if (source != null) Modifier.clickable { nav.push(source) } else Modifier),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
@@ -591,10 +593,11 @@ private fun LiveBlock(
     area: String,
     watched: String,
     isLive: Boolean,
-    onClick: () -> Unit,
+    source: Route,
 ) {
+    val nav = LocalNavigator.current
     Column(
-        Modifier.fillMaxWidth().clip(CoverShape).clickable(onClick = onClick),
+        Modifier.fillMaxWidth().pageSharedSource(source).clip(CoverShape).clickable { nav.push(source) },
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
@@ -668,13 +671,18 @@ private fun RowBlock(
     onClick: (() -> Unit)?,
     coverRatio: Float = 1f,
     icon: ImageVector? = null,
+    /** A native page it opens card-grown, in place of [onClick]. */
+    source: Route? = null,
 ) {
+    val nav = LocalNavigator.current
+    val tap = source?.let { r -> { nav.push(r) } } ?: onClick
     Row(
         Modifier
             .fillMaxWidth()
+            .then(if (source != null) Modifier.pageSharedSource(source) else Modifier)
             .clip(BlockShape)
             .background(color)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (tap != null) Modifier.clickable(onClick = tap) else Modifier)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
