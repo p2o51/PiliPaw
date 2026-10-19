@@ -1,6 +1,25 @@
 package com.gpo.pilipala.feature.library
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalFloatingToolbar
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -45,6 +64,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +78,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
@@ -552,5 +575,193 @@ internal fun FolderCard(
 @Composable
 internal fun BlockSurface(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Surface(modifier = modifier, shape = YoinContainerShapes.Card, color = MaterialTheme.colorScheme.surfaceContainer, content = content)
+}
+
+// ── Multi-select (历史 / 稍后再看) ───────────────────────────────────────────
+
+/** Select mode's top-bar glyph: a rounded square holding a check. 24 viewport, 1.5 stroke, round caps. */
+internal val SelectGlyph: ImageVector by lazy {
+    ImageVector.Builder("Select", 24.dp, 24.dp, 24f, 24f).apply {
+        addPath(
+            pathData = PathParser().parsePathString(
+                "M7.5 4h9a3.5 3.5 0 0 1 3.5 3.5v9a3.5 3.5 0 0 1 -3.5 3.5h-9a3.5 3.5 0 0 1 -3.5 -3.5v-9a3.5 3.5 0 0 1 3.5 -3.5z" +
+                    "M8.5 12.3l2.4 2.4l4.6 -5.2",
+            ).toNodes(),
+            fill = null,
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 1.5f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        )
+    }.build()
+}
+
+/** A selected row sits on a tonal block; unselected rows have none. */
+@Composable
+internal fun Modifier.selectionBlock(selected: Boolean): Modifier {
+    val block = MaterialTheme.colorScheme.secondaryContainer
+    val color by animateColorAsState(
+        if (selected) block else block.copy(alpha = 0f),
+        YoinMotion.defaultEffectsSpec(),
+        label = "selectionBlock",
+    )
+    // Background only, no clip: the card's shared-element source must not be cut.
+    return this.background(color, YoinContainerShapes.ListRow)
+}
+
+/** Filled check block laid over a selected cover (placed and sized by [modifier]). */
+@Composable
+internal fun SelectionCover(selected: Boolean, modifier: Modifier = Modifier) {
+    AnimatedVisibility(
+        visible = selected,
+        modifier = modifier,
+        enter = fadeIn(YoinMotion.defaultEffectsSpec()),
+        exit = fadeOut(YoinMotion.fastEffectsSpec()),
+    ) {
+        Box(
+            Modifier.fillMaxSize().clip(LibCoverShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier
+                    .animateEnterExit(
+                        enter = scaleIn(YoinMotion.fastSpatialSpec(), initialScale = 0.4f),
+                        exit = scaleOut(YoinMotion.fastSpatialSpec(), targetScale = 0.4f),
+                    )
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(YoinSymbols.Check, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onPrimary)
+            }
+        }
+    }
+}
+
+/** The cover slot of a 152dp row card (VideoCardH / HistoryCard), where [SelectionCover] goes. */
+internal val RowCoverSlot: Modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).width(152.dp).aspectRatio(16f / 10f)
+
+/** Room the floating selection toolbar takes at the bottom of a list. */
+internal val SelectionToolbarRoom = 96.dp
+
+/** Floating toolbar of select mode: 全选 toggle, then the destructive action with the count. */
+@Composable
+internal fun BoxScope.SelectionToolbar(
+    visible: Boolean,
+    count: Int,
+    allSelected: Boolean,
+    deleteLabel: String,
+    onSelectAll: (Boolean) -> Unit,
+    onDelete: () -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    AnimatedVisibility(
+        visible = visible,
+        modifier = Modifier.align(Alignment.BottomCenter),
+        enter = slideInVertically(YoinMotion.defaultSpatialSpec()) { it } + fadeIn(YoinMotion.defaultEffectsSpec()),
+        exit = slideOutVertically(YoinMotion.fastSpatialSpec()) { it } + fadeOut(YoinMotion.fastEffectsSpec()),
+    ) {
+        HorizontalFloatingToolbar(
+            expanded = true,
+            modifier = Modifier.navigationBarsPadding().padding(bottom = 24.dp),
+        ) {
+            ToggleButton(
+                checked = allSelected,
+                onCheckedChange = {
+                    haptics.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+                    onSelectAll(it)
+                },
+                shapes = ToggleButtonDefaults.shapes(),
+            ) {
+                Icon(YoinSymbols.Check, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("全选")
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = onDelete,
+                enabled = count > 0,
+                shapes = ButtonDefaults.shapes(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Icon(YoinSymbols.Delete, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(deleteLabel)
+                Spacer(Modifier.width(6.dp))
+                val slide = YoinMotion.fastSpatialSpec<IntOffset>()
+                val fade = YoinMotion.fastEffectsSpec<Float>()
+                AnimatedContent(
+                    targetState = count,
+                    transitionSpec = {
+                        val up = targetState > initialState
+                        (slideInVertically(slide) { if (up) it else -it } + fadeIn(fade)) togetherWith
+                            (slideOutVertically(slide) { if (up) -it else it } + fadeOut(fade))
+                    },
+                    label = "selectionCount",
+                ) { n -> Text("$n", fontWeight = FontWeight.SemiBold) }
+            }
+        }
+    }
+}
+
+/** Top-bar toggle of select mode: the select glyph morphs into a close. */
+@Composable
+internal fun <K> SelectModeButton(selection: Selection<K>) {
+    val haptics = LocalHapticFeedback.current
+    IconButton(
+        onClick = {
+            haptics.performHapticFeedback(if (selection.active) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
+            if (selection.active) selection.exit() else selection.enter()
+        },
+        shapes = IconButtonDefaults.shapes(),
+    ) {
+        val scale = YoinMotion.fastSpatialSpec<Float>()
+        val enterFade = YoinMotion.defaultEffectsSpec<Float>()
+        val exitFade = YoinMotion.fastEffectsSpec<Float>()
+        AnimatedContent(
+            targetState = selection.active,
+            transitionSpec = {
+                (scaleIn(scale, initialScale = 0.6f) + fadeIn(enterFade)) togetherWith
+                    (scaleOut(scale, targetScale = 0.6f) + fadeOut(exitFade))
+            },
+            label = "selectMode",
+        ) { on -> Icon(if (on) YoinSymbols.Close else SelectGlyph, contentDescription = if (on) "退出多选" else "多选") }
+    }
+}
+
+/** Select mode state for a list keyed by [K]: the selected keys, kept to what is still on screen. */
+@Stable
+internal class Selection<K> {
+    var active by mutableStateOf(false)
+        private set
+    var keys by mutableStateOf<Set<K>>(emptySet())
+        private set
+
+    fun enter() {
+        active = true
+    }
+
+    fun exit() {
+        active = false
+        keys = emptySet()
+    }
+
+    fun toggle(key: K) {
+        keys = if (key in keys) keys - key else keys + key
+    }
+
+    fun setAll(all: Collection<K>, on: Boolean) {
+        keys = if (on) keys + all else keys - all.toSet()
+    }
+
+    /** Drops keys that left the list (deleted, refreshed away). */
+    fun retain(present: Collection<K>) {
+        val set = present.toSet()
+        if (keys.any { it !in set }) keys = keys.filterTo(HashSet()) { it in set }
+    }
 }
 

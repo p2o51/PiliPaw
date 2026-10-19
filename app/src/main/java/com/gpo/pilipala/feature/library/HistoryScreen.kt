@@ -1,6 +1,23 @@
 package com.gpo.pilipala.feature.library
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import com.gpo.pilipala.ui.theme.YoinMotion
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -163,7 +180,39 @@ internal class HistoryViewModel : ViewModel() {
             Page(list, hasMore = list.isNotEmpty() && max != 0L, nextCursor = "$max|${c.long("view_at")}|${c.str("business")}")
         }
     }
+    /** Search over the whole history; empty = the plain timeline. */
+    var keyword by mutableStateOf("")
+        private set
+
+    val searchPager = Pager(viewModelScope, dedupKey = { it.key }) { cursor ->
+        val kw = keyword
+        val pn = cursor?.toIntOrNull() ?: 1
+        if (kw.isEmpty()) {
+            Page(emptyList(), hasMore = false)
+        } else {
+            val data = BiliClient.getData(
+                "/x/web-goblin/history/search",
+                mapOf("pn" to pn, "keyword" to kw, "business" to "all"),
+            ).asObj
+            val today = LocalDate.now(HistoryZone)
+            val list = data.arr("list").objects().map { it.toHistory(today) }
+            val page = data.obj("page")
+            val total = page.int("total")
+            val size = page.int("size").takeIf { it > 0 } ?: list.size
+            Page(list, hasMore = list.isNotEmpty() && (total <= 0 || pn * size < total), nextCursor = (pn + 1).toString())
+        }
+    }
+
+    /** The list on screen: search results while a keyword is set. */
+    val active: Pager<HistoryEntry> get() = if (keyword.isNotEmpty()) searchPager else pager
+
     val paused = AppSettings.pauseHistory
+
+    fun search(kw: String) {
+        if (kw == keyword) return
+        keyword = kw
+        if (kw.isNotEmpty()) searchPager.refresh()
+    }
 
     init {
         pager.refresh()
@@ -181,11 +230,17 @@ internal class HistoryViewModel : ViewModel() {
     suspend fun clearAll() {
         BiliClient.postData("/x/v2/history/clear", mapOf("jsonp" to "jsonp"))
         pager.update { emptyList() }
+        searchPager.update { emptyList() }
     }
 
-    suspend fun delete(e: HistoryEntry) {
-        BiliClient.postData("/x/v2/history/delete", mapOf("kid" to e.key, "jsonp" to "jsonp"))
-        pager.update { l -> l.filterNot { it.key == e.key } }
+    /** kid = comma-joined "{business}_{kid}"; each landed chunk leaves both lists at once. */
+    suspend fun delete(entries: List<HistoryEntry>) {
+        entries.map { it.key }.distinct().chunked(50).forEach { chunk ->
+            BiliClient.postData("/x/v2/history/delete", mapOf("kid" to chunk.joinToString(","), "jsonp" to "jsonp"))
+            val gone = chunk.toSet()
+            pager.update { l -> l.filterNot { it.key in gone } }
+            searchPager.update { l -> l.filterNot { it.key in gone } }
+        }
     }
 }
 
@@ -213,8 +268,33 @@ fun HistoryScreen() {
     var menuOpen by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var sheet by remember { mutableStateOf<HistoryEntry?>(null) }
+    var searching by remember { mutableStateOf(vm.keyword.isNotEmpty()) }
+    var query by remember { mutableStateOf(vm.keyword) }
+    val selection = remember { Selection<String>() }
+    var confirmDelete by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
-    LoadMoreEffect(gridState) { vm.pager.loadMore() }
+    val pager = vm.active
+    LoadMoreEffect(gridState) { vm.active.loadMore() }
+
+    LaunchedEffect(query) {
+        if (query.isNotEmpty()) delay(400)
+        vm.search(query.trim())
+    }
+    LaunchedEffect(Unit) {
+        snapshotFlow { vm.keyword }.drop(1).collect { gridState.scrollToItem(0) }
+    }
+    LaunchedEffect(pager.items) { selection.retain(pager.items.map { it.key }) }
+    BackHandler(enabled = selection.active) { selection.exit() }
+    BackHandler(enabled = searching && !selection.active) {
+        searching = false
+        query = ""
+    }
+    val allSelected = pager.items.isNotEmpty() && pager.items.all { it.key in selection.keys }
+    val toolbarRoom by animateDpAsState(
+        if (selection.active) SelectionToolbarRoom else 0.dp,
+        YoinMotion.defaultSpatialSpec(),
+        label = "toolbarRoom",
+    )
 
     fun open(e: HistoryEntry) {
         when {
@@ -226,78 +306,128 @@ fun HistoryScreen() {
 
     LibraryScaffold(
         title = "历史记录",
-        subtitle = if (paused) "已暂停记录" else null,
+        subtitle = when {
+            selection.active -> "已选${selection.keys.size}项"
+            paused -> "已暂停记录"
+            else -> null
+        },
         actions = {
             if (BiliClient.isLoggedIn) {
-                Box {
-                    IconButton(onClick = { menuOpen = true }, shapes = IconButtonDefaults.shapes()) {
-                        Icon(YoinSymbols.MoreVertical, contentDescription = "更多")
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("暂停记录") },
-                            leadingIcon = { Icon(YoinSymbols.Pause, null) },
-                            trailingIcon = { Switch(checked = paused, onCheckedChange = null) },
-                            onClick = {
-                                menuOpen = false
-                                val target = !paused
-                                haptics.performHapticFeedback(if (target) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
-                                scope.launch {
-                                    runCatching { vm.setPaused(target) }
-                                        .onSuccess { toast(if (target) "已暂停记录" else "已恢复记录") }
-                                        .onFailure { toast(it.friendlyMessage()) }
-                                }
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("清空记录") },
-                            leadingIcon = { Icon(YoinSymbols.Delete, null) },
-                            onClick = {
-                                menuOpen = false
-                                confirmClear = true
-                            },
-                        )
+                AnimatedVisibility(
+                    visible = !selection.active,
+                    enter = expandHorizontally(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
+                    exit = shrinkHorizontally(YoinMotion.fastSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
+                ) {
+                    IconButton(
+                        onClick = {
+                            searching = !searching
+                            if (!searching) query = ""
+                        },
+                        shapes = IconButtonDefaults.shapes(),
+                    ) { Icon(if (searching) YoinSymbols.Close else YoinSymbols.Search, contentDescription = "搜索") }
+                }
+                SelectModeButton(selection)
+                AnimatedVisibility(
+                    visible = !selection.active,
+                    enter = expandHorizontally(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
+                    exit = shrinkHorizontally(YoinMotion.fastSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
+                ) {
+                    Box {
+                        IconButton(onClick = { menuOpen = true }, shapes = IconButtonDefaults.shapes()) {
+                            Icon(YoinSymbols.MoreVertical, contentDescription = "更多")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("暂停记录") },
+                                leadingIcon = { Icon(YoinSymbols.Pause, null) },
+                                trailingIcon = { Switch(checked = paused, onCheckedChange = null) },
+                                onClick = {
+                                    menuOpen = false
+                                    val target = !paused
+                                    haptics.performHapticFeedback(if (target) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+                                    scope.launch {
+                                        runCatching { vm.setPaused(target) }
+                                            .onSuccess { toast(if (target) "已暂停记录" else "已恢复记录") }
+                                            .onFailure { toast(it.friendlyMessage()) }
+                                    }
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("清空记录") },
+                                leadingIcon = { Icon(YoinSymbols.Delete, null) },
+                                onClick = {
+                                    menuOpen = false
+                                    confirmClear = true
+                                },
+                            )
+                        }
                     }
                 }
             }
         },
     ) { padding ->
-        PagerBody(vm.pager, padding, emptyLabel = "暂无历史记录", emptyIcon = PiliSymbols.History) { listPadding ->
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(RowGridMinCell),
-                state = gridState,
-                modifier = Modifier.librarySeam(gridState, listPadding),
-                contentPadding = listPadding,
-            ) {
-                var lastDay: String? = null
-                vm.pager.items.forEach { e ->
-                    val day = e.dayLabel
-                    if (day != lastDay) {
-                        lastDay = day
-                        item(key = "day_$day", span = { GridItemSpan(maxLineSpan) }, contentType = "day") {
-                            Text(
-                                day,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.animateItem().padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 6.dp),
-                            )
-                        }
-                    }
-                    item(key = e.key, contentType = "entry") {
-                        HistoryCard(
-                            e,
-                            modifier = Modifier.animateItem().then(e.route()?.let { Modifier.pageSharedSource(it) } ?: Modifier),
-                            onClick = { open(e) },
-                            onLongClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                sheet = e
-                            },
-                        )
-                    }
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
+                AnimatedVisibility(
+                    visible = searching,
+                    enter = expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
+                    exit = shrinkVertically(YoinMotion.fastSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
+                    modifier = Modifier.padding(top = padding.calculateTopPadding()),
+                ) {
+                    SearchField(query, onChange = { query = it }, placeholder = "搜索历史")
                 }
-                pagerFooter(vm.pager)
+                val innerPadding = PaddingValues(
+                    top = if (searching) 0.dp else padding.calculateTopPadding(),
+                    bottom = padding.calculateBottomPadding() + toolbarRoom,
+                )
+                PagerBody(
+                    pager,
+                    innerPadding,
+                    emptyLabel = if (vm.keyword.isNotEmpty()) "无结果" else "暂无历史记录",
+                    emptyIcon = if (vm.keyword.isNotEmpty()) YoinSymbols.Search else PiliSymbols.History,
+                ) { listPadding ->
+                    HistoryGrid(
+                        pager = pager,
+                        gridState = gridState,
+                        listPadding = listPadding,
+                        selection = selection,
+                        onOpen = ::open,
+                        onLongClick = { e ->
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            sheet = e
+                        },
+                    )
+                }
             }
+            SelectionToolbar(
+                visible = selection.active,
+                count = selection.keys.size,
+                allSelected = allSelected,
+                deleteLabel = "删除",
+                onSelectAll = { on -> selection.setAll(pager.items.map { it.key }, on) },
+                onDelete = { confirmDelete = true },
+            )
         }
+    }
+
+    if (confirmDelete) {
+        val n = selection.keys.size
+        ConfirmDialog(
+            title = "删除${n}条记录",
+            confirmLabel = "删除",
+            onConfirm = {
+                val targets = pager.items.filter { it.key in selection.keys }
+                scope.launch {
+                    runCatching { vm.delete(targets) }
+                        .onSuccess {
+                            selection.exit()
+                            toast("已删除")
+                        }
+                        .onFailure { toast(it.friendlyMessage()) }
+                }
+            },
+            onDismiss = { confirmDelete = false },
+        )
     }
 
     sheet?.let { e ->
@@ -322,7 +452,7 @@ fun HistoryScreen() {
                 add(
                     SheetAction("删除记录", YoinSymbols.Delete, destructive = true) {
                         scope.launch {
-                            runCatching { vm.delete(e) }
+                            runCatching { vm.delete(listOf(e)) }
                                 .onSuccess { toast("已删除") }
                                 .onFailure { toast(it.friendlyMessage()) }
                         }
@@ -345,6 +475,61 @@ fun HistoryScreen() {
             },
             onDismiss = { confirmClear = false },
         )
+    }
+}
+
+/** Day-grouped entries of [pager]; in select mode a tap toggles the entry instead of opening it. */
+@Composable
+private fun HistoryGrid(
+    pager: Pager<HistoryEntry>,
+    gridState: LazyGridState,
+    listPadding: PaddingValues,
+    selection: Selection<String>,
+    onOpen: (HistoryEntry) -> Unit,
+    onLongClick: (HistoryEntry) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(RowGridMinCell),
+        state = gridState,
+        modifier = Modifier.librarySeam(gridState, listPadding),
+        contentPadding = listPadding,
+    ) {
+        var lastDay: String? = null
+        pager.items.forEach { e ->
+            val day = e.dayLabel
+            if (day != lastDay) {
+                lastDay = day
+                item(key = "day_$day", span = { GridItemSpan(maxLineSpan) }, contentType = "day") {
+                    Text(
+                        day,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.animateItem().padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 6.dp),
+                    )
+                }
+            }
+            item(key = e.key, contentType = "entry") {
+                val selected = selection.active && e.key in selection.keys
+                Box(Modifier.animateItem().selectionBlock(selected)) {
+                    HistoryCard(
+                        e,
+                        modifier = e.route()?.let { Modifier.pageSharedSource(it) } ?: Modifier,
+                        onClick = {
+                            if (selection.active) {
+                                haptics.performHapticFeedback(if (selected) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
+                                selection.toggle(e.key)
+                            } else {
+                                onOpen(e)
+                            }
+                        },
+                        onLongClick = { onLongClick(e) },
+                    )
+                    SelectionCover(selected, RowCoverSlot)
+                }
+            }
+        }
+        pagerFooter(pager)
     }
 }
 

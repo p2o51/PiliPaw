@@ -1,6 +1,17 @@
 package com.gpo.pilipala.feature.library
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
+import com.gpo.pilipala.ui.theme.YoinMotion
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -88,11 +99,15 @@ internal class LaterViewModel : ViewModel() {
         pager.refresh()
     }
 
-    suspend fun remove(item: VideoItem) {
-        BiliClient.postData("/x/v2/history/toview/del", mapOf("aid" to item.aid, "jsonp" to "jsonp"))
+    /** aid = comma-joined avids. */
+    suspend fun remove(items: List<VideoItem>) {
+        val aids = items.map { it.aid }.distinct()
+        if (aids.isEmpty()) return
+        BiliClient.postData("/x/v2/history/toview/del", mapOf("aid" to aids.joinToString(","), "jsonp" to "jsonp"))
         WidgetStore.laterChanged()
-        pager.update { l -> l.filterNot { it.aid == item.aid } }
-        count = (count - 1).coerceAtLeast(0)
+        val gone = aids.toSet()
+        pager.update { l -> l.filterNot { it.aid in gone } }
+        count = (count - aids.size).coerceAtLeast(0)
     }
 
     suspend fun clearWatched() {
@@ -130,8 +145,18 @@ fun LaterScreen() {
     var menuOpen by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<LaterConfirm?>(null) }
     var sheet by remember { mutableStateOf<VideoItem?>(null) }
+    val selection = remember { Selection<Long>() }
+    var confirmDelete by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
     val nav = LocalNavigator.current
+    LaunchedEffect(vm.pager.items) { selection.retain(vm.pager.items.map { it.aid }) }
+    BackHandler(enabled = selection.active) { selection.exit() }
+    val allSelected = vm.pager.items.isNotEmpty() && vm.pager.items.all { it.aid in selection.keys }
+    val toolbarRoom by animateDpAsState(
+        if (selection.active) SelectionToolbarRoom else 0.dp,
+        YoinMotion.defaultSpatialSpec(),
+        label = "toolbarRoom",
+    )
     val startQueue: (Boolean, String?) -> Unit = { shuffle, from ->
         val route = vm.queueRoute(shuffle, from)
         if (route != null) nav.push(route) else toast("没有可播放的视频")
@@ -139,63 +164,118 @@ fun LaterScreen() {
 
     LibraryScaffold(
         title = "稍后再看",
-        subtitle = if (vm.count > 0) "${vm.count}个视频" else null,
+        subtitle = when {
+            selection.active -> "已选${selection.keys.size}项"
+            vm.count > 0 -> "${vm.count}个视频"
+            else -> null
+        },
         actions = {
             if (BiliClient.isLoggedIn) {
-                Box {
-                    IconButton(onClick = { menuOpen = true }, shapes = IconButtonDefaults.shapes()) {
-                        Icon(YoinSymbols.MoreVertical, contentDescription = "更多")
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("移除已看") },
-                            leadingIcon = { Icon(YoinSymbols.Check, null) },
-                            onClick = {
-                                menuOpen = false
-                                confirm = LaterConfirm.Watched
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("清空") },
-                            leadingIcon = { Icon(YoinSymbols.Delete, null) },
-                            onClick = {
-                                menuOpen = false
-                                confirm = LaterConfirm.All
-                            },
-                        )
+                SelectModeButton(selection)
+                AnimatedVisibility(
+                    visible = !selection.active,
+                    enter = expandHorizontally(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
+                    exit = shrinkHorizontally(YoinMotion.fastSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
+                ) {
+                    Box {
+                        IconButton(onClick = { menuOpen = true }, shapes = IconButtonDefaults.shapes()) {
+                            Icon(YoinSymbols.MoreVertical, contentDescription = "更多")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("移除已看") },
+                                leadingIcon = { Icon(YoinSymbols.Check, null) },
+                                onClick = {
+                                    menuOpen = false
+                                    confirm = LaterConfirm.Watched
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("清空") },
+                                leadingIcon = { Icon(YoinSymbols.Delete, null) },
+                                onClick = {
+                                    menuOpen = false
+                                    confirm = LaterConfirm.All
+                                },
+                            )
+                        }
                     }
                 }
             }
         },
     ) { padding ->
-        PagerBody(vm.pager, padding, emptyLabel = "稍后再看为空", emptyIcon = PiliSymbols.WatchLater) { listPadding ->
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(RowGridMinCell),
-                state = gridState,
-                modifier = Modifier.librarySeam(gridState, listPadding),
-                contentPadding = listPadding,
-            ) {
-                item(key = "__play", span = { GridItemSpan(maxLineSpan) }) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        QueuePlayButtons(
-                            loading = false,
-                            onPlay = { startQueue(false, null) },
-                            onShuffle = { startQueue(true, null) },
-                        )
+        Box(Modifier.fillMaxSize()) {
+            val bodyPadding = PaddingValues(
+                top = padding.calculateTopPadding(),
+                bottom = padding.calculateBottomPadding() + toolbarRoom,
+            )
+            PagerBody(vm.pager, bodyPadding, emptyLabel = "稍后再看为空", emptyIcon = PiliSymbols.WatchLater) { listPadding ->
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(RowGridMinCell),
+                    state = gridState,
+                    modifier = Modifier.librarySeam(gridState, listPadding),
+                    contentPadding = listPadding,
+                ) {
+                    item(key = "__play", span = { GridItemSpan(maxLineSpan) }) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            QueuePlayButtons(
+                                loading = false,
+                                onPlay = { startQueue(false, null) },
+                                onShuffle = { startQueue(true, null) },
+                            )
+                        }
+                    }
+                    items(vm.pager.items, key = { it.aid }) { item ->
+                        val selected = selection.active && item.aid in selection.keys
+                        Box(Modifier.animateItem().selectionBlock(selected)) {
+                            VideoCardH(
+                                item,
+                                onClick = if (selection.active) {
+                                    {
+                                        haptics.performHapticFeedback(if (selected) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
+                                        selection.toggle(item.aid)
+                                    }
+                                } else {
+                                    null
+                                },
+                                onLongClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    sheet = item
+                                },
+                            )
+                            SelectionCover(selected, RowCoverSlot)
+                        }
                     }
                 }
-                items(vm.pager.items, key = { it.aid }) { item ->
-                    VideoCardH(
-                        item,
-                        modifier = Modifier.animateItem(),
-                        onLongClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            sheet = item
-                        },
-                    )
-                }
             }
+            SelectionToolbar(
+                visible = selection.active,
+                count = selection.keys.size,
+                allSelected = allSelected,
+                deleteLabel = "移除",
+                onSelectAll = { on -> selection.setAll(vm.pager.items.map { it.aid }, on) },
+                onDelete = { confirmDelete = true },
+            )
         }
+    }
+
+    if (confirmDelete) {
+        ConfirmDialog(
+            title = "移除${selection.keys.size}个视频",
+            confirmLabel = "移除",
+            onConfirm = {
+                val targets = vm.pager.items.filter { it.aid in selection.keys }
+                scope.launch {
+                    runCatching { vm.remove(targets) }
+                        .onSuccess {
+                            selection.exit()
+                            toast("已移除")
+                        }
+                        .onFailure { toast(it.friendlyMessage()) }
+                }
+            },
+            onDismiss = { confirmDelete = false },
+        )
     }
 
     sheet?.let { item ->
@@ -210,7 +290,7 @@ fun LaterScreen() {
                 },
                 SheetAction("移除", YoinSymbols.Delete, destructive = true) {
                     scope.launch {
-                        runCatching { vm.remove(item) }
+                        runCatching { vm.remove(listOf(item)) }
                             .onSuccess { toast("已移除") }
                             .onFailure { toast(it.friendlyMessage()) }
                     }
