@@ -11,13 +11,6 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
-import com.gpo.pilipala.core.net.BiliClient
-import com.gpo.pilipala.core.net.BiliJson
-import com.gpo.pilipala.core.net.arr
-import com.gpo.pilipala.core.net.asDouble
-import com.gpo.pilipala.core.net.asObj
-import com.gpo.pilipala.core.net.double
-import com.gpo.pilipala.core.net.obj
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -31,37 +24,40 @@ internal object HeatApi {
     private val cache = LruCache<Long, HeatCurve>(24)
     private val none = HashSet<Long>()
 
-    /** The curve for [target], cached per cid; null when the video has none. */
+    /** Buckets across the video; a few seconds each on a typical upload. */
+    private const val Buckets = 120
+
+    /** Fewer danmaku than this say nothing about where the audience leans in. */
+    private const val MinDanmaku = 30
+
+    /**
+     * The curve for [target], cached per cid; null when the video has too few danmaku.
+     * The old pbp endpoint (bvc.bilibili.com) no longer resolves, so the heat is the
+     * danmaku density of the whole-video list.so sample, the way the web's 弹幕密度 is drawn.
+     */
     suspend fun get(target: PlayTarget): HeatCurve? {
         val cid = target.cid
-        if (cid <= 0 || (target.aid <= 0 && target.bvid.isBlank())) return null
+        if (cid <= 0) return null
         cache.get(cid)?.let { return it }
         synchronized(none) { if (cid in none) return null }
-        val params = buildMap<String, Any?> {
-            if (target.aid > 0) put("aid", target.aid)
-            put("cid", cid)
-            if (target.bvid.isNotBlank()) put("bvid", target.bvid)
-        }
         val curve = try {
-            parse(BiliClient.getText("https://bvc.bilibili.com/pbp/data", params))
+            density(DanmakuApi.fetchXml(cid).map { it.timeMs })
         } catch (e: CancellationException) {
             throw e
         } catch (_: Throwable) {
-            // Unreachable or not JSON: try again next time the video opens.
+            // Unreachable or unreadable: try again next time the video opens.
             return null
         }
         if (curve == null) synchronized(none) { none += cid } else cache.put(cid, curve)
         return curve
     }
 
-    /** `{step_sec, events: {default: [...]}}`, bare or inside a `data` envelope. */
-    private fun parse(text: String): HeatCurve? {
-        val root = runCatching { BiliJson.parseToJsonElement(text) }.getOrNull().asObj ?: return null
-        val body = root.obj("data") ?: root
-        val step = body.double("step_sec")
-        if (!(step > 0.0)) return null
-        val raw = body.obj("events").arr("default").map { it.asDouble().toFloat() }
-        if (raw.size < 3) return null
+    private fun density(times: List<Long>): HeatCurve? {
+        if (times.size < MinDanmaku) return null
+        val last = times.max().coerceAtLeast(1L)
+        val step = (last + Buckets) / Buckets
+        val raw = FloatArray(Buckets)
+        for (t in times) raw[(t / step).toInt().coerceIn(0, Buckets - 1)] += 1f
         val max = raw.max()
         if (!(max > 0f)) return null
         // A light three-tap blur, so the area reads as a soft hill rather than a bar chart.
@@ -72,7 +68,7 @@ internal object HeatApi {
             val c = raw[(i + 1).coerceAtMost(n - 1)]
             ((a + 2f * b + c) / 4f / max).coerceIn(0f, 1f)
         }
-        return HeatCurve((step * 1000).toLong(), values)
+        return HeatCurve(step, values)
     }
 }
 
