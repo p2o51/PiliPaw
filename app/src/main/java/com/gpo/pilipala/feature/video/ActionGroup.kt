@@ -56,6 +56,8 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
+import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.navigation.transition.LocalPageSettled
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.pilipala.ui.theme.rememberRichHaptics
@@ -95,6 +97,22 @@ data class TripleCharge(
 /** How long the finger holds, past the long-press timeout, to fill the charge. */
 private const val ChargeMs = 620f
 
+/** Set once the first detail page has shown the 三连 run its charge (see [TripleHint]). */
+private val TripleHintShown = AppSettings.register("video_triple_hint_shown", false)
+
+/** How much of the accent the hint's cookies carry: a glimmer, not the real charge. */
+private const val HintAlpha = 0.28f
+
+/**
+ * The one-time nudge that 点赞 holds a 三连: the first time a detail page with the run
+ * settles, the cookies behind 点赞 投币 收藏 swell in turn at [HintAlpha] and ebb back,
+ * on springs. No text, no haptic, no action; never again after that.
+ */
+private object TripleHint {
+    /** Claimed by the first group in this process, so two groups composed at once never both play. */
+    var claimed = false
+}
+
 /**
  * M3 Expressive connected button group: leading / middle / trailing shapes,
  * press morph from the toggle buttons, checked state washing in with the
@@ -105,6 +123,21 @@ internal fun ConnectedActionGroup(items: List<ActionSpec>, modifier: Modifier = 
     val slots = triple?.slots
     val slotCount = slots?.let { it.last - it.first + 1 }?.coerceAtLeast(0) ?: 0
     val charge = remember { Animatable(0f) }
+    val hint = remember { Animatable(0f) }
+    val settled = LocalPageSettled.current
+    val hintRise = YoinMotion.slowSpatialSpec<Float>(YoinMotionRole.Standard)
+    val hintEbb = YoinMotion.slowEffectsSpec<Float>()
+    // Only a group that can charge, on its own page (a negative celebration = a neighbour in a pager).
+    val hintable = slotCount > 0 && (triple?.celebration ?: -1) >= 0 && items.getOrNull(slots?.first ?: -1)?.onLongClick != null
+    LaunchedEffect(hintable, settled) {
+        if (!hintable || !settled || TripleHint.claimed || TripleHintShown.value) return@LaunchedEffect
+        TripleHint.claimed = true
+        AppSettings.set(TripleHintShown, true)
+        delay(700)
+        hint.animateTo(1f, hintRise)
+        delay(160)
+        hint.animateTo(0f, hintEbb)
+    }
     val burst = rememberTripleBurst(triple?.celebration ?: 0, count = slotCount.coerceAtLeast(1))
     // Where each slot of the run sits in the group, for the blooms and sparks drawn around them.
     val rects = remember(slotCount) { arrayOfNulls<Rect>(slotCount) }
@@ -141,6 +174,11 @@ internal fun ConnectedActionGroup(items: List<ActionSpec>, modifier: Modifier = 
                         null
                     },
                     pop = if (k >= 0) { { burst.pop[k].value } } else null,
+                    hint = if (k >= 0) {
+                        { ((hint.value - k * 0.25f) / 0.5f).coerceIn(0f, 1f) }
+                    } else {
+                        null
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .then(
@@ -177,6 +215,7 @@ private fun ActionToggle(
     charge: Animatable<Float, AnimationVector1D>? = null,
     fill: (() -> Float)? = null,
     pop: (() -> Float)? = null,
+    hint: (() -> Float)? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     val rich = rememberRichHaptics()
@@ -302,7 +341,7 @@ private fun ActionToggle(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                if (fill != null) ChargeCookie(fill)
+                if (fill != null) ChargeCookie(fill, hint)
                 AnimatedContent(
                     targetState = item.checked,
                     transitionSpec = { (scaleIn(spatial, initialScale = 0.5f) + fadeIn(effects)) togetherWith fadeOut(effects) },
@@ -337,19 +376,28 @@ private fun ActionToggle(
     }
 }
 
-/** The accent cookie behind a glyph of the 三连 run: grows and turns with [fill]. */
+/**
+ * The accent cookie behind a glyph of the 三连 run: grows and turns with [fill]. While
+ * nothing fills it, [hint] swells it the same way at [HintAlpha] (the one-time nudge).
+ */
 @Composable
-private fun ChargeCookie(fill: () -> Float) {
+private fun ChargeCookie(fill: () -> Float, hint: (() -> Float)? = null) {
     val cookie = MaterialShapes.Cookie9Sided.toShape()
     Box(
         Modifier
             .requiredSize(36.dp)
             .graphicsLayer {
                 val f = fill().coerceIn(0f, 1.2f)
-                scaleX = f
-                scaleY = f
-                rotationZ = f * 40f
-                alpha = if (f <= 0.001f) 0f else 1f
+                val h = if (f > 0.001f) 0f else (hint?.invoke() ?: 0f).coerceIn(0f, 1.2f)
+                val s = if (f > 0.001f) f else h
+                scaleX = s
+                scaleY = s
+                rotationZ = s * 40f
+                alpha = when {
+                    f > 0.001f -> 1f
+                    h > 0.001f -> HintAlpha
+                    else -> 0f
+                }
             }
             .clip(cookie)
             .background(MaterialTheme.colorScheme.tertiary),

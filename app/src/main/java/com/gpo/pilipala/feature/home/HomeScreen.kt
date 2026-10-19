@@ -180,7 +180,13 @@ fun HomeScreen() {
             trailing = if (feeds.size < MaxFeeds) {
                 {
                     Box(Modifier.splashReveal()) {
-                        SegmentIconChip(YoinSymbols.Add, contentDescription = "新建 Feed", onClick = { nav.push(Route.FeedEditor()) })
+                        SegmentIconChip(
+                            YoinSymbols.Add,
+                            contentDescription = "新建 Feed",
+                            onClick = { nav.push(Route.FeedEditor()) },
+                            // Spelled out until the first feed exists, then just the plus.
+                            label = if (feeds.isEmpty()) "Feed" else null,
+                        )
                     }
                 }
             } else {
