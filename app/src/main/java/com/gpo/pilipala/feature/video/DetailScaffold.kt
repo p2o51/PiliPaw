@@ -1,5 +1,7 @@
 package com.gpo.pilipala.feature.video
 
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.Brush
 import com.gpo.pilipala.ui.theme.LightBarIcons
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsTopHeight
@@ -166,7 +168,13 @@ internal fun DetailScaffold(
             else -> Column(Modifier.fillMaxSize()) {
                 // Black only under the status bar and the picture: the control strip that
                 // slides out below the picture sits on the page itself.
-                Spacer(Modifier.fillMaxWidth().background(Color.Black).windowInsetsTopHeight(WindowInsets.statusBars))
+                // Under the status bar: a deep tone of the page's colour easing into the picture's
+                // black, rather than a flat black band.
+                val tint = MaterialTheme.colorScheme.primary
+                val barBrush = remember(tint) {
+                    Brush.verticalGradient(listOf(lerp(Color.Black, tint, 0.32f), Color.Black))
+                }
+                Spacer(Modifier.fillMaxWidth().background(barBrush).windowInsetsTopHeight(WindowInsets.statusBars))
                 // The player owns its height (16:9 picture + its control strip).
                 player(Modifier.fillMaxWidth())
                 DetailTabRow(compactTabs, compactPagerState, Color.Transparent)

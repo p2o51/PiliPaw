@@ -781,7 +781,9 @@ fun BiliVideoPlayer(
                     }
                 },
                 strip = {
-                    if (controls && revealing) {
+                    // Audio-only: the lyrics pane docks its own transport and seek bar, so the
+                    // strip (a second seek bar) stays away; the corners still come up.
+                    if (controls && revealing && !lyricsShown) {
                         if (inline) {
                             InlineStrip(
                                 ctrl = ctrl,
