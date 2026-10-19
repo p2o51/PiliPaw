@@ -12,6 +12,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.feature.dynamics.UploadedPic
 import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.friendlyMessage
@@ -146,9 +147,9 @@ internal abstract class BaseReplyViewModel(val oid: Long, val type: Int) : ViewM
     }
 
     /** Sends and returns the created reply (null on failure; the error is emitted). */
-    suspend fun send(target: ComposeTarget, text: String): Boolean {
+    suspend fun send(target: ComposeTarget, text: String, pictures: List<UploadedPic> = emptyList()): Boolean {
         val message = if (target.prefixMention && target.replyTo.isNotEmpty()) "回复 @${target.replyTo} :$text" else text
-        return runCatching { ReplyApi.add(oid, type, message, target.root, target.parent, upperMid) }
+        return runCatching { ReplyApi.add(oid, type, message, target.root, target.parent, upperMid, pictures) }
             .onSuccess { res ->
                 messages.tryEmit(res.toast)
                 res.reply?.let {

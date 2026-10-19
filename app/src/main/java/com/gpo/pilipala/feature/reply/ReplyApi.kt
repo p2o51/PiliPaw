@@ -1,6 +1,7 @@
 package com.gpo.pilipala.feature.reply
 
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.core.net.BiliJson
 import com.gpo.pilipala.core.net.BiliException
 import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asObj
@@ -10,6 +11,11 @@ import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
+import com.gpo.pilipala.feature.dynamics.UploadedPic
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /** Comment endpoints (mirrors Flutter `ReplyHttp` + `VideoHttp.replyAdd`). */
 internal object ReplyApi {
@@ -98,7 +104,20 @@ internal object ReplyApi {
 
     class AddResult(val reply: Reply?, val toast: String)
 
-    suspend fun add(oid: Long, type: Int, message: String, root: Long, parent: Long, upperMid: Long): AddResult {
+    /**
+     * [pictures] are already on bilibili's image host (the dynamic composer's
+     * bfs upload); they go up as the web client's `pictures` field, a JSON array
+     * of {img_src, img_width, img_height, img_size (KB)}.
+     */
+    suspend fun add(
+        oid: Long,
+        type: Int,
+        message: String,
+        root: Long,
+        parent: Long,
+        upperMid: Long,
+        pictures: List<UploadedPic> = emptyList(),
+    ): AddResult {
         val data = BiliClient.postData(
             "/x/v2/reply/add",
             mapOf(
@@ -108,6 +127,7 @@ internal object ReplyApi {
                 "root" to root.takeIf { it != 0L },
                 "parent" to parent.takeIf { it != 0L },
                 "plat" to 1,
+                "pictures" to pictures.takeIf { it.isNotEmpty() }?.let(::picturesJson),
             ),
         ).asObj
         return AddResult(
@@ -141,6 +161,22 @@ internal object ReplyApi {
         ).asObj
         return parseEmotePackages(data)
     }
+
+    private fun picturesJson(pictures: List<UploadedPic>): String = BiliJson.encodeToString(
+        kotlinx.serialization.json.JsonArray.serializer(),
+        buildJsonArray {
+            pictures.forEach { p ->
+                add(
+                    buildJsonObject {
+                        put("img_src", p.url)
+                        put("img_width", p.width)
+                        put("img_height", p.height)
+                        put("img_size", p.sizeKb)
+                    },
+                )
+            }
+        },
+    )
 
     private fun errorLabel(code: Int): String? = when (code) {
         12002 -> "评论区已关闭"

@@ -179,7 +179,7 @@ internal fun ReplyOverlays(
         ReplyComposerSheet(
             target = target,
             onDismiss = { ui.composer = null },
-            onSend = { text -> vm.send(target, text) },
+            onSend = { text, pictures -> vm.send(target, text, pictures) },
         )
     }
 

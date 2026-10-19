@@ -1,5 +1,27 @@
 package com.gpo.pilipala.feature.reply
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.platform.LocalContext
+import com.gpo.pilipala.core.net.BiliException
+import com.gpo.pilipala.feature.dynamics.DynamicsApi
+import com.gpo.pilipala.feature.dynamics.UploadedPic
+import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.yoin.symbols.PiliSymbols
+import java.io.InterruptedIOException
+import java.net.UnknownHostException
+import kotlinx.coroutines.CancellationException
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -82,16 +104,34 @@ import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.SheetInsets
 
 private val FieldShape = ContinuousRoundedCornerShape(18.dp)
+private const val MaxPictures = 9
+private val PictureSize = 72.dp
+private val PictureShape = ContinuousRoundedCornerShape(12.dp)
+
+/** Over-image scrim for the remove chip: images are the one place for a fixed colour. */
+private val PictureScrim = Color.Black
+
+/** The send button's face: at rest, pictures going up (with progress), the comment going out. */
+private enum class SendStage { Idle, Uploading, Posting }
+
+private val UriListSaver = listSaver<SnapshotStateList<String>, String>(
+    save = { it.toList() },
+    restore = { it.toMutableStateList() },
+)
 
 /**
  * New comment / reply sheet: text field lifted by the IME, an emote panel that
- * swaps with the keyboard, and send. [onSend] returns true when the comment landed.
+ * swaps with the keyboard, up to nine pictures from the system photo picker,
+ * and send. Pictures go up to bilibili's image host first (the dynamic
+ * composer's upload), then [onSend] posts the text with them and returns true
+ * when the comment landed. Pictures already up survive a failed post, so a
+ * retry only uploads the rest.
  */
 @Composable
 internal fun ReplyComposerSheet(
     target: ComposeTarget,
     onDismiss: () -> Unit,
-    onSend: suspend (String) -> Boolean,
+    onSend: suspend (String, List<UploadedPic>) -> Boolean,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -100,9 +140,36 @@ internal fun ReplyComposerSheet(
     val focus = remember { FocusRequester() }
     var value by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
     var panel by remember { mutableStateOf(false) }
-    var sending by remember { mutableStateOf(false) }
+    var stage by remember { mutableStateOf(SendStage.Idle) }
+    val sending = stage != SendStage.Idle
     val motion = replyMotion()
     val peek = remember { EmotePeekState() }
+    val context = LocalContext.current
+    val toast = rememberToast()
+    val pictures = rememberSaveable(saver = UriListSaver) { mutableStateListOf<String>() }
+    val uploaded = remember { mutableStateMapOf<String, UploadedPic>() }
+    var uploadTotal by remember { mutableIntStateOf(0) }
+    var uploadDone by remember { mutableIntStateOf(0) }
+
+    val remaining = MaxPictures - pictures.size
+    fun addPictures(uris: List<Uri>) {
+        val fresh = uris.map { it.toString() }.distinct().filter { it !in pictures }
+        pictures += fresh.take((MaxPictures - pictures.size).coerceAtLeast(0))
+    }
+    val pickMany = rememberLauncherForActivityResult(
+        remember(remaining) { ActivityResultContracts.PickMultipleVisualMedia(remaining.coerceAtLeast(2)) },
+    ) { uris -> addPictures(uris) }
+    val pickOne = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) addPictures(listOf(uri))
+    }
+    fun pickPictures() {
+        if (sending) return
+        val request = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        when {
+            remaining >= 2 -> pickMany.launch(request)
+            remaining == 1 -> pickOne.launch(request)
+        }
+    }
 
     LaunchedEffect(Unit) {
         withFrameNanos { }
@@ -115,6 +182,38 @@ internal fun ReplyComposerSheet(
             keyboard?.hide()
             sheetState.hide()
         }.invokeOnCompletion { onDismiss() }
+    }
+
+    fun send() {
+        if (sending) return
+        val text = value.text.trim()
+        val picked = pictures.toList()
+        if (text.isEmpty() && picked.isEmpty()) return
+        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+        val missing = picked.count { it !in uploaded }
+        uploadTotal = missing
+        uploadDone = 0
+        stage = if (missing == 0) SendStage.Posting else SendStage.Uploading
+        scope.launch {
+            val ready = try {
+                picked.map { key ->
+                    uploaded[key] ?: DynamicsApi.uploadImage(context.contentResolver, context.cacheDir, Uri.parse(key)).also {
+                        uploaded[key] = it
+                        uploadDone++
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                toast(e.uploadMessage())
+                stage = SendStage.Idle
+                return@launch
+            }
+            stage = SendStage.Posting
+            val ok = onSend(text, ready)
+            stage = SendStage.Idle
+            if (ok) close()
+        }
     }
 
     fun insert(text: String) {
@@ -171,6 +270,23 @@ internal fun ReplyComposerSheet(
                         disabledIndicatorColor = Color.Transparent,
                     ),
                 )
+                AnimatedVisibility(
+                    visible = pictures.isNotEmpty(),
+                    enter = expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
+                    exit = shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(YoinMotion.defaultEffectsSpec()),
+                ) {
+                    PictureRow(
+                        pictures = pictures,
+                        removable = !sending,
+                        onRemove = { key ->
+                            if (!sending) {
+                                haptic.performHapticFeedback(HapticFeedbackType.ToggleOff)
+                                pictures.remove(key)
+                                uploaded.remove(key)
+                            }
+                        },
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -204,30 +320,43 @@ internal fun ReplyComposerSheet(
                             )
                         }
                     }
-                    Spacer(Modifier.weight(1f))
-                    Button(
+                    IconButton(
                         onClick = {
-                            if (sending) return@Button
-                            sending = true
-                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                            scope.launch {
-                                val ok = onSend(value.text.trim())
-                                sending = false
-                                if (ok) close()
-                            }
+                            keyboard?.hide()
+                            panel = false
+                            pickPictures()
                         },
+                        enabled = remaining > 0 && !sending,
+                        shapes = IconButtonDefaults.shapes(),
+                    ) {
+                        Icon(PiliSymbols.Image, contentDescription = "图片")
+                    }
+                    Spacer(Modifier.weight(1f))
+                    val progress by animateFloatAsState(
+                        if (uploadTotal == 0) 0f else uploadDone.toFloat() / uploadTotal,
+                        YoinMotion.defaultSpatialSpec(),
+                        label = "uploadProgress",
+                    )
+                    Button(
+                        onClick = { send() },
                         shapes = ButtonDefaults.shapes(),
-                        enabled = value.text.isNotBlank() && !sending,
+                        enabled = (value.text.isNotBlank() || pictures.isNotEmpty()) && !sending,
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                     ) {
                         AnimatedContent(
-                            targetState = sending,
+                            targetState = stage,
                             transitionSpec = {
                                 motion.crossfade()
                             },
                             label = "sendState",
                         ) { busy ->
-                            if (busy) {
+                            if (busy == SendStage.Uploading) {
+                                LoadingIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier.size(20.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            } else if (busy == SendStage.Posting) {
                                 LoadingIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary)
                             } else {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -252,6 +381,69 @@ internal fun ReplyComposerSheet(
             }
             EmotePeekOverlay(peek, Modifier.matchParentSize())
         }
+    }
+}
+
+/**
+ * The picked pictures in pick order (the order they post in): bare thumbnails
+ * that spring in and out of place, each with a small chip that removes it.
+ */
+@Composable
+private fun PictureRow(pictures: List<String>, removable: Boolean, onRemove: (String) -> Unit) {
+    val motion = replyMotion()
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(pictures, key = { it }) { key ->
+            Box(
+                Modifier
+                    .animateItem(fadeInSpec = motion.fade, placementSpec = motion.offset, fadeOutSpec = motion.fadeOut)
+                    .size(PictureSize),
+            ) {
+                AsyncImage(
+                    model = Uri.parse(key),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize().clip(PictureShape),
+                )
+                AnimatedVisibility(
+                    visible = removable,
+                    enter = fadeIn(motion.fade),
+                    exit = fadeOut(motion.fadeOut),
+                    modifier = Modifier.align(Alignment.TopEnd),
+                ) {
+                    // A 36dp target around the small chip.
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable { onRemove(key) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            Modifier.size(22.dp).clip(CircleShape).background(PictureScrim.copy(alpha = 0.55f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(YoinSymbols.Close, contentDescription = "移除", tint = Color.White, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun Throwable.uploadMessage(): String {
+    val server = (this as? BiliException)?.message?.takeIf { it.isNotBlank() && !it.startsWith("HTTP") }
+    return when {
+        server != null -> server
+        this is UnknownHostException -> "网络不可用"
+        this is InterruptedIOException -> "图片上传超时"
+        this is SecurityException || this is java.io.FileNotFoundException -> "图片无法读取"
+        this is OutOfMemoryError -> "图片过大"
+        else -> "图片上传失败"
     }
 }
 
