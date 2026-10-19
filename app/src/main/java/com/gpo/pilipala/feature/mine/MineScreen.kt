@@ -140,6 +140,7 @@ private val MineTiles = listOf(
     MineTile("历史记录", PiliSymbols.History, Route.History),
     MineTile("我的收藏", YoinSymbols.Star, Route.Fav()),
     MineTile("稍后再看", PiliSymbols.WatchLater, Route.Later),
+    MineTile("离线缓存", YoinSymbols.Download, Route.Downloads),
     MineTile("我的订阅", YoinSymbols.LibraryAdded, Route.Subscription(0)),
     MineTile("消息", PiliSymbols.Mail, Route.Messages),
     MineTile("设置", YoinSymbols.Settings, Route.Settings),
@@ -186,14 +187,14 @@ fun MineScreen() {
                     ProfileSection(user)
                 }
                 Column(Modifier.weight(0.58f), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                    TileGrid(columns = 3)
+                    TileGrid(columns = 4)
                     FolderSection(vm, user)
                 }
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 ProfileSection(user)
-                TileGrid(columns = if (width == WidthClass.Medium) 6 else 3)
+                TileGrid(columns = if (width == WidthClass.Medium) 7 else 3)
                 FolderSection(vm, user)
             }
         }
@@ -396,7 +397,8 @@ private fun TileGrid(columns: Int) {
         MineTiles.chunked(columns).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { t -> Tile(t, Modifier.weight(1f)) }
-                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                // A lone last tile spans the row (7 tiles over 3 columns) instead of sitting by two gaps.
+                if (row.size > 1) repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
