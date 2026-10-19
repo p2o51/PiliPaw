@@ -12,6 +12,8 @@ import android.graphics.Shader
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
@@ -69,6 +71,7 @@ object AppShortcuts {
     private const val ExtraCover = "com.gpo.pilipala.extra.CONTINUE_COVER"
     private const val ExtraTitle = "com.gpo.pilipala.extra.CONTINUE_TITLE"
     private const val ExtraDuration = "com.gpo.pilipala.extra.CONTINUE_DURATION"
+    private const val ExtraEpId = "com.gpo.pilipala.extra.CONTINUE_EP_ID"
 
     /** Set on the widget's intents: a tap there is not a shortcut use. */
     private const val ExtraWidget = "com.gpo.pilipala.extra.FROM_WIDGET"
@@ -128,6 +131,7 @@ object AppShortcuts {
         progressSec: Long,
         durationSec: Long = 0,
         source: String? = null,
+        epId: Long = 0,
     ): Intent {
         val base = Uri.parse("https://www.bilibili.com/video/$bvid")
         val uri = if (source == null) base else base.buildUpon().fragment(source).build()
@@ -139,6 +143,7 @@ object AppShortcuts {
             .putExtra(ExtraDuration, durationSec.coerceAtLeast(0))
             .putExtra(ExtraCover, cover)
             .putExtra(ExtraTitle, title)
+            .apply { if (epId > 0) putExtra(ExtraEpId, epId) }
             .apply { if (source != null) putExtra(ExtraWidget, true) }
     }
 
@@ -159,6 +164,7 @@ object AppShortcuts {
         val positionSec: Long,
         /** 0 for a shortcut published before the duration rode along. */
         val durationSec: Long,
+        val epId: Long = 0,
     )
 
     /** The live 继续看 shortcut, for a widget placed before anything else recorded it. */
@@ -177,6 +183,7 @@ object AppShortcuts {
                 cover = intent.getStringExtra(ExtraCover).orEmpty(),
                 positionSec = intent.getLongExtra(ExtraProgress, 0L),
                 durationSec = intent.getLongExtra(ExtraDuration, 0L),
+                epId = intent.getLongExtra(ExtraEpId, 0L),
             )
         }
     }.getOrNull()
@@ -193,6 +200,7 @@ object AppShortcuts {
         cover: String,
         positionMs: Long,
         durationMs: Long,
+        epId: Long = 0,
     ) {
         if (bvid.isBlank()) return
         val app = context.applicationContext
@@ -208,7 +216,7 @@ object AppShortcuts {
         }
         if (positionMs < MinWatchedMs) return
         val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-        val entry = ContinueEntry(bvid = bvid, cid = cid, title = title, cover = cover, positionMs = positionMs, durationMs = durationMs)
+        val entry = ContinueEntry(bvid = bvid, cid = cid, title = title, cover = cover, positionMs = positionMs, durationMs = durationMs, epId = epId)
         scope.launch(widgetWrites) {
             WidgetStore.writeContinue(app, entry)
             WatchWidget.refresh(app)
@@ -218,7 +226,7 @@ object AppShortcuts {
             val icon = runCatching { coverIcon(app, cover, progress, durationMs > 0) }.getOrNull()
                 ?: IconCompat.createWithResource(app, R.drawable.ic_shortcut_history)
             val label = title.ifBlank { bvid }
-            val intent = videoIntent(app, bvid, cid, title, cover, positionMs / 1000, durationMs / 1000)
+            val intent = videoIntent(app, bvid, cid, title, cover, positionMs / 1000, durationMs / 1000, epId = epId)
             val info = ShortcutInfoCompat.Builder(app, IdContinue)
                 .setShortLabel(label.take(12))
                 .setLongLabel(label.take(25))
@@ -234,7 +242,13 @@ object AppShortcuts {
     fun route(context: Context, intent: Intent): Route? {
         val id = intent.getStringExtra(ExtraShortcut)
         val bvid = intent.getStringExtra(ExtraBvid)
+        val epId = intent.getLongExtra(ExtraEpId, 0L)
         val route = when {
+            id == IdContinue && epId > 0 -> Route.Bangumi(
+                epId = epId,
+                cover = intent.getStringExtra(ExtraCover).orEmpty(),
+                progress = intent.getLongExtra(ExtraProgress, 0L),
+            )
             id == IdContinue && !bvid.isNullOrBlank() -> Route.Video(
                 bvid = bvid,
                 cid = intent.getLongExtra(ExtraCid, 0L),
@@ -314,20 +328,39 @@ object AppShortcuts {
  */
 @Composable
 internal fun ContinueShortcutEffect(vm: VideoDetailViewModel, player: BiliPlayerState) {
+    ContinueShortcutEffect(vm, player) {
+        val t = vm.target ?: return@ContinueShortcutEffect null
+        ContinueTarget(
+            bvid = t.bvid.ifEmpty { vm.bvid },
+            cid = t.cid,
+            // The video's own title and cover (a part's target may carry its part name / first frame).
+            title = vm.detail?.takeIf { it.bvid == t.bvid }?.title?.ifEmpty { null } ?: t.title,
+            cover = vm.detail?.takeIf { it.bvid == t.bvid }?.pic?.ifEmpty { null } ?: t.cover,
+        )
+    }
+}
+
+/** What 继续看 points at; [epId] set for a bangumi episode. */
+internal class ContinueTarget(val bvid: String, val cid: Long, val title: String, val cover: String, val epId: Long = 0)
+
+/** The same for any page with a player: [target] read as it pauses and as it closes. */
+@Composable
+internal fun ContinueShortcutEffect(key: Any, player: BiliPlayerState, target: () -> ContinueTarget?) {
     val context = LocalContext.current.applicationContext
     val owner = LocalLifecycleOwner.current
-    DisposableEffect(vm, player, owner) {
+    val latestTarget by rememberUpdatedState(target)
+    DisposableEffect(key, player, owner) {
         fun publish() {
-            val t = vm.target ?: return
+            val t = latestTarget() ?: return
             AppShortcuts.publishContinue(
                 context = context,
-                bvid = t.bvid.ifEmpty { vm.bvid },
+                bvid = t.bvid,
                 cid = t.cid,
-                // The video's own title and cover (a part's target may carry its part name / first frame).
-                title = vm.detail?.takeIf { it.bvid == t.bvid }?.title?.ifEmpty { null } ?: t.title,
-                cover = vm.detail?.takeIf { it.bvid == t.bvid }?.pic?.ifEmpty { null } ?: t.cover,
+                title = t.title,
+                cover = t.cover,
                 positionMs = player.positionMs,
                 durationMs = player.durationMs,
+                epId = t.epId,
             )
         }
         val observer = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_PAUSE) publish() }

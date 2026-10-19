@@ -174,6 +174,7 @@ private fun resumeIntent(context: Context, e: ContinueEntry): Intent =
         progressSec = e.positionMs / 1000,
         durationSec = e.durationMs / 1000,
         source = "widget-continue",
+        epId = e.epId,
     )
 
 private fun laterIntent(context: Context, e: LaterEntry): Intent =

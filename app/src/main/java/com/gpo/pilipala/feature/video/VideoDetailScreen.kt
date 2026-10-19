@@ -137,6 +137,12 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     // The picture's trip between the classic page and the immersive pager (PlayerHandoff.kt).
     val handoff = remember { PlayerHandoff() }
     val immersiveOn = vm.immersive == true
+    // A route that does not know the picture's shape opens classic; when the detail then
+    // says portrait, the picture flies from the classic slot into the pager like 全屏 does,
+    // instead of the page cross-fading into another layout around it.
+    val decided = remember { arrayOf(vm.immersive) }
+    if (decided[0] == null && immersiveOn && handoff.flight == null) handoff.toImmersive()
+    decided[0] = vm.immersive
     // 缩小 (immersive → classic) and 全屏 on a portrait picture (classic → immersive), for this visit only.
     val toImmersive: () -> Unit = {
         if (vm.immersive != true && vm.queue == null) {

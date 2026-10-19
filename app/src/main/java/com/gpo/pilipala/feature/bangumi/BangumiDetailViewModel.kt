@@ -81,8 +81,13 @@ class BangumiDetailViewModel(private val route: Route.Bangumi) : ViewModel() {
         }
     }
 
+    /** 继续看's resume position, used once for the episode it names. */
+    private var resumeMs = if (route.epId > 0) route.progress * 1000 else 0L
+
     private fun play(ep: BangumiEpisode, d: BangumiDetail) {
         epId = ep.id
+        val start = if (ep.id == route.epId) resumeMs else 0L
+        resumeMs = 0L
         target = PlayTarget(
             bvid = ep.bvid,
             aid = ep.aid,
@@ -92,6 +97,7 @@ class BangumiDetailViewModel(private val route: Route.Bangumi) : ViewModel() {
             isPgc = true,
             title = ep.showTitle.ifEmpty { d.title },
             cover = ep.cover.ifEmpty { d.cover },
+            startPositionMs = start,
         )
         actions.bind(ep.aid, ep.bvid, d.likes, d.coins, d.favorites, d.share)
         episodeReplies = -1

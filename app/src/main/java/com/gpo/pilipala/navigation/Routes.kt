@@ -24,7 +24,13 @@ sealed interface Route : NavKey {
         val playlistId: String = "",
     ) : Route
 
-    @Serializable data class Bangumi(val seasonId: Long = 0, val epId: Long = 0, val cover: String = "") : Route
+    @Serializable data class Bangumi(
+        val seasonId: Long = 0,
+        val epId: Long = 0,
+        val cover: String = "",
+        /** Resume position of [epId], seconds (继续看). */
+        val progress: Long = 0,
+    ) : Route
     @Serializable data class LiveRoom(val roomId: Long, val cover: String = "", val title: String = "") : Route
 
     // ── Search ──────────────────────────────────────────────────────────────

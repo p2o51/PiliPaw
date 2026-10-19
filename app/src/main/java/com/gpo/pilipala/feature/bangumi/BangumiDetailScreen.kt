@@ -31,6 +31,8 @@ import com.gpo.pilipala.feature.player.BiliVideoPlayer
 import com.gpo.pilipala.feature.player.BindPlayerPage
 import com.gpo.pilipala.feature.player.PlayerPageHooks
 import com.gpo.pilipala.feature.player.rememberBiliPlayerState
+import com.gpo.pilipala.feature.video.ContinueTarget
+import com.gpo.pilipala.feature.video.ContinueShortcutEffect
 import com.gpo.pilipala.feature.reply.ReplyList
 import com.gpo.pilipala.feature.video.ActionSpec
 import com.gpo.pilipala.feature.video.CoinSheet
@@ -81,6 +83,18 @@ private fun BangumiDetailContent(vm: BangumiDetailViewModel) {
         onDispose { vm.rememberPosition(playerState.positionMs) }
     }
     LaunchedEffect(playerState, vm.detail?.title) { playerState.artist = vm.detail?.title.orEmpty() }
+    // The launcher's and the widget's 继续看 follow the episode left part-way.
+    ContinueShortcutEffect(vm, playerState) {
+        val t = vm.target ?: return@ContinueShortcutEffect null
+        val d = vm.detail
+        ContinueTarget(
+            bvid = t.bvid,
+            cid = t.cid,
+            title = listOfNotNull(d?.title, t.title.takeIf { it != d?.title }).joinToString(" "),
+            cover = t.cover.ifEmpty { d?.cover.orEmpty() },
+            epId = t.epId,
+        )
+    }
     // 上一集 / 下一集 and 点赞 for the player's overlay and the system media controls.
     BindPlayerPage(
         playerState,

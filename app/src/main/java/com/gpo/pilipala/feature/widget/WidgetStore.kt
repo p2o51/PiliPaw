@@ -35,6 +35,8 @@ internal data class ContinueEntry(
     val positionMs: Long = 0,
     /** 0 when unknown (an entry recovered from an older shortcut). */
     val durationMs: Long = 0,
+    /** A bangumi episode's id: 继续看 opens its bangumi page. */
+    val epId: Long = 0,
 ) {
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val remainingMs: Long get() = if (durationMs > 0) (durationMs - positionMs).coerceAtLeast(0) else 0
@@ -139,6 +141,7 @@ internal object WidgetStore {
             cover = s.cover,
             positionMs = s.positionSec * 1000,
             durationMs = s.durationSec * 1000,
+            epId = s.epId,
         )
     }
 
