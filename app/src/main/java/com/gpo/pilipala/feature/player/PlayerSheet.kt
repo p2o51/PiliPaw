@@ -78,6 +78,7 @@ import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.feature.player.sheets.QualitySliderPage
 import com.gpo.pilipala.feature.player.sheets.SpeedSliderPage
+import com.gpo.pilipala.feature.widget.WidgetStore
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
@@ -489,6 +490,7 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
                                     if (t.aid > 0) put("aid", t.aid) else put("bvid", t.bvid)
                                 },
                             )
+                            WidgetStore.laterChanged()
                         }
                         toast(result.fold({ "已添加至稍后再看" }, { it.message ?: "添加失败" }))
                     }

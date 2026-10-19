@@ -38,6 +38,7 @@ import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.feature.player.PlayQueues
 import com.gpo.pilipala.feature.player.QueueItem
+import com.gpo.pilipala.feature.widget.WidgetStore
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Page
@@ -89,17 +90,20 @@ internal class LaterViewModel : ViewModel() {
 
     suspend fun remove(item: VideoItem) {
         BiliClient.postData("/x/v2/history/toview/del", mapOf("aid" to item.aid, "jsonp" to "jsonp"))
+        WidgetStore.laterChanged()
         pager.update { l -> l.filterNot { it.aid == item.aid } }
         count = (count - 1).coerceAtLeast(0)
     }
 
     suspend fun clearWatched() {
         BiliClient.postData("/x/v2/history/toview/del", mapOf("viewed" to true, "jsonp" to "jsonp"))
+        WidgetStore.laterChanged()
         pager.refresh()
     }
 
     suspend fun clearAll() {
         BiliClient.postData("/x/v2/history/toview/clear", mapOf("jsonp" to "jsonp"))
+        WidgetStore.laterChanged()
         pager.update { emptyList() }
         count = 0
     }

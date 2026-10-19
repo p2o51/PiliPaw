@@ -71,6 +71,7 @@ import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.feature.player.PlayQueues
 import com.gpo.pilipala.feature.player.QueueItem
+import com.gpo.pilipala.feature.widget.WidgetStore
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
@@ -454,6 +455,7 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
 
 internal suspend fun addToLater(aid: Long) {
     BiliClient.postData("/x/v2/history/toview/add", mapOf("aid" to aid))
+    WidgetStore.laterChanged()
 }
 
 @Composable

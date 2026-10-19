@@ -21,6 +21,7 @@ class PiliApp : Application(), SingletonImageLoader.Factory {
         AppSettings.init(this)
         com.gpo.pilipala.feature.player.cdn.CdnRouter.init(this)
         Account.init(this)
+        com.gpo.pilipala.feature.widget.WidgetStore.appContext = this
     }
 
     /**

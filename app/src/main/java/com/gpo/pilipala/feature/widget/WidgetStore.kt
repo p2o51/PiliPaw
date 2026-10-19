@@ -84,6 +84,9 @@ internal object WidgetStore {
 
     private val lock = Any()
 
+    /** Set by PiliApp: lets the app's 稍后再看 writes ([laterChanged]) reach the widget. */
+    @Volatile var appContext: Context? = null
+
     /**
      * Bumped whenever what the widget shows may have changed ([WatchWidget.refresh]). A
      * running Glance session only recomposes on update and never reruns provideGlance, so
@@ -166,6 +169,18 @@ internal object WidgetStore {
             fetchScope.launch { if (job.await() != null) WatchWidget.refresh(context) }
         }
         return cached
+    }
+
+    /**
+     * The app added to or removed from 稍后再看: the cached list is stale whatever its age,
+     * so placed widgets refetch it on the refresh that follows.
+     */
+    fun laterChanged() {
+        val app = appContext ?: return
+        fetchScope.launch {
+            readLater(app)?.let { write(app, LaterFile, BiliJson.encodeToString(LaterCache.serializer(), it.copy(fetchedAt = 0))) }
+            WatchWidget.refresh(app)
+        }
     }
 
     /** One GET per account at a time; a widget update during a slow one waits on the same call. */

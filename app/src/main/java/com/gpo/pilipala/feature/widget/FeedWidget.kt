@@ -112,8 +112,8 @@ class FeedWidgetReceiver : GlanceAppWidgetReceiver() {
  * the feed's tab on 首页.
  *
  * Data: [FeedWidgetStore]'s cached first page, refetched when older than 30 minutes on
- * an update or when the app opens, and every ~45 minutes by [FeedWidgetWorker]. Wallpaper
- * colours through GlanceTheme, the system's widget corner radii, one layout per size bucket.
+ * an update or when the app opens, and every ~45 minutes by [FeedWidgetWorker]. The app's
+ * own colours ([WidgetColors]), the system's widget corner radii, one layout per size bucket.
  */
 class FeedWidget : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Responsive(setOf(Small, Medium, Wide, Large, WideLarge, Tall))
@@ -122,13 +122,18 @@ class FeedWidget : GlanceAppWidget() {
         val appWidgetId = runCatching { GlanceAppWidgetManager(context).getAppWidgetId(id) }.getOrDefault(AppWidgetManager.INVALID_APPWIDGET_ID)
         val loadedAt = version.value
         val initial = load(context, appWidgetId)
+        val initialColors = WidgetColors.provide(context)
         provideContent {
             val v by version.collectAsState()
             var data by remember { mutableStateOf(initial) }
+            var colors by remember { mutableStateOf(initialColors) }
             LaunchedEffect(v) {
-                if (v != loadedAt) data = load(context, appWidgetId)
+                if (v != loadedAt) {
+                    data = load(context, appWidgetId)
+                    colors = WidgetColors.provide(context)
+                }
             }
-            GlanceTheme {
+            GlanceTheme(colors = colors) {
                 FeedContent(data, appWidgetId)
             }
         }

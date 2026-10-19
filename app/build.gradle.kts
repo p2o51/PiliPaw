@@ -101,6 +101,7 @@ dependencies {
     implementation(libs.graphics.shapes)
     implementation(libs.zxing.core)
     implementation("androidx.glance:glance-appwidget:1.2.0")
+    implementation("androidx.glance:glance-material3:1.2.0")
     // Glance runs its sessions on WorkManager; pinned to the version already in the Gradle cache (offline builds).
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     constraints {

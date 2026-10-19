@@ -59,6 +59,7 @@ import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.feature.widget.WidgetStore
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.components.friendlyMessage
@@ -235,6 +236,7 @@ internal object FeedActions {
     suspend fun watchLater(item: VideoItem) {
         val form = if (item.aid > 0) mapOf("aid" to item.aid) else mapOf("bvid" to item.bvid)
         BiliClient.postData("/x/v2/history/toview/add", form)
+        WidgetStore.laterChanged()
     }
 
     suspend fun block(mid: Long) {

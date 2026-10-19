@@ -50,6 +50,11 @@ import com.gpo.pilipala.ui.launch.SplashHandoff
 import com.gpo.pilipala.ui.launch.SplashHandoffOverlay
 import com.gpo.pilipala.ui.theme.PiliTheme
 import kotlinx.coroutines.channels.Channel
+import com.gpo.pilipala.core.settings.AppSettings
+import androidx.compose.runtime.snapshotFlow
+import com.gpo.pilipala.ui.theme.ThemeSettings
+import com.gpo.pilipala.ui.theme.WallpaperSeeds
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
@@ -97,6 +102,21 @@ class MainActivity : ComponentActivity() {
             Account.user.map { it?.mid }.distinctUntilChanged().drop(1).collect {
                 WatchWidget.refresh(applicationContext)
             }
+        }
+        lifecycleScope.launch {
+            // 外观 changed (深浅, 配色风格, 主色, 强调色) or the wallpaper's seeds moved: widgets repaint.
+            combine(
+                AppSettings.themeMode.state,
+                AppSettings.dynamicColor.state,
+                AppSettings.seedColor.state,
+                ThemeSettings.accentSeed.state,
+                ThemeSettings.colorStyle.state,
+            ) { a, b, c, d, e -> listOf(a, b, c, d, e) }
+                .combine(snapshotFlow { WallpaperSeeds.version.intValue }) { a, b -> a to b }
+                .distinctUntilChanged().drop(1).collect {
+                    WatchWidget.refresh(applicationContext)
+                    FeedWidget.refresh(applicationContext)
+                }
         }
         handleIntent(intent)
         setContent {

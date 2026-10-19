@@ -30,6 +30,7 @@ import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.core.util.IdUtils
+import com.gpo.pilipala.feature.widget.WidgetStore
 import com.gpo.pilipala.navigation.LinkRouter
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Page
@@ -478,6 +479,7 @@ internal object DynamicsApi {
             "/x/v2/history/toview/add",
             if (aid > 0) mapOf("aid" to aid) else mapOf("bvid" to bvid),
         )
+        WidgetStore.laterChanged()
     }
 
     private fun parsePage(data: JsonObject?): Page<DynItem> {

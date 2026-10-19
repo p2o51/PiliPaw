@@ -15,6 +15,7 @@ import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
+import com.gpo.pilipala.feature.widget.WidgetStore
 import com.gpo.pilipala.ui.components.friendlyMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -212,10 +213,12 @@ class ArchiveActions(private val scope: CoroutineScope) {
         if (inLater) {
             BiliClient.postData("/x/v2/history/toview/del", mapOf("aid" to aid))
             inLater = false
+            WidgetStore.laterChanged()
             _messages.tryEmit("已移出稍后再看")
         } else {
             BiliClient.postData("/x/v2/history/toview/add", mapOf("aid" to aid))
             inLater = true
+            WidgetStore.laterChanged()
             _messages.tryEmit("已添加到稍后再看")
         }
     }

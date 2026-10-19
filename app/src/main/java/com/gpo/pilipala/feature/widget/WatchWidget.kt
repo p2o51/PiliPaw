@@ -77,7 +77,7 @@ class WatchWidgetReceiver : GlanceAppWidgetReceiver() {
  * 继续看 on the home screen: the video last left part-way, large, with its cover and how
  * far you got; beside or below it the first 稍后再看 entries when logged in.
  *
- * Wallpaper colours on Android 12+ (GlanceTheme), the system's widget corner radius, and
+ * The app's own colours ([WidgetColors]), the system's widget corner radius, and
  * a layout per size bucket ([SizeMode.Responsive]): small shows 继续看 alone, medium puts
  * the list beside it, large and tall stack the list under it with thumbnails.
  *
@@ -93,13 +93,18 @@ class WatchWidget : GlanceAppWidget() {
         // data reloads in the composition whenever WidgetStore.version moves.
         val loadedAt = WidgetStore.version.value
         val initial = WidgetData.load(context)
+        val initialColors = WidgetColors.provide(context)
         provideContent {
             val version by WidgetStore.version.collectAsState()
             var data by remember { mutableStateOf(initial) }
+            var colors by remember { mutableStateOf(initialColors) }
             LaunchedEffect(version) {
-                if (version != loadedAt) data = WidgetData.load(context)
+                if (version != loadedAt) {
+                    data = WidgetData.load(context)
+                    colors = WidgetColors.provide(context)
+                }
             }
-            GlanceTheme {
+            GlanceTheme(colors = colors) {
                 WatchContent(data)
             }
         }

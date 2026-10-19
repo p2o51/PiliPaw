@@ -41,6 +41,26 @@ fun piliIsDark(): Boolean {
 }
 
 /**
+ * The app's scheme from its colour settings: the wallpaper's two seeds when given, the
+ * system dynamic scheme for 系统 (or a monochrome palette), else 主色 + 强调色. Shared by
+ * [PiliTheme] and the home-screen widgets.
+ */
+internal fun appColorScheme(
+    context: android.content.Context,
+    dark: Boolean,
+    dynamic: Boolean,
+    seed: Int,
+    accent: Int,
+    wallpaper: SeedPair?,
+): ColorScheme = when {
+    wallpaper != null -> ExpressiveColorSchemeFactory.fromSeeds(wallpaper.primary, wallpaper.accent, dark)
+    // 系统, or a monochrome system palette that offers no seeds.
+    dynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+        if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    else -> ExpressiveColorSchemeFactory.fromSeeds(seed, accent, dark)
+}
+
+/**
  * App theme — Yoin's design language: M3 Expressive motion scheme, Google Sans
  * Flex type scale, continuous-corner shapes, and an expressive color scheme:
  *
@@ -74,13 +94,10 @@ fun PiliTheme(
     val wallpaper = rememberWallpaperSeeds(enabled = wantsWallpaper)
 
     val target: ColorScheme = remember(context, dark, dynamic, style, seed, accent, wallpaper, seedOverride, accentOverride) {
-        when {
-            seedOverride != null -> ExpressiveColorSchemeFactory.fromSeeds(seedOverride, accentOverride, dark)
-            wallpaper != null -> ExpressiveColorSchemeFactory.fromSeeds(wallpaper.primary, wallpaper.accent, dark)
-            // 系统, or a monochrome system palette that offers no seeds.
-            dynamic && systemSchemeSupported ->
-                if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-            else -> ExpressiveColorSchemeFactory.fromSeeds(seed, accent, dark)
+        if (seedOverride != null) {
+            ExpressiveColorSchemeFactory.fromSeeds(seedOverride, accentOverride, dark)
+        } else {
+            appColorScheme(context, dark, dynamic, seed, accent, wallpaper)
         }
     }
     val motionScheme = MotionScheme.expressive()
