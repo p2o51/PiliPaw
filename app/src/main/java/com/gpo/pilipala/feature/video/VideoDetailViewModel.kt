@@ -106,9 +106,17 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
     /** The 收藏夹 / 稍后再看 queue this page plays from (null = a single video, or lost with the process). */
     val queue: PlayQueue? = PlayQueues.get(route.playlistId)
 
+    /**
+     * 仅听声音 for a single video: opened to listen ([Route.Video.audioOnly]), then whatever the
+     * player was left at when the page let it go (coming back rebuilds the player). A queue
+     * carries it itself.
+     */
+    var listening: Boolean = route.audioOnly && queue == null
+
     private var loadJob: Job? = null
 
     init {
+        if (route.audioOnly) queue?.setAudioOnly(true)
         load()
         // The player steps the queue (also in the background); the page follows its current item.
         queue?.let { q -> viewModelScope.launch { q.index.drop(1).collect { followQueue(q, it) } } }

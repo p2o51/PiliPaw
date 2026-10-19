@@ -47,6 +47,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
+import com.gpo.pilipala.feature.videomenu.VideoCardMenu
+import com.gpo.pilipala.feature.videomenu.VideoMenuAction
+import com.gpo.pilipala.feature.videomenu.isPlainVideo
+import com.gpo.pilipala.ui.components.WidthClass
+import com.gpo.pilipala.ui.components.widthClass
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -84,7 +94,6 @@ import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.CoverTheme
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -250,15 +259,64 @@ private fun JsonObject.toQueueItem(): QueueItem? {
 
 /**
  * 播放全部 + 随机播放 as one M3 split button (Yoin's Play split): the folder / list plays
- * as a queue. 随机播放 shuffles the list itself; the play mode stays 列表循环.
+ * as a queue. 随机播放 shuffles the list itself; the play mode stays 列表循环. Beside it the
+ * 仅听声音 toggle ([listening]): the queue then starts audio-only and keeps it across items
+ * (the player's queue panel can still turn it off). Compact widths show 随机播放 as its icon.
  */
 @Composable
 internal fun QueuePlayButtons(
     loading: Boolean,
+    listening: Boolean,
+    onListeningChange: (Boolean) -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val haptics = LocalHapticFeedback.current
+    val compact = widthClass() == WidthClass.Compact
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        QueueSplitButton(loading, compact, onPlay, onShuffle)
+        ListenToggle(listening) { on ->
+            haptics.performHapticFeedback(if (on) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+            onListeningChange(on)
+        }
+    }
+}
+
+@Composable
+private fun ListenToggle(checked: Boolean, onChange: (Boolean) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val container by animateColorAsState(
+        if (checked) colors.primary else colors.surfaceContainerHighest,
+        YoinMotion.defaultEffectsSpec(),
+        label = "listenContainer",
+    )
+    val content by animateColorAsState(
+        if (checked) colors.onPrimary else colors.onSurfaceVariant,
+        YoinMotion.defaultEffectsSpec(),
+        label = "listenContent",
+    )
+    ToggleButton(
+        checked = checked,
+        onCheckedChange = onChange,
+        shapes = ToggleButtonDefaults.shapes(),
+        colors = ToggleButtonDefaults.toggleButtonColors(
+            containerColor = container,
+            contentColor = content,
+            checkedContainerColor = container,
+            checkedContentColor = content,
+        ),
+        contentPadding = PaddingValues(start = 12.dp, end = 16.dp),
+        modifier = Modifier.height(40.dp),
+    ) {
+        Icon(YoinSymbols.Headphones, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("仅听声音", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    }
+}
+
+@Composable
+private fun QueueSplitButton(loading: Boolean, compact: Boolean, onPlay: () -> Unit, onShuffle: () -> Unit) {
     val haptics = LocalHapticFeedback.current
     SplitButtonLayout(
         leadingButton = {
@@ -289,12 +347,17 @@ internal fun QueuePlayButtons(
                 },
                 enabled = !loading,
             ) {
-                Icon(YoinSymbols.Shuffle, contentDescription = null, modifier = Modifier.size(SplitButtonDefaults.LeadingIconSize))
-                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text("随机播放", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Icon(
+                    YoinSymbols.Shuffle,
+                    contentDescription = if (compact) "随机播放" else null,
+                    modifier = Modifier.size(SplitButtonDefaults.LeadingIconSize),
+                )
+                if (!compact) {
+                    Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                    Text("随机播放", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                }
             }
         },
-        modifier = modifier,
     )
 }
 
@@ -322,11 +385,12 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
     val gridState = rememberLazyGridState()
     LoadMoreEffect(gridState) { vm.pager.loadMore() }
     val nav = LocalNavigator.current
-    // The folder as a playlist: 播放全部 / 随机播放 / 从这里播放.
+    // The folder as a playlist: 播放全部 / 随机播放 / 从这里播放, audio-only with 仅听声音 on.
+    var listen by rememberSaveable { mutableStateOf(false) }
     val startQueue: (Boolean, String?) -> Unit = { shuffle, from ->
         scope.launch {
             runCatching { vm.buildQueue(shuffle, from) }
-                .onSuccess { r -> r?.let(nav::push) }
+                .onSuccess { r -> r?.let { nav.push(it.copy(audioOnly = listen)) } }
                 .onFailure { toast(it.friendlyMessage()) }
         }
     }
@@ -396,6 +460,8 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                             QueuePlayButtons(
                                 loading = vm.queueLoading,
+                                listening = listen,
+                                onListeningChange = { listen = it },
                                 onPlay = { startQueue(false, null) },
                                 onShuffle = { startQueue(true, null) },
                             )
@@ -418,30 +484,19 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
     }
 
     sheet?.let { m ->
-        ItemActionSheet(
-            title = m.video.title,
-            cover = m.video.cover,
-            actions = buildList {
+        VideoCardMenu(
+            m.video,
+            isVideo = m.type == 2 && m.video.isPlainVideo,
+            extras = buildList {
                 if (m.type == 2 && m.video.target == null && m.video.bvid.isNotEmpty()) {
-                    add(SheetAction("从这里播放", YoinSymbols.Playlist) { startQueue(false, m.video.bvid) })
+                    add(VideoMenuAction("从这里播放", YoinSymbols.Playlist) { startQueue(false, m.video.bvid) })
                 }
                 if (isOwner) {
                     add(
-                        SheetAction("取消收藏", YoinSymbols.Delete, destructive = true) {
+                        VideoMenuAction("取消收藏", YoinSymbols.Delete, destructive = true) {
                             scope.launch {
                                 runCatching { vm.remove(m) }
                                     .onSuccess { toast("已取消收藏") }
-                                    .onFailure { toast(it.friendlyMessage()) }
-                            }
-                        },
-                    )
-                }
-                if (m.video.aid > 0 && m.video.target == null) {
-                    add(
-                        SheetAction("稍后再看", PiliSymbols.WatchLater) {
-                            scope.launch {
-                                runCatching { addToLater(m.video.aid) }
-                                    .onSuccess { toast("已添加") }
                                     .onFailure { toast(it.friendlyMessage()) }
                             }
                         },

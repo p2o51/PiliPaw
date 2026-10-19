@@ -598,6 +598,12 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         if (q != null) q.setAudioOnly(!q.audioOnly.value) else changeAudioOnly(!audioOnly)
     }
 
+    /** 仅听声音 set outright (a page opened to listen); through the queue when there is one. */
+    fun listenOnly(on: Boolean) {
+        val q = queue
+        if (q != null) q.setAudioOnly(on) else changeAudioOnly(on)
+    }
+
     /** Next / previous in the queue. Previous restarts the item first when it has played over 3s. */
     fun skipQueue(forward: Boolean) {
         val q = queue ?: return

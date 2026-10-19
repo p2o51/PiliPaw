@@ -61,6 +61,8 @@ import com.gpo.pilipala.feature.player.BindPlayerPage
 import com.gpo.pilipala.feature.player.PlayQueue
 import com.gpo.pilipala.feature.player.PlayerPageHooks
 import com.gpo.pilipala.feature.player.attachQueue
+import com.gpo.pilipala.feature.player.listening
+import com.gpo.pilipala.feature.player.setAudioOnly
 import com.gpo.pilipala.feature.player.rememberBiliPlayerState
 import com.gpo.pilipala.feature.reply.ReplyList
 import com.gpo.pilipala.feature.video.portrait.PortraitVideoLayout
@@ -113,7 +115,12 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     val queue = vm.queue
     DisposableEffect(playerState, queue) {
         playerState.attachQueue(queue)
-        onDispose { playerState.attachQueue(null) }
+        // 仅听声音 from the start (Route.Video.audioOnly): set before the first load, so no picture stream.
+        if (queue == null && vm.listening) playerState.setAudioOnly(true)
+        onDispose {
+            if (queue == null) vm.listening = playerState.listening
+            playerState.attachQueue(null)
+        }
     }
     LaunchedEffect(playerState, vm.detail?.ownerName) { playerState.artist = vm.detail?.ownerName.orEmpty() }
     // 上一个 / 下一个 (分P / 合集) and 点赞 for the player's overlay and the system media controls.

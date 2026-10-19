@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.feature.player.PlayInfo
+import com.gpo.pilipala.feature.player.PlayTarget
 import com.gpo.pilipala.feature.player.PlayUrlApi
 import com.gpo.pilipala.feature.player.QualityOption
 import com.gpo.pilipala.ui.components.rememberToast
@@ -58,12 +59,18 @@ import kotlinx.coroutines.launch
  */
 @Composable
 internal fun CachePage(ctrl: PiliPlayerController, close: () -> Unit) {
+    val target = ctrl.target ?: return
+    // The player's own info when it streams DASH; a cached / single-file play asks afresh.
+    CachePage(target, ctrl.artist, ctrl.info?.takeIf { it.isDash }, close)
+}
+
+/** The same page for any [target] (the video card menu's 缓存); [known] skips the fetch. */
+@Composable
+internal fun CachePage(target: PlayTarget, artist: String, known: PlayInfo?, close: () -> Unit) {
     val context = LocalContext.current
     val toast = rememberToast()
     val haptics = LocalHapticFeedback.current
-    val target = ctrl.target ?: return
-    // The player's own info when it streams DASH; a cached / single-file play asks afresh.
-    var info by remember(target.cid) { mutableStateOf(ctrl.info?.takeIf { it.isDash }) }
+    var info by remember(target.cid) { mutableStateOf(known) }
     var error by remember(target.cid) { mutableStateOf<String?>(null) }
     LaunchedEffect(target.cid) {
         if (info != null) return@LaunchedEffect
@@ -100,7 +107,7 @@ internal fun CachePage(ctrl: PiliPlayerController, close: () -> Unit) {
                     isPgc = target.isPgc,
                     title = target.title,
                     cover = target.cover,
-                    owner = ctrl.artist,
+                    owner = artist,
                     qn = q.qn,
                     qualityLabel = q.label,
                     durationMs = pi?.timelengthMs ?: 0,

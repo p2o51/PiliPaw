@@ -40,7 +40,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.feature.videomenu.VideoCardMenu
+import com.gpo.pilipala.feature.videomenu.isPlainVideo
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.pageSharedSource
@@ -80,7 +87,23 @@ data class VideoItem(
 
 private val CoverShape = ContinuousRoundedCornerShape(12.dp)
 
-private fun VideoItem.route(): Route = target ?: Route.Video(bvid = bvid, aid = aid, cid = cid, cover = cover, title = title, progress = progress.coerceAtLeast(0))
+/**
+ * A card's long press: the list's own [onLongClick], else the shared video card menu
+ * (VideoCardMenu.kt) for plain videos, hosted by the card itself.
+ */
+@Composable
+private fun cardLongClick(item: VideoItem, onLongClick: (() -> Unit)?): (() -> Unit)? {
+    if (onLongClick != null || !item.isPlainVideo) return onLongClick
+    val haptics = LocalHapticFeedback.current
+    var menu by remember { mutableStateOf(false) }
+    if (menu) VideoCardMenu(item, onDismiss = { menu = false })
+    return {
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        menu = true
+    }
+}
+
+private fun VideoItem.route(): Route =target ?: Route.Video(bvid = bvid, aid = aid, cid = cid, cover = cover, title = title, progress = progress.coerceAtLeast(0))
 
 /**
  * Grid card (home feeds). The page it opens grows out of it (container
@@ -97,11 +120,12 @@ fun VideoCardV(
     onClick: (() -> Unit)? = null,
 ) {
     val nav = LocalNavigator.current
+    val longClick = cardLongClick(item, onLongClick)
     Column(
         modifier = modifier
             .pageSharedSource(item.route())
             .clip(YoinContainerShapes.Card)
-            .combinedClickable(onLongClick = onLongClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) }),
+            .combinedClickable(onLongClick = longClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) }),
     ) {
         // Cover, scrim and badge are one print for the seams; the labels on it lift out whole.
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).seamGraphic()) {
@@ -144,12 +168,13 @@ fun VideoCardH(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val nav = LocalNavigator.current
+    val longClick = cardLongClick(item, onLongClick)
     Row(
         modifier = modifier
             .fillMaxWidth()
             .pageSharedSource(item.route())
             .clip(YoinContainerShapes.ListRow)
-            .combinedClickable(onLongClick = onLongClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) })
+            .combinedClickable(onLongClick = longClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) })
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
