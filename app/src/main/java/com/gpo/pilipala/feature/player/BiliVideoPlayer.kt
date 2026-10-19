@@ -4,6 +4,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.gpo.pilipala.ui.components.rememberToast
 import android.content.res.Configuration
 import android.os.Build
 import androidx.activity.ComponentActivity
@@ -359,7 +364,11 @@ fun BiliVideoPlayer(
     // then lands in its inline slot; the landing scales a TextureView too.
     val back = remember { FullscreenBackState() }
     val landing by remember { derivedStateOf { back.landing } }
-    val surfaceType = if (turned || turning || cardFrame || landing) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
+    // 画面 (PictureZoom.kt). Anything but 适应 lays the video view out bigger than its box
+    // (填充) or stretches it, which only a TextureView clips and scales cleanly.
+    val fitSetting by PictureFitSetting.state.collectAsState()
+    val pictureFit = pictureFitOf(fitSetting)
+    val surfaceType = if (turned || turning || cardFrame || landing || pictureFit != PictureFit.Fit) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
     val view = LocalView.current
     val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
 
@@ -474,16 +483,70 @@ fun BiliVideoPlayer(
     val lyricsShown = ctrl.audioOnly && !inPip && !pipEntering && target != null
     val showCover = target == null || !settled || (!ctrl.firstFrameRendered && phase !is PlayerPhase.Error)
 
+    // ── Pinch zoom (fullscreen picture card only) and 截图.
+    val zoom = remember { PictureZoom() }
+    val zoomSpec = YoinMotion.defaultSpatialSpec<Float>()
+    val zoomAllowed = cardFrame && !inPip && !pipEntering && !lyricsShown
+    // Out of fullscreen, into PiP, under the lyrics: the plain picture at once, so the PiP
+    // flight and the inline slot measure exactly what they show.
+    LaunchedEffect(zoomAllowed) { if (!zoomAllowed) zoom.snapHome() }
+    // The back gesture flies the plain picture home; another 画面 starts from it too.
+    LaunchedEffect(zoom) {
+        snapshotFlow { back.busy }.collect { busy -> if (busy) zoom.springHome(pipScope, zoomSpec) }
+    }
+    LaunchedEffect(pictureFit) { zoom.springHome(pipScope, zoomSpec) }
+    val pinchAllowed by rememberUpdatedState(zoomAllowed && !ui.locked && !landing)
+    val latestFit by rememberUpdatedState(pictureFit)
+    val haptics = LocalHapticFeedback.current
+    val toast = rememberToast()
+    val shot = remember { ShotFeedback() }
+    // The picture's window rect, for finding the view the video is drawn into.
+    val shotBox = remember { arrayOfNulls<Rect>(1) }
+    val flashSpec = YoinMotion.slowEffectsSpec<Float>()
+    val kickSpec = YoinMotion.fastSpatialSpec<Float>(YoinMotionRole.Expressive)
+    val canShot = target != null && !ctrl.audioOnly && ctrl.firstFrameRendered && !inPip
+    val takeShot: () -> Unit = {
+        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+        pipScope.launch {
+            val video = findVideoView(view.rootView, shotBox[0])
+            val size = ctrl.player?.videoSize
+            val frame = video?.let { captureVideoFrame(it, size?.width ?: 0, size?.height ?: 0) }
+            if (frame == null) {
+                toast("截图失败")
+                return@launch
+            }
+            launch {
+                shot.flash.snapTo(0.6f)
+                shot.flash.animateTo(0f, flashSpec)
+            }
+            launch {
+                shot.kick.snapTo(0.96f)
+                shot.kick.animateTo(1f, kickSpec)
+            }
+            val saved = runCatching { saveScreenshot(context, frame, latestTarget?.title.orEmpty()) }
+            frame.recycle()
+            toast(if (saved.isSuccess) "已保存截图" else "保存失败")
+        }
+    }
+
     // The inline strip sits on the page, in the page's own colours (captured before the
     // dark chrome theme takes over), so only the picture itself is black.
     val stripInk = pageInk(MaterialTheme.colorScheme)
     // The back pose's view of the frame, and the inline slot it flies home to.
     val minCardScale = if (shortFrame) 0.76f else 0.8f
+    // The picture's shape as drawn: the video's own aspect when fitted, the box's when 填充 /
+    // 拉伸 cover it (inline the box is 16:9), so the card and the back pose clip what shows.
+    var fillBoxAspect by remember { mutableFloatStateOf(16f / 9f) }
+    val pictureAspect: () -> Float = when {
+        pictureFit == PictureFit.Fit -> { { ctrl.videoAspect } }
+        fill -> { { fillBoxAspect } }
+        else -> { { 16f / 9f } }
+    }
     val frameSpec = BackFrameSpec(
         fill = fill,
         swapped = fill && turned,
         angle = { turnAngle.value },
-        aspect = { ctrl.videoAspect },
+        aspect = pictureAspect,
         reveal = if (cardFrame) reveal else null,
         topBand = topBand,
         bottomBand = bottomBand,
@@ -541,6 +604,7 @@ fun BiliVideoPlayer(
                         if (!ok) PipSignals.entering = false
                     }
                 },
+                onShot = if (canShot) takeShot else null,
             )
             PlayerFrame(
                 fill = fill,
@@ -558,6 +622,8 @@ fun BiliVideoPlayer(
                             // The picture's resting rect (before the card's shrink below), for the PiP
                             // flight. Not from inside the PiP window, and not while it is turned by hand.
                             .onGloballyPositioned { c ->
+                                if (fill && c.size.width > 0 && c.size.height > 0) fillBoxAspect = c.size.width.toFloat() / c.size.height
+                                shotBox[0] = c.boundsInWindow()
                                 val resting = turnAngle.value == 0f && !back.busy
                                 if (!latestInPip) pipBox = if (turned || !resting) null else c.boundsInWindow()
                                 // The inline slot, for the fullscreen back gesture to fly home to.
@@ -567,7 +633,7 @@ fun BiliVideoPlayer(
                                 if (cardFrame) {
                                     Modifier.pictureCard(
                                         reveal = reveal,
-                                        aspect = { ctrl.videoAspect },
+                                        aspect = pictureAspect,
                                         topBand = topBand,
                                         bottomBand = bottomBand,
                                         minScale = minCardScale,
@@ -589,12 +655,37 @@ fun BiliVideoPlayer(
                             key(surfaceType, sizeKey, configuration.screenWidthDp, configuration.screenHeightDp) {
                                 ContentFrame(
                                     player = ctrl.player,
-                                    modifier = Modifier.fillMaxSize(),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .then(
+                                            // Pinch zoom and the capture's kick: on the video view only (a
+                                            // SurfaceView is never scaled, see surfaceType).
+                                            if (surfaceType == SURFACE_TYPE_TEXTURE_VIEW) {
+                                                Modifier.graphicsLayer {
+                                                    val k = shot.kick.value * zoom.scale
+                                                    scaleX = k
+                                                    scaleY = k
+                                                    translationX = zoom.offset.x
+                                                    translationY = zoom.offset.y
+                                                }
+                                            } else {
+                                                Modifier
+                                            },
+                                        ),
                                     surfaceType = surfaceType,
-                                    contentScale = ContentScale.Fit,
+                                    contentScale = pictureFit.scale,
                                     shutter = {},
                                 )
                             }
+                            // 截图: a white flash over the picture.
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .drawBehind {
+                                        val a = shot.flash.value
+                                        if (a > 0.004f) drawRect(Color.White, alpha = a)
+                                    },
+                            )
                         }
                         AnimatedVisibility(
                             visible = showCover,
@@ -613,7 +704,7 @@ fun BiliVideoPlayer(
                         }
                         if (controls) {
                             // The hairline sits on the picture's own bottom edge (inside any letterbox).
-                            val aspect = ctrl.videoAspect.takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
+                            val aspect = pictureAspect().takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
                             Box(
                                 if (fill) Modifier.align(Alignment.Center).aspectRatio(aspect) else Modifier.fillMaxSize(),
                             ) {
@@ -630,7 +721,26 @@ fun BiliVideoPlayer(
                                 if (inPip) {
                                     Modifier
                                 } else {
-                                    Modifier.playerGestures(
+                                    Modifier
+                                        .pointerInput(zoom) {
+                                            detectPicturePinch(
+                                                zoom = zoom,
+                                                enabled = { pinchAllowed && ui.feedback.holdIndex < 0 && !back.busy },
+                                                // The card opens up to the whole picture while it is zoomed.
+                                                onStart = { ui.visible = false },
+                                                onRelease = onRelease@{ box ->
+                                                    // Left fullscreen (or the like) mid-pinch: the plain picture.
+                                                    if (!pinchAllowed) {
+                                                        zoom.snapHome()
+                                                        return@onRelease
+                                                    }
+                                                    val (s, o) = pinchRest(zoom.scale, zoom.offset, box, ctrl.videoAspect, latestFit)
+                                                    if (s != zoom.scale) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                                    zoom.springTo(pipScope, zoomSpec, s, o)
+                                                },
+                                            )
+                                        }
+                                        .playerGestures(
                                         ctrl = ctrl,
                                         ui = ui,
                                         activity = activity,
@@ -768,7 +878,9 @@ fun BiliVideoPlayer(
                             }
                         }
                         if (controls) {
-                            PlayerSheets(ctrl, ui, fullscreen, sheetScheme = if (fullscreen) overlayScheme else pageScheme)
+                            CompositionLocalProvider(LocalPlayerShot provides if (canShot) takeShot else null) {
+                                PlayerSheets(ctrl, ui, fullscreen, sheetScheme = if (fullscreen) overlayScheme else pageScheme)
+                            }
                         }
                     }
                 },

@@ -422,6 +422,8 @@ internal class ChromeActions(
     val onNext: () -> Unit,
     val onPlay: () -> Unit,
     val onChapters: () -> Unit,
+    /** 截图; null while there is no picture to take. */
+    val onShot: (() -> Unit)? = null,
 )
 
 @Composable
@@ -433,6 +435,7 @@ internal fun rememberChromeActions(
     onBack: () -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
     onPip: () -> Unit,
+    onShot: (() -> Unit)? = null,
 ): ChromeActions {
     val haptics = LocalHapticFeedback.current
     val danmakuOn by AppSettings.danmakuEnabled.state.collectAsState()
@@ -474,6 +477,7 @@ internal fun rememberChromeActions(
             haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
             ui.sheet = SheetPage.Chapters
         },
+        onShot = onShot,
     )
 }
 
@@ -806,6 +810,16 @@ internal fun FullscreenTopBar(
             }
             IconButton(onClick = actions.onDanmaku, shapes = IconButtonDefaults.shapes()) {
                 DanmakuToggleIcon(danmakuOn)
+            }
+            val shot = actions.onShot
+            AnimatedVisibility(
+                visible = shot != null,
+                enter = fadeIn(YoinMotion.defaultEffectsSpec()) + scaleIn(YoinMotion.fastSpatialSpec(), initialScale = 0.6f),
+                exit = fadeOut(YoinMotion.fastEffectsSpec()) + scaleOut(YoinMotion.fastSpatialSpec(), targetScale = 0.6f),
+            ) {
+                IconButton(onClick = { shot?.invoke() }, shapes = IconButtonDefaults.shapes()) {
+                    Icon(ScreenshotSymbol, contentDescription = "截图")
+                }
             }
             if (canPip) {
                 IconButton(onClick = actions.onPip, shapes = IconButtonDefaults.shapes()) {
