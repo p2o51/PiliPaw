@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.player
 
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -520,7 +521,9 @@ internal class DanmakuEngine {
         }
 
         // Expire + draw.
-        val outline = Stroke(width = with(density) { 1.6.dp.toPx() }, join = StrokeJoin.Round)
+        // A firm dark edge plus a soft shadow, so white and pale danmaku read on bright frames.
+        val outline = Stroke(width = with(density) { 2.4.dp.toPx() }, join = StrokeJoin.Round)
+        val halo = Shadow(Color.Black.copy(alpha = 0.6f), Offset.Zero, with(density) { 3.dp.toPx() })
         val platePadX = with(density) { 6.dp.toPx() }
         val platePadY = with(density) { 1.dp.toPx() }
         val iter = active.iterator()
@@ -565,7 +568,8 @@ internal class DanmakuEngine {
                 textLayoutResult = a.layout,
                 color = Color.Black,
                 topLeft = topLeft,
-                alpha = cfg.opacity * 0.7f,
+                alpha = cfg.opacity * 0.85f,
+                shadow = halo,
                 drawStyle = outline,
             )
             drawText(

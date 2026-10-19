@@ -12,3 +12,4 @@ captures/
 .kotlin/
 *.apk
 /.claude/round4.js
+/.claude/devin-review-*.md
