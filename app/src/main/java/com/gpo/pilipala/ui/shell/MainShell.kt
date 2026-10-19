@@ -1,5 +1,9 @@
 package com.gpo.pilipala.ui.shell
 
+import com.gpo.pilipala.ui.components.rememberToast
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.activity.compose.LocalActivity
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -76,7 +80,22 @@ fun MainShell() {
     var selected by rememberSaveable { mutableIntStateOf(0) }
     val holder = rememberSaveableStateHolder()
     val reselects = remember { MutableSharedFlow<Int>(extraBufferCapacity = 1) }
-    BackHandler(enabled = selected != 0) { selected = 0 }
+    // The four sections are peers: back never hops to 首页. On a section with a feed the first
+    // back is a reselect (to the top, or a refresh when already there); on 我的 it only warns.
+    // A second back within ExitWindowMs leaves the app.
+    val activity = LocalActivity.current
+    val toast = rememberToast()
+    var armedAt by remember { mutableLongStateOf(0L) }
+    BackHandler {
+        val now = SystemClock.uptimeMillis()
+        if (now - armedAt < ExitWindowMs) {
+            activity?.finish()
+        } else {
+            armedAt = now
+            if (selected != MineIndex) reselects.tryEmit(selected)
+            toast("再按一次退出")
+        }
+    }
     val requested by ShellRequests.section.collectAsState()
     LaunchedEffect(requested) {
         val index = requested ?: return@LaunchedEffect
@@ -121,3 +140,6 @@ fun MainShell() {
         }
     }
 }
+
+private const val MineIndex = 3
+private const val ExitWindowMs = 2000L
