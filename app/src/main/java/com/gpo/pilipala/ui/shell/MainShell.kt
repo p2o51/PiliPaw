@@ -51,6 +51,9 @@ import kotlinx.coroutines.flow.map
  */
 val LocalTabReselect = staticCompositionLocalOf<Flow<Unit>> { emptyFlow() }
 
+/** Long press on the bar's 首页: 首页 shows and opens its search. */
+val LocalHomeSearchRequest = staticCompositionLocalOf<Flow<Unit>> { emptyFlow() }
+
 /** Requests from outside the composition (a widget tap) to show one of the shell's sections. */
 object ShellRequests {
     private val _section = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
@@ -112,6 +115,7 @@ fun MainShell() {
     val selected = sections.indexOf(current)
     val holder = rememberSaveableStateHolder()
     val reselects = remember { MutableSharedFlow<Int>(extraBufferCapacity = 1) }
+    val homeSearch = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
     // The four sections are peers: back never hops to 首页. On a section with a feed the first
     // back is a reselect (to the top, or a refresh when already there); on 我的 it only warns.
     // A second back within ExitWindowMs leaves the app.
@@ -152,7 +156,7 @@ fun MainShell() {
                 ) { section ->
                     holder.SaveableStateProvider(section.ordinal) {
                         val mine = remember(section) { reselects.filter { it == section.ordinal }.map { } }
-                        CompositionLocalProvider(LocalTabReselect provides mine) {
+                        CompositionLocalProvider(LocalTabReselect provides mine, LocalHomeSearchRequest provides homeSearch) {
                             when (section) {
                                 ShellSection.Home -> HomeScreen()
                                 ShellSection.Rank -> RankScreen()
@@ -169,6 +173,11 @@ fun MainShell() {
                 onSelect = { i ->
                     val tapped = sections[i]
                     if (tapped == current) reselects.tryEmit(tapped.ordinal) else selectedOrdinal = tapped.ordinal
+                },
+                hasLongPress = { i -> sections.getOrNull(i) == ShellSection.Home },
+                onLongPress = {
+                    selectedOrdinal = ShellSection.Home.ordinal
+                    homeSearch.tryEmit(Unit)
                 },
                 modifier = Modifier.align(Alignment.BottomCenter).splashReveal(lift = 22.dp),
             )

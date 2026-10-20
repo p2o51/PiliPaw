@@ -41,6 +41,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.combinedClickable
 import com.gpo.pilipala.ui.components.WidthClass
 import com.gpo.pilipala.ui.components.seam.seamBarSource
 import com.gpo.pilipala.ui.components.widthClass
@@ -67,6 +68,9 @@ fun FloatingNavBar(
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    /** Long press on a tab; null for a tab ([hasLongPress] false) leaves it a plain button. */
+    onLongPress: (Int) -> Unit = {},
+    hasLongPress: (Int) -> Boolean = { false },
 ) {
     val compact = widthClass() == WidthClass.Compact
     val rowHeight = if (compact) 68.dp else 60.dp
@@ -106,6 +110,14 @@ fun FloatingNavBar(
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             onSelect(index)
                         },
+                        onLongClick = if (hasLongPress(index)) {
+                            {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onLongPress(index)
+                            }
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -114,7 +126,7 @@ fun FloatingNavBar(
 }
 
 @Composable
-private fun NavButton(tab: NavTab, selected: Boolean, height: Dp, onClick: () -> Unit) {
+private fun NavButton(tab: NavTab, selected: Boolean, height: Dp, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val sel by animateFloatAsState(if (selected) 1f else 0f, YoinMotion.defaultEffectsSpec(), label = "sel")
@@ -140,7 +152,7 @@ private fun NavButton(tab: NavTab, selected: Boolean, height: Dp, onClick: () ->
             .height(height)
             .clip(RoundedCornerShape(corner))
             .background(container)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .combinedClickable(interactionSource = interaction, indication = null, onLongClick = onLongClick, onClick = onClick)
             .padding(horizontal = 14.dp + extra / 2),
         verticalAlignment = Alignment.CenterVertically,
     ) {

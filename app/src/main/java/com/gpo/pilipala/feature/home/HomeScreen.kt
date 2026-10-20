@@ -66,6 +66,7 @@ import com.gpo.pilipala.ui.launch.splashReveal
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.pilipala.ui.shell.LocalHomeSearchRequest
 import com.gpo.pilipala.ui.shell.LocalTabReselect
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.filter
@@ -135,6 +136,12 @@ fun HomeScreen() {
         selectedKey = tabs[index].key
         pagerState.animateScrollToPage(index, animationSpec = pageSpec)
         FeedStore.consumeFocus(id)
+    }
+
+    // Long press on the bar's 首页: the search opens, keyboard up.
+    val searchRequests = LocalHomeSearchRequest.current
+    LaunchedEffect(searchRequests) {
+        searchRequests.collect { search.bar.animateToExpanded() }
     }
 
     // Reselects: the bottom-bar tab (acts on the visible page) or the visible segment.
