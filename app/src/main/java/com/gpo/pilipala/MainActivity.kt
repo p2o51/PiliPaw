@@ -32,6 +32,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation3.runtime.rememberNavBackStack
 import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.feature.media.ImageViewerHost
 import com.gpo.pilipala.feature.player.PipSignals
 import com.gpo.pilipala.feature.video.AppShortcuts
 import com.gpo.pilipala.feature.player.PlaybackService
@@ -150,13 +151,16 @@ class MainActivity : ComponentActivity() {
                     com.gpo.pilipala.ui.components.LocalToastScope provides rootScope,
                     LocalSplashHandoff provides handoff,
                 ) {
-                    Box(Modifier.fillMaxSize().onGloballyPositioned { firstLayout = true }) {
-                        AppNavHost(navigator)
-                        SnackbarHost(
-                            snackbar,
-                            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp),
-                        )
-                        SplashHandoffOverlay(handoff)
+                    // The picture viewer: its own window above every page, sheet and dialog.
+                    ImageViewerHost {
+                        Box(Modifier.fillMaxSize().onGloballyPositioned { firstLayout = true }) {
+                            AppNavHost(navigator)
+                            SnackbarHost(
+                                snackbar,
+                                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp),
+                            )
+                            SplashHandoffOverlay(handoff)
+                        }
                     }
                 }
             }

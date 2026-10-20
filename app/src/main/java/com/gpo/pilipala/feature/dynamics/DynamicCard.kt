@@ -70,6 +70,9 @@ import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.core.util.IdUtils
+import com.gpo.pilipala.feature.media.ImageViewerController
+import com.gpo.pilipala.feature.media.LocalImageViewer
+import com.gpo.pilipala.feature.media.ViewerImage
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Navigator
 import com.gpo.pilipala.navigation.Route
@@ -117,7 +120,7 @@ internal fun DynamicCard(
     detail: Boolean = false,
 ) {
     val nav = LocalNavigator.current
-    val viewer = rememberImageViewerState()
+    val viewer = LocalImageViewer.current
     val route = item.route
     val handler = remember(nav, viewer) { CardUriHandler(nav, viewer) }
 
@@ -149,22 +152,22 @@ internal fun DynamicCard(
                     nested = false,
                     detail = detail,
                     blockColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    viewer = viewer,
                 )
                 if (item.kind == "DYNAMIC_TYPE_FORWARD") {
-                    item.orig?.let { ForwardBlock(it, viewer) }
+                    item.orig?.let { ForwardBlock(it) }
                 }
                 ActionRow(item, detail)
             }
         }
     }
-    ImageViewerHost(viewer)
 }
 
-private class CardUriHandler(private val nav: Navigator, private val viewer: ImageViewerState) : UriHandler {
+private class CardUriHandler(private val nav: Navigator, private val viewer: ImageViewerController) : UriHandler {
     override fun openUri(uri: String) {
         if (uri.startsWith(PICS_SCHEME)) {
-            viewer.open(uri.removePrefix(PICS_SCHEME).split('|').filter { it.isNotEmpty() })
+            // A 查看图片 link has no cell: the viewer fades in place.
+            val urls = uri.removePrefix(PICS_SCHEME).split('|').filter { it.isNotEmpty() }
+            viewer.open(urls.map { ViewerImage(it) }, 0)
         } else {
             nav.openUrl(uri)
         }
@@ -235,7 +238,6 @@ private fun DynamicBody(
     nested: Boolean,
     detail: Boolean,
     blockColor: Color,
-    viewer: ImageViewerState,
 ) {
     val dyn = item.json.dynModule
     val topic = dyn.obj("topic")
@@ -272,7 +274,8 @@ private fun DynamicBody(
 
     val pics = item.pictures
     if (pics.isNotEmpty()) {
-        PicGrid(pics, onOpen = { viewer.open(pics.map { it.url }, it) })
+        // The key names the surface too: the same dynamic as a card and as a forward's original keep apart.
+        PicGrid(pics, keyPrefix = item.key + if (nested) ":fwd" else "")
     }
 
     MajorContent(item.json, blockColor)
@@ -477,7 +480,7 @@ private fun AdditionalContent(item: JsonObject, blockColor: Color) {
 // ── Forwarded original ─────────────────────────────────────────────────────
 
 @Composable
-private fun ForwardBlock(orig: DynItem, viewer: ImageViewerState) {
+private fun ForwardBlock(orig: DynItem) {
     val nav = LocalNavigator.current
     val route = orig.route
     val a = orig.json.author
@@ -528,7 +531,6 @@ private fun ForwardBlock(orig: DynItem, viewer: ImageViewerState) {
                 nested = true,
                 detail = false,
                 blockColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                viewer = viewer,
             )
         }
     }

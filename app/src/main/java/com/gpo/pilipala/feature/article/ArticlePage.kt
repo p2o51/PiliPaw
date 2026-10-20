@@ -48,9 +48,9 @@ import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.BiliException
 import com.gpo.pilipala.core.net.asObj
 import com.gpo.pilipala.core.net.obj
-import com.gpo.pilipala.feature.dynamics.ImageViewerHost
-import com.gpo.pilipala.feature.dynamics.rememberImageViewerState
 import com.gpo.pilipala.feature.dynamics.shareText
+import com.gpo.pilipala.feature.media.LocalImageViewer
+import com.gpo.pilipala.feature.media.ViewerImage
 import com.gpo.pilipala.feature.reply.ReplyList
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Navigator
@@ -222,7 +222,7 @@ private class NavUriHandler(private val nav: Navigator) : UriHandler {
 @Composable
 private fun ArticleBodyView(doc: ArticleDocument) {
     val nav = LocalNavigator.current
-    val viewer = rememberImageViewerState()
+    val viewer = LocalImageViewer.current
     val primary = MaterialTheme.colorScheme.primary
     val bodySize = MaterialTheme.typography.bodyLarge.fontSize
     val parsed by produceState<ParsedArticle?>(null, doc, primary) {
@@ -237,6 +237,8 @@ private fun ArticleBodyView(doc: ArticleDocument) {
         }
     }
     val handler = remember(nav) { NavUriHandler(nav) }
+    // Origin keys of this document's pictures (another article page in the stack keeps its own).
+    val keyPrefix = remember(doc) { "article:${System.identityHashCode(doc)}" }
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val expanded = widthClass() == WidthClass.Expanded
     val h = doc.header
@@ -252,8 +254,15 @@ private fun ArticleBodyView(doc: ArticleDocument) {
         if (p == null) {
             item(key = "parsing") { LoadingFooter() }
         } else {
+            val images = viewerImages(p)
+            val keys = List(images.size) { "$keyPrefix:$it" }
             itemsIndexed(p.blocks, key = { i, _ -> "b$i" }) { _, block ->
-                ArticleBlockView(block, onImage = { viewer.open(p.images, it) }, modifier = itemMod.padding(vertical = 6.dp))
+                ArticleBlockView(
+                    block,
+                    onImage = { viewer.open(images, it, keys) },
+                    imageKey = { keys.getOrElse(it) { "" } },
+                    modifier = itemMod.padding(vertical = 6.dp),
+                )
             }
         }
         item(key = "end") { Spacer(Modifier.height(32.dp)) }
@@ -290,5 +299,20 @@ private fun ArticleBodyView(doc: ArticleDocument) {
             )
         }
     }
-    ImageViewerHost(viewer)
+}
+
+/** The article's pictures for the viewer, by index, with the sizes their blocks carry. */
+private fun viewerImages(p: ParsedArticle): List<ViewerImage> {
+    val sizes = HashMap<Int, ArticleBlock.Image>()
+    fun walk(blocks: List<ArticleBlock>) {
+        blocks.forEach { b ->
+            when (b) {
+                is ArticleBlock.Image -> sizes[b.index] = b
+                is ArticleBlock.Quote -> walk(b.children)
+                else -> Unit
+            }
+        }
+    }
+    walk(p.blocks)
+    return p.images.mapIndexed { i, url -> sizes[i].let { ViewerImage(url, it?.width ?: 0, it?.height ?: 0) } }
 }

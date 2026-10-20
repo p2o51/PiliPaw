@@ -54,14 +54,13 @@ import kotlinx.coroutines.launch
 import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.SheetInsets
 
-/** Transient UI for one reply surface (menu, composer, viewer, dialogs). */
+/** Transient UI for one reply surface (menu, composer, dialogs). */
 @Stable
 internal class ReplyUiState {
     var menuFor by mutableStateOf<Reply?>(null)
     var confirmDelete by mutableStateOf<Reply?>(null)
     var freeCopy by mutableStateOf<String?>(null)
     var composer by mutableStateOf<ComposeTarget?>(null)
-    var viewer by mutableStateOf<Pair<List<String>, Int>?>(null)
 
     /** Rows resizing right now (text expanding, a reply expanding in). */
     val layout = ReplyLayoutMotion()
@@ -110,7 +109,6 @@ internal fun rememberReplyActions(
             onReply = { r -> if (requireLogin(nav, toast)) ui.composer = replyTarget(r) },
             onOpenThread = if (hasThread) { r -> openThread?.invoke(r) } else null,
             onLongPress = { ui.menuFor = it },
-            onImage = { urls, i -> ui.viewer = urls to i },
             onTimestampClick = if (hasTimestamp) { s -> timestamp?.invoke(s) } else null,
             entrance = vm.entrance,
             layout = ui.layout,
@@ -181,10 +179,6 @@ internal fun ReplyOverlays(
             onDismiss = { ui.composer = null },
             onSend = { text, pictures -> vm.send(target, text, pictures) },
         )
-    }
-
-    ui.viewer?.let { (urls, index) ->
-        ImageViewerDialog(urls, index) { ui.viewer = null }
     }
 }
 
