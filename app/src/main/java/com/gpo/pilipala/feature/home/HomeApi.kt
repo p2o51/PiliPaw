@@ -3,8 +3,10 @@ package com.gpo.pilipala.feature.home
 import androidx.compose.runtime.Immutable
 import com.gpo.pilipala.core.net.AppSign
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.ui.components.HomeSingleColumn
 import com.gpo.pilipala.core.net.BiliHosts
 import com.gpo.pilipala.core.net.arr
+import com.gpo.pilipala.core.net.asArr
 import com.gpo.pilipala.core.net.asObj
 import com.gpo.pilipala.core.net.bool
 import com.gpo.pilipala.core.net.has
@@ -130,6 +132,22 @@ internal fun JsonObject.toArchiveItem(): VideoItem {
         reason = obj("rcmd_reason").str("content"),
         target = target,
     )
+}
+
+/**
+ * The app feed's cards name the UP but carry no avatar; 单列 cards show one, so under
+ * 单列 the page's faces come from one batched request. Best effort: on failure the
+ * cards go without.
+ */
+private suspend fun List<VideoItem>.withFaces(): List<VideoItem> {
+    if (!HomeSingleColumn.value) return this
+    val mids = filter { it.ownerFace.isEmpty() && it.ownerMid > 0 }.map { it.ownerMid }.distinct()
+    if (mids.isEmpty()) return this
+    val faces = runCatching {
+        BiliClient.getData(BiliHosts.VC + "/account/v1/user/cards", mapOf("uids" to mids.joinToString(",")))
+            .asArr?.objects().orEmpty().associate { it.long("mid") to it.str("face") }
+    }.getOrNull() ?: return this
+    return map { item -> faces[item.ownerMid]?.takeIf { item.ownerFace.isEmpty() && it.isNotEmpty() }?.let { item.copy(ownerFace = it) } ?: item }
 }
 
 /** Web recommend item (`/x/web-interface/wbi/index/top/feed/rcmd`). */
@@ -329,7 +347,7 @@ internal object HomeApi {
         val list = raw.mapNotNull { it.toAppRcmd() }
             .filter { (item, followed, _) -> keepRcmd(item, followed) && item.ownerMid !in blocked }
         // Same length and order as the refs: the badge pass only relabels.
-        return AppRcmdPage(list.map { it.first }.withMutualBadges(), list.map { it.third }, nextIdx)
+        return AppRcmdPage(list.map { it.first }.withMutualBadges().withFaces(), list.map { it.third }, nextIdx)
     }
 
     /** Popular list; second = has more. */

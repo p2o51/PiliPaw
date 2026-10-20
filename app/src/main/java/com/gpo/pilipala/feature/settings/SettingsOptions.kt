@@ -40,6 +40,12 @@ internal object SettingsChoices {
     )
 
     /** Home top tabs, in HomeScreen order. */
+    /** 首页布局: false = 双列 (the grid), true = 单列 (large cards). */
+    val homeLayout = listOf(
+        Choice(false, "双列"),
+        Choice(true, "单列"),
+    )
+
     val homeTab = listOf(
         Choice(0, "直播"),
         Choice(1, "推荐"),

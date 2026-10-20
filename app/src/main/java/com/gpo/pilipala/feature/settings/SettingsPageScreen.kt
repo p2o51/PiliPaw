@@ -65,6 +65,9 @@ import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.asBool
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.ui.components.HomeSingleColumn
+import com.gpo.pilipala.ui.shell.ShellSection
+import com.gpo.pilipala.ui.shell.ShellSections
 import com.gpo.pilipala.feature.home.AppAccessKey
 import com.gpo.pilipala.feature.home.AppAuth
 import com.gpo.pilipala.feature.home.RcmdExemptFollowed
@@ -134,6 +137,8 @@ private fun ColumnScope.StyleBody() {
     val accent by ThemeSettings.accentSeed.state.collectAsState()
     val cover by AppSettings.coverColor.state.collectAsState()
     val homeTab by AppSettings.homeDefaultTab.state.collectAsState()
+    val singleColumn by HomeSingleColumn.state.collectAsState()
+    val hiddenSections by ShellSections.hiddenKey.state.collectAsState()
     val seamStyle = currentSeamTopStyle()
     // Wallpaper colours exist from 8.1; the system's own dynamic scheme from 12.
     val dynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1
@@ -221,6 +226,27 @@ private fun ColumnScope.StyleBody() {
                 selected = homeTab,
                 onSelect = { AppSettings.set(AppSettings.homeDefaultTab, it) },
             )
+        }
+        item {
+            SettingsToggleItem(
+                title = "首页布局",
+                icon = PiliSymbols.Video,
+                choices = SettingsChoices.homeLayout,
+                selected = singleColumn,
+                onSelect = { AppSettings.set(HomeSingleColumn, it) },
+            )
+        }
+    }
+    SettingsGroup("底栏") {
+        ShellSection.entries.filter { it.removable }.forEach { section ->
+            item(key = "shell_${section.key}") {
+                SettingsSwitchItem(
+                    title = section.tab.label,
+                    icon = section.tab.icon,
+                    checked = ShellSections.isShown(hiddenSections, section),
+                    onCheckedChange = { ShellSections.setShown(section, it) },
+                )
+            }
         }
     }
 }

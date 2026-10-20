@@ -23,9 +23,11 @@ import com.gpo.pilipala.feature.feeds.FeedMixer
 import com.gpo.pilipala.feature.feeds.FeedSourceStrip
 import com.gpo.pilipala.feature.feeds.FeedStore
 import com.gpo.pilipala.ui.components.Page
+import com.gpo.pilipala.ui.components.VideoCardL
 import com.gpo.pilipala.ui.components.VideoCardV
+import com.gpo.pilipala.ui.components.homeSingleColumn
+import com.gpo.pilipala.ui.components.homeVideoColumns
 import com.gpo.pilipala.ui.components.VideoItem
-import com.gpo.pilipala.ui.components.videoGridColumns
 import com.gpo.pilipala.ui.theme.YoinMotion
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -93,11 +95,13 @@ internal fun CustomFeedTab(
     val feed = feeds.firstOrNull { it.id == feedId } ?: return
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf<VideoItem?>(null) }
+    val single = homeSingleColumn()
     PagedGrid(
         pager = vm.feed,
         state = state,
-        columns = videoGridColumns(),
+        columns = homeVideoColumns(),
         key = { it.feedKey() },
+        horizontalSpacing = if (single) 16.dp else 12.dp,
         reselect = reselect,
         headerBehavior = headerBehavior,
         header = {
@@ -113,14 +117,11 @@ internal fun CustomFeedTab(
             }
         },
     ) { _, item ->
-        VideoCardV(
-            item,
-            feedItemMotion(),
-            onLongClick = {
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                menu = item
-            },
-        )
+        val onLong = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            menu = item
+        }
+        if (single) VideoCardL(item, feedItemMotion(), onLongClick = onLong) else VideoCardV(item, feedItemMotion(), onLongClick = onLong)
     }
     menu?.let { item ->
         FeedCardSheet(item = item, onDismiss = { menu = null }, onRemove = { vm.remove(item) })

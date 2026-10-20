@@ -156,6 +156,87 @@ fun VideoCardV(
     }
 }
 
+/**
+ * 首页单列 (设置 › 外观 › 首页布局): the YouTube-style card, one per row on a phone.
+ * A full-width 16:9 cover with only the duration on it, then the UP's avatar beside the
+ * title, with the UP, 播放 and date on one line under it.
+ */
+@Composable
+fun VideoCardL(
+    item: VideoItem,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+) {
+    val nav = LocalNavigator.current
+    val longClick = cardLongClick(item, onLongClick)
+    Column(
+        modifier = modifier
+            .pageSharedSource(item.route())
+            .clip(YoinContainerShapes.Card)
+            .combinedClickable(onLongClick = longClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) }),
+    ) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).seamGraphic()) {
+            NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 720.dp)
+            if (item.duration > 0) {
+                DurationChip(Fmt.duration(item.duration), Modifier.align(Alignment.BottomEnd).padding(8.dp))
+            }
+            if (item.badge.isNotEmpty()) CoverBadge(item.badge, Modifier.align(Alignment.TopEnd).padding(8.dp))
+        }
+        Row(
+            Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (item.ownerFace.isNotEmpty()) {
+                Avatar(item.ownerFace, 36.dp) {
+                    nav.push(Route.Member(item.ownerMid, item.ownerFace, item.ownerName))
+                }
+            }
+            Column(Modifier.weight(1f).seamText(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                FameSelf(item.ownerMid) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (item.ownerName.isNotEmpty()) {
+                            Text(
+                                item.ownerName,
+                                style = MaterialTheme.typography.labelMedium.centered(),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        }
+                        if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views))
+                        if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku))
+                        if (item.pubdate > 0) {
+                            Text(
+                                Fmt.relativeTime(item.pubdate),
+                                style = MaterialTheme.typography.labelSmall.centered(),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+                if (item.reason.isNotEmpty()) {
+                    Text(
+                        item.reason,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** Row card (search, history, favorites, related). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

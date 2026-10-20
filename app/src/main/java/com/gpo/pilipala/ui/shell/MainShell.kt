@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.feature.dynamics.DynamicsScreen
 import com.gpo.pilipala.feature.home.HomeScreen
 import com.gpo.pilipala.feature.mine.MineScreen
@@ -64,20 +65,51 @@ object ShellRequests {
     }
 }
 
+/** The shell's sections; [ShellRequests.select] and the saved selection use the ordinal. */
+enum class ShellSection(val key: String, val tab: NavTab, val removable: Boolean) {
+    Home("home", NavTab("首页", YoinSymbols.Home, YoinSymbols.HomeFilled), removable = false),
+    Rank("rank", NavTab("排行", PiliSymbols.Trophy, PiliSymbols.TrophyFilled), removable = true),
+    Dynamics("dynamics", NavTab("动态", PiliSymbols.Dynamic, PiliSymbols.DynamicFilled), removable = true),
+    Mine("mine", NavTab("我的", YoinSymbols.Person, PiliSymbols.PersonFilled), removable = false),
+}
+
 /**
- * The shell: four sections under Yoin's floating button group. Sections keep
- * their state (scroll, tabs) while hidden; switching cross-fades with the
- * effects spring and a hint of scale (spatial spring).
+ * 底栏 (设置 › 外观): which sections the bar shows. 首页 and 我的 always stay (我的 is where
+ * settings live); 排行 and 动态 can go.
+ */
+object ShellSections {
+    /** Keys of the hidden sections, comma separated. */
+    val hiddenKey: AppSettings.Key<String> = AppSettings.register("shell_hidden_sections", "")
+
+    fun visible(hidden: String): List<ShellSection> {
+        val off = hidden.split(',').filter { it.isNotBlank() }.toSet()
+        return ShellSection.entries.filter { !it.removable || it.key !in off }
+    }
+
+    fun isShown(hidden: String, section: ShellSection): Boolean = section in visible(hidden)
+
+    fun setShown(section: ShellSection, shown: Boolean) {
+        if (!section.removable) return
+        val off = hiddenKey.value.split(',').filter { it.isNotBlank() }.toMutableSet()
+        if (shown) off -= section.key else off += section.key
+        AppSettings.set(hiddenKey, off.sorted().joinToString(","))
+    }
+}
+
+/**
+ * The shell: its sections ([ShellSections]) under Yoin's floating button group. Sections
+ * keep their state (scroll, tabs) while hidden; switching cross-fades with the effects
+ * spring and a hint of scale (spatial spring).
  */
 @Composable
 fun MainShell() {
-    val tabs = listOf(
-        NavTab("首页", YoinSymbols.Home, YoinSymbols.HomeFilled),
-        NavTab("排行", PiliSymbols.Trophy, PiliSymbols.TrophyFilled),
-        NavTab("动态", PiliSymbols.Dynamic, PiliSymbols.DynamicFilled),
-        NavTab("我的", YoinSymbols.Person, PiliSymbols.PersonFilled),
-    )
-    var selected by rememberSaveable { mutableIntStateOf(0) }
+    val hidden by ShellSections.hiddenKey.state.collectAsState()
+    val sections = remember(hidden) { ShellSections.visible(hidden) }
+    val tabs = remember(sections) { sections.map { it.tab } }
+    var selectedOrdinal by rememberSaveable { mutableIntStateOf(ShellSection.Home.ordinal) }
+    // A section switched off in settings while showing hands over to 首页.
+    val current = ShellSection.entries[selectedOrdinal].takeIf { it in sections } ?: ShellSection.Home
+    val selected = sections.indexOf(current)
     val holder = rememberSaveableStateHolder()
     val reselects = remember { MutableSharedFlow<Int>(extraBufferCapacity = 1) }
     // The four sections are peers: back never hops to 首页. On a section with a feed the first
@@ -92,14 +124,14 @@ fun MainShell() {
             activity?.finish()
         } else {
             armedAt = now
-            if (selected != MineIndex) reselects.tryEmit(selected)
+            if (current != ShellSection.Mine) reselects.tryEmit(current.ordinal)
             toast("再按一次退出")
         }
     }
     val requested by ShellRequests.section.collectAsState()
     LaunchedEffect(requested) {
         val index = requested ?: return@LaunchedEffect
-        if (index in tabs.indices) selected = index
+        ShellSection.entries.getOrNull(index)?.takeIf { it in sections }?.let { selectedOrdinal = it.ordinal }
         ShellRequests.consume()
     }
 
@@ -112,20 +144,20 @@ fun MainShell() {
                 val enterScale = YoinMotion.defaultSpatialSpec<Float>()
                 val exitFade = YoinMotion.fastEffectsSpec<Float>()
                 AnimatedContent(
-                    targetState = selected,
+                    targetState = current,
                     transitionSpec = {
                         (fadeIn(enterFade) + scaleIn(enterScale, initialScale = 0.98f)).togetherWith(fadeOut(exitFade))
                     },
                     label = "shellSection",
-                ) { index ->
-                    holder.SaveableStateProvider(index) {
-                        val mine = remember(index) { reselects.filter { it == index }.map { } }
+                ) { section ->
+                    holder.SaveableStateProvider(section.ordinal) {
+                        val mine = remember(section) { reselects.filter { it == section.ordinal }.map { } }
                         CompositionLocalProvider(LocalTabReselect provides mine) {
-                            when (index) {
-                                0 -> HomeScreen()
-                                1 -> RankScreen()
-                                2 -> DynamicsScreen()
-                                else -> MineScreen()
+                            when (section) {
+                                ShellSection.Home -> HomeScreen()
+                                ShellSection.Rank -> RankScreen()
+                                ShellSection.Dynamics -> DynamicsScreen()
+                                ShellSection.Mine -> MineScreen()
                             }
                         }
                     }
@@ -134,12 +166,14 @@ fun MainShell() {
             FloatingNavBar(
                 tabs = tabs,
                 selected = selected,
-                onSelect = { if (it == selected) reselects.tryEmit(it) else selected = it },
+                onSelect = { i ->
+                    val tapped = sections[i]
+                    if (tapped == current) reselects.tryEmit(tapped.ordinal) else selectedOrdinal = tapped.ordinal
+                },
                 modifier = Modifier.align(Alignment.BottomCenter).splashReveal(lift = 22.dp),
             )
         }
     }
 }
 
-private const val MineIndex = 3
 private const val ExitWindowMs = 2000L

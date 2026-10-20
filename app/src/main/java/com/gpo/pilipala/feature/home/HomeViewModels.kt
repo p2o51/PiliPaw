@@ -10,6 +10,7 @@ import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.BiliException
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.ui.components.HomeSingleColumn
 import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.VideoItem
 import kotlinx.coroutines.CancellationException
@@ -53,6 +54,10 @@ internal class RcmdViewModel : ViewModel() {
     init {
         feed.refresh()
         viewModelScope.launch { AppSettings.rcmdSource.state.drop(1).collect { feed.refresh() } }
+        // 单列 shows UP avatars, which the app feed only gets with a request of its own.
+        viewModelScope.launch {
+            HomeSingleColumn.state.drop(1).collect { if (it && AppSettings.rcmdSource.value == "app") feed.refresh() }
+        }
         viewModelScope.launch {
             combine(RcmdMinDuration.state, RcmdMinLikeRatio.state, RcmdExemptFollowed.state) { a, b, c -> Triple(a, b, c) }
                 .drop(1)
