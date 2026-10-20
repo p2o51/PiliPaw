@@ -16,7 +16,9 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextLayoutResult
@@ -561,21 +563,21 @@ internal class DanmakuEngine {
                     topLeft = Offset(x - platePadX, y - platePadY),
                     size = Size(a.width + platePadX * 2, ph),
                     cornerRadius = CornerRadius(ph / 2f),
-                    alpha = cfg.opacity * 0.55f,
+                    alpha = 0.55f,
                 )
             }
             drawText(
                 textLayoutResult = a.layout,
                 color = Color.Black,
                 topLeft = topLeft,
-                alpha = cfg.opacity * 0.8f,
+                alpha = 0.8f,
                 drawStyle = outline,
             )
+            // Opaque over its own outline; the layer applies the opacity to both at once.
             drawText(
                 textLayoutResult = a.layout,
                 color = color,
                 topLeft = topLeft,
-                alpha = cfg.opacity,
             )
         }
         lastPos = pos
@@ -630,7 +632,16 @@ internal fun DanmakuLayer(
         }
     }
     val items = shown
-    Canvas(modifier.fillMaxSize()) {
+    // Opacity goes on the whole layer, not on each draw: a see-through fill lets its own
+    // outline's inner half show through, and on thin Chinese strokes that greys the glyph out.
+    Canvas(
+        modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                alpha = cfg.opacity
+                compositingStrategy = CompositingStrategy.Offscreen
+            },
+    ) {
         frame.longValue
         engine.setItems(items)
         engine.drawFrame(
