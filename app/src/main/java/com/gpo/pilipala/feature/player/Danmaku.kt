@@ -19,7 +19,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
@@ -441,6 +443,43 @@ internal class DanmakuEngine {
         val fixedDur = 4000L
         val gap = with(density) { 24.dp.toPx() }
 
+        val bottomBase = h - with(density) { 8.dp.toPx() }
+
+        /** A live top / bottom line sits across scroll lane [i]: nothing scrolls in under it. */
+        fun fixedBlocks(i: Int): Boolean {
+            val t = i * lineH
+            val b = t + lineH
+            for (j in topLanes.indices) {
+                val f = topLanes[j] ?: continue
+                if (pos - f.spawnMs > fixedDur) continue
+                val ft = j * lineH
+                if (ft < b && ft + lineH > t) return true
+            }
+            for (j in bottomLanes.indices) {
+                val f = bottomLanes[j] ?: continue
+                if (pos - f.spawnMs > fixedDur) continue
+                val fb = bottomBase - j * lineH
+                if (fb - lineH < b && fb > t) return true
+            }
+            return false
+        }
+
+        /**
+         * Whether a scrolling line in the rows across [top, bottom] covers [left, right] at any
+         * point in the next [fixedDur]: a still line there would sit on top of it.
+         */
+        fun scrollCrosses(top: Float, bottom: Float, left: Float, right: Float): Boolean {
+            for (s in active) {
+                if (s.kind != 0) continue
+                val st = s.lane * lineH
+                if (st >= bottom || st + lineH <= top) continue
+                val xNow = w - (w + s.width) * (pos - s.spawnMs).toFloat() / scrollDur
+                val xEnd = w - (w + s.width) * (pos + fixedDur - s.spawnMs).toFloat() / scrollDur
+                if (xEnd < right && xNow + s.width > left) return true
+            }
+            return false
+        }
+
         fun spawn(it: DanmakuItem, force: Boolean) {
             val kind = when (it.mode) {
                 DanmakuMode.BOTTOM -> 2
@@ -467,6 +506,7 @@ internal class DanmakuEngine {
                 0 -> {
                     var lane = -1
                     for (i in scrollLanes.indices) {
+                        if (fixedBlocks(i)) continue
                         val last = scrollLanes[i]
                         if (last == null) {
                             lane = i
@@ -494,10 +534,11 @@ internal class DanmakuEngine {
                     var lane = -1
                     for (i in lanes.indices) {
                         val last = lanes[i]
-                        if (last == null || pos - last.spawnMs > fixedDur) {
-                            lane = i
-                            break
-                        }
+                        if (last != null && pos - last.spawnMs <= fixedDur) continue
+                        val t = if (kind == 1) i * lineH else bottomBase - (i + 1) * lineH
+                        if (scrollCrosses(t, t + lineH, (w - tw) / 2f, (w + tw) / 2f)) continue
+                        lane = i
+                        break
                     }
                     if (lane < 0 && force && lanes.isNotEmpty()) lane = 0
                     if (lane >= 0) {
@@ -522,63 +563,73 @@ internal class DanmakuEngine {
         }
 
         // Expire + draw.
-        // B站's 描边: a thin, crisp dark edge (about 0.7dp outside each glyph), so pale danmaku
-        // read on bright frames. No blur and no thicker stroke: on dense Chinese glyphs either
-        // fills the counters and the characters smear into blobs.
-        val outline = Stroke(width = with(density) { 1.4.dp.toPx() }, join = StrokeJoin.Round)
+        // B站's 描边: a hairline edge (about 0.5dp outside each glyph; the opaque fill covers
+        // the inner half), so pale danmaku read on bright frames. Dark on dark text, light on
+        // dark text, so a green or blue line never turns into a dark block. No blur and no
+        // thicker stroke: on dense Chinese glyphs either fills the counters.
+        val outline = Stroke(width = with(density) { 1.dp.toPx() }, join = StrokeJoin.Round)
         val platePadX = with(density) { 6.dp.toPx() }
         val platePadY = with(density) { 1.dp.toPx() }
-        val iter = active.iterator()
-        while (iter.hasNext()) {
-            val a = iter.next()
-            val elapsed = pos - a.spawnMs
-            val dur = if (a.kind == 0) scrollDur else fixedDur
-            if (elapsed > dur || elapsed < -200) {
-                iter.remove()
-                continue
-            }
-            val x: Float
-            val y: Float
-            when (a.kind) {
-                0 -> {
-                    x = w - (w + a.width) * elapsed.toFloat() / dur
-                    y = a.lane * lineH + (lineH - a.layout.size.height) / 2f
+        // Scrolling lines first, fixed (top / bottom) ones over them: where the two meet, the
+        // still line stays readable instead of the glyphs mixing.
+        for (pass in 0..1) {
+            val iter = active.iterator()
+            while (iter.hasNext()) {
+                val a = iter.next()
+                if ((a.kind == 0) != (pass == 0)) continue
+                val elapsed = pos - a.spawnMs
+                val dur = if (a.kind == 0) scrollDur else fixedDur
+                if (elapsed > dur || elapsed < -200) {
+                    iter.remove()
+                    continue
                 }
-                1 -> {
-                    x = (w - a.width) / 2f
-                    y = a.lane * lineH + (lineH - a.layout.size.height) / 2f
+                val x: Float
+                val y: Float
+                when (a.kind) {
+                    0 -> {
+                        x = w - (w + a.width) * elapsed.toFloat() / dur
+                        y = a.lane * lineH + (lineH - a.layout.size.height) / 2f
+                    }
+                    1 -> {
+                        x = (w - a.width) / 2f
+                        y = a.lane * lineH + (lineH - a.layout.size.height) / 2f
+                    }
+                    else -> {
+                        x = (w - a.width) / 2f
+                        y = h - (a.lane + 1) * lineH - with(density) { 8.dp.toPx() }
+                    }
                 }
-                else -> {
-                    x = (w - a.width) / 2f
-                    y = h - (a.lane + 1) * lineH - with(density) { 8.dp.toPx() }
+                if (x > w || x + a.width < 0f) continue
+                val color = Color(a.item.color or 0xFF000000.toInt())
+                val topLeft = Offset(x, y)
+                if (a.item.mine) {
+                    val ph = a.layout.size.height + platePadY * 2
+                    drawRoundRect(
+                        color = cfg.mineColor,
+                        topLeft = Offset(x - platePadX, y - platePadY),
+                        size = Size(a.width + platePadX * 2, ph),
+                        cornerRadius = CornerRadius(ph / 2f),
+                        alpha = 0.55f,
+                    )
                 }
-            }
-            if (x > w || x + a.width < 0f) continue
-            val color = Color(a.item.color or 0xFF000000.toInt())
-            val topLeft = Offset(x, y)
-            if (a.item.mine) {
-                val ph = a.layout.size.height + platePadY * 2
-                drawRoundRect(
-                    color = cfg.mineColor,
-                    topLeft = Offset(x - platePadX, y - platePadY),
-                    size = Size(a.width + platePadX * 2, ph),
-                    cornerRadius = CornerRadius(ph / 2f),
-                    alpha = 0.55f,
+                val dark = color.luminance() < 0.18f
+                drawText(
+                    textLayoutResult = a.layout,
+                    color = if (dark) Color.White else Color.Black,
+                    topLeft = topLeft,
+                    alpha = if (dark) 0.7f else 0.6f,
+                    drawStyle = outline,
+                )
+                // Opaque over its own outline; the layer applies the opacity to both at once.
+                // Fill must be explicit: a null drawStyle keeps the stroke the outline left on the
+                // layout's paint, and the glyphs come out hollow.
+                drawText(
+                    textLayoutResult = a.layout,
+                    color = color,
+                    topLeft = topLeft,
+                    drawStyle = Fill,
                 )
             }
-            drawText(
-                textLayoutResult = a.layout,
-                color = Color.Black,
-                topLeft = topLeft,
-                alpha = 0.8f,
-                drawStyle = outline,
-            )
-            // Opaque over its own outline; the layer applies the opacity to both at once.
-            drawText(
-                textLayoutResult = a.layout,
-                color = color,
-                topLeft = topLeft,
-            )
         }
         lastPos = pos
     }
@@ -623,7 +674,7 @@ internal fun DanmakuLayer(
         feed?.sent?.collect { engine.inject(it) }
     }
     val measurer = rememberTextMeasurer(cacheSize = 64)
-    val baseStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium)
+    val baseStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
     val frame = remember { mutableLongStateOf(0L) }
     val playing = ctrl.isPlaying
     LaunchedEffect(playing) {
