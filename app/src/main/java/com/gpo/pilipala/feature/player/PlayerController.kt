@@ -83,6 +83,19 @@ internal class PiliPlayerController(
     var preview by mutableStateOf(preview)
         private set
 
+    /** A preview's sound: off by default (YouTube's feed). Sounding, it holds audio focus like playback. */
+    var previewMuted by mutableStateOf(true)
+        private set
+
+    fun setPreviewSound(muted: Boolean) {
+        previewMuted = muted
+        if (!preview) return
+        exo?.let { p ->
+            p.setAudioAttributes(mediaAttributes, !muted)
+            p.volume = if (muted) 0f else 1f
+        }
+    }
+
     /** Came from a card's preview: the page draws it through a TextureView, flight included. */
     var handedOver by mutableStateOf(false)
         private set
@@ -896,15 +909,15 @@ internal class PiliPlayerController(
     private fun ensurePlayer(): ExoPlayer {
         exo?.let { return it }
         val p = ExoPlayer.Builder(context)
-            // A preview never takes audio focus: whatever the user is listening to keeps playing.
-            .setAudioAttributes(mediaAttributes, !preview)
+            // A muted preview never takes audio focus: whatever the user is listening to keeps playing.
+            .setAudioAttributes(mediaAttributes, !preview || !previewMuted)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
             .build()
         p.addListener(listener)
-        if (preview) p.volume = 0f
+        if (preview && previewMuted) p.volume = 0f
         exo = p
         player = p
         applyRepeat()

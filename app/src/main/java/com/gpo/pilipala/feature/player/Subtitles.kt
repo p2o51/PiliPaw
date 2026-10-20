@@ -116,7 +116,7 @@ private fun preferredIndex(tracks: List<SubtitleTrack>, lan: String): Int {
 }
 
 /** Simplified Chinese by people, then any Chinese by people, then the AI one (ai-zh). */
-private fun chineseIndex(tracks: List<SubtitleTrack>): Int {
+internal fun chineseIndex(tracks: List<SubtitleTrack>): Int {
     val passes = listOf<(String) -> Boolean>(
         { it == "zh-CN" || it == "zh-Hans" },
         { it.startsWith("zh") },

@@ -4,6 +4,23 @@ import android.content.Context
 import android.net.ConnectivityManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.ui.components.DurationChip
+import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -92,7 +109,10 @@ class FeedPreview internal constructor(private val context: Context) : RememberO
             stop()
             return
         }
-        val c = controller ?: PiliPlayerController(context, preview = true).also { controller = it }
+        val c = controller ?: PiliPlayerController(context, preview = true).also {
+            it.setPreviewSound(muted = PreviewChoices.muted)
+            controller = it
+        }
         playingKey = item.bvid
         resolveJob?.cancel()
         if (item.cid > 0) {
@@ -148,6 +168,15 @@ class FeedPreview internal constructor(private val context: Context) : RememberO
     }
 
     override fun onAbandoned() = onForgotten()
+}
+
+/**
+ * The preview's sound and captions, chosen on a card and kept for every later preview
+ * while the app runs (YouTube keeps them the same way). Muted, no captions by default.
+ */
+object PreviewChoices {
+    var muted by mutableStateOf(true)
+    var captions by mutableStateOf(false)
 }
 
 /** 预览播放 (设置 › 外观 › 首页): off | wifi (unmetered networks) | always. */
@@ -227,9 +256,12 @@ private data class PickState(val active: Boolean, val scrolling: Boolean, val ca
 private const val PreviewSettleMs = 600L
 
 /**
- * The preview inside a 单列 card's cover: the playing picture fades in over the cover once
- * its first frame is out, with a thin progress line along the bottom. Nothing when this
- * card is not the one playing. Give it the cover's bounds and clip.
+ * The preview inside a 单列 card's cover, YouTube's way: the picture fades in once its
+ * first frame is out; sound (muted by default) and CC buttons stack at the top end, the
+ * time left counts down at the bottom end, and a progress bar with a dot at its head
+ * runs along the bottom. Before the first frame only the bar's track shows. Nothing when
+ * this card is not the one playing. Give it the cover's bounds and clip; it goes above
+ * the cover's own duration chip.
  */
 @Composable
 fun FeedPreviewLayer(bvid: String, modifier: Modifier = Modifier) {
@@ -239,9 +271,9 @@ fun FeedPreviewLayer(bvid: String, modifier: Modifier = Modifier) {
     val shown = on && c?.firstFrameRendered == true
     val alpha by animateFloatAsState(if (shown) 1f else 0f, YoinMotion.defaultEffectsSpec(), label = "previewIn")
     if (!on || c == null) return
-    // Until the first frame: the progress track alone along the cover's bottom, so the
-    // card shows it is about to play.
-    val track = MaterialTheme.colorScheme.primary
+    val accent = MaterialTheme.colorScheme.primary
+    // Until the first frame: the progress bar's track alone along the cover's bottom, so the
+    // card shows it is about to play (the video view below must exist for that frame).
     if (!shown) {
         Box(modifier) {
             Box(
@@ -249,10 +281,19 @@ fun FeedPreviewLayer(bvid: String, modifier: Modifier = Modifier) {
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
                     .height(3.dp)
-                    .background(track.copy(alpha = 0.35f)),
+                    .background(accent.copy(alpha = 0.35f)),
             )
         }
     }
+    val captions = PreviewChoices.captions
+    val tracks = c.subtitles
+    // CC on: the default track (Chinese first) as soon as the video's tracks arrive.
+    LaunchedEffect(c, tracks, captions) {
+        if (captions && tracks.isNotEmpty() && c.subtitleIndex < 0) {
+            c.selectSubtitle(chineseIndex(tracks).coerceAtLeast(0))
+        }
+    }
+    val haptics = LocalHapticFeedback.current
     Box(modifier.graphicsLayer { this.alpha = alpha }.background(Color.Black)) {
         ContentFrame(
             player = c.player,
@@ -262,16 +303,70 @@ fun FeedPreviewLayer(bvid: String, modifier: Modifier = Modifier) {
             contentScale = ContentScale.Crop,
             shutter = {},
         )
+        if (!shown) return@Box
+        if (captions) SubtitleOverlay(ctrl = c, controlsVisible = false, big = false)
+        Column(
+            Modifier.align(Alignment.TopEnd).padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PreviewButton(
+                icon = if (c.previewMuted) YoinSymbols.VolumeMute else YoinSymbols.VolumeUp,
+                label = if (c.previewMuted) "打开声音" else "静音",
+            ) {
+                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                val muted = !c.previewMuted
+                PreviewChoices.muted = muted
+                c.setPreviewSound(muted)
+            }
+            if (tracks.isNotEmpty()) {
+                PreviewButton(
+                    icon = PiliSymbols.Subtitles,
+                    label = if (captions) "关闭字幕" else "字幕",
+                    checked = captions,
+                ) {
+                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    PreviewChoices.captions = !captions
+                }
+            }
+        }
         val duration = c.durationMs
         if (duration > 0) {
-            val fraction = (c.positionMs.toFloat() / duration).coerceIn(0f, 1f)
-            Box(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth(fraction)
-                    .height(3.dp)
-                    .background(MaterialTheme.colorScheme.primary),
+            DurationChip(
+                Fmt.duration(((duration - c.positionMs).coerceAtLeast(0L) + 999) / 1000),
+                Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 12.dp),
+            )
+            ProgressWithHead(
+                fraction = (c.positionMs.toFloat() / duration).coerceIn(0f, 1f),
+                color = accent,
+                modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth(),
             )
         }
     }
+}
+
+/** A round, dark, see-through button over the picture (YouTube's feed controls). */
+@Composable
+private fun PreviewButton(icon: ImageVector, label: String, checked: Boolean = false, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(if (checked) Color.White.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.5f))
+            .clickable(onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = label, tint = if (checked) Color.Black else Color.White, modifier = Modifier.size(22.dp))
+    }
+}
+
+/** The played part as a 3dp bar along the bottom with a dot at its head. */
+@Composable
+private fun ProgressWithHead(fraction: Float, color: Color, modifier: Modifier = Modifier) {
+    Box(modifier.height(12.dp).drawBehind {
+        val bar = 3.dp.toPx()
+        val y = size.height - bar / 2f
+        val x = size.width * fraction
+        drawLine(color, Offset(0f, y), Offset(x, y), strokeWidth = bar)
+        drawCircle(color, radius = 5.dp.toPx(), center = Offset(x.coerceAtLeast(5.dp.toPx()), y))
+    })
 }

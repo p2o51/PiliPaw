@@ -48,6 +48,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.feature.videomenu.VideoCardMenu
 import com.gpo.pilipala.feature.videomenu.isPlainVideo
+import androidx.compose.animation.animateColorAsState
+import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.feature.player.FeedPreviewLayer
 import com.gpo.pilipala.feature.player.LocalFeedPreview
 import com.gpo.pilipala.navigation.LocalNavigator
@@ -173,10 +175,18 @@ fun VideoCardL(
     val nav = LocalNavigator.current
     val longClick = cardLongClick(item, onLongClick)
     val preview = LocalFeedPreview.current
+    // The playing card lifts onto a tinted block, cover and text together (YouTube's feed).
+    val playing = preview?.playingKey == item.bvid && item.bvid.isNotEmpty()
+    val tint by animateColorAsState(
+        if (playing) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0f),
+        YoinMotion.defaultEffectsSpec(),
+        label = "previewTint",
+    )
     Column(
         modifier = modifier
             .pageSharedSource(item.route())
             .clip(YoinContainerShapes.Card)
+            .background(tint)
             .combinedClickable(
                 onLongClick = longClick,
                 onClick = {
@@ -188,14 +198,14 @@ fun VideoCardL(
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).seamGraphic()) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 720.dp)
-            FeedPreviewLayer(item.bvid, Modifier.matchParentSize().clip(CoverShape))
             if (item.duration > 0) {
                 DurationChip(Fmt.duration(item.duration), Modifier.align(Alignment.BottomEnd).padding(8.dp))
             }
             if (item.badge.isNotEmpty()) CoverBadge(item.badge, Modifier.align(Alignment.TopEnd).padding(8.dp))
+            FeedPreviewLayer(item.bvid, Modifier.matchParentSize().clip(CoverShape))
         }
         Row(
-            Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp, bottom = 16.dp),
+            Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (item.ownerFace.isNotEmpty()) {
