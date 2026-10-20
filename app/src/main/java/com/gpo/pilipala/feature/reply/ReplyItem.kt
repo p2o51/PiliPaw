@@ -79,6 +79,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.feature.media.LocalImageViewer
+import com.gpo.pilipala.feature.media.ViewerImage
+import com.gpo.pilipala.feature.media.imageViewerOrigin
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.pageSharedSource
@@ -107,7 +110,6 @@ internal class ReplyActions(
     /** Opens the thread (pushed page or in place); null on the thread itself. */
     val onOpenThread: ((Reply) -> Unit)?,
     val onLongPress: (Reply) -> Unit,
-    val onImage: (urls: List<String>, index: Int) -> Unit,
     val onTimestampClick: ((Long) -> Unit)?,
     /** The reply just sent grows in (null: nothing animates in). */
     val entrance: ReplyEntrance? = null,
@@ -225,8 +227,8 @@ internal fun ReplyRow(
             if (reply.content.pictures.isNotEmpty()) {
                 PictureGrid(
                     pictures = reply.content.pictures,
+                    keyPrefix = "reply:${reply.rpid}",
                     modifier = Modifier.padding(top = 8.dp),
-                    onOpen = { i -> actions.onImage(reply.content.pictures.map { it.src }, i) },
                 )
             }
             ActionRow(reply, actions)
@@ -672,9 +674,14 @@ private fun SubReplyPreview(reply: Reply, actions: ReplyActions, modifier: Modif
 @Composable
 internal fun PictureGrid(
     pictures: List<ReplyPicture>,
+    keyPrefix: String,
     modifier: Modifier = Modifier,
-    onOpen: (Int) -> Unit,
 ) {
+    // Each cell is an image-viewer origin: the picture grows out of it and flies home into it.
+    val viewer = LocalImageViewer.current
+    val keys = remember(keyPrefix, pictures.size) { List(pictures.size) { "$keyPrefix:$it" } }
+    val images = remember(pictures) { pictures.map { ViewerImage(it.src, it.width, it.height) } }
+    val onOpen: (Int) -> Unit = { viewer.open(images, it, keys) }
     if (pictures.size == 1) {
         val p = pictures.first()
         val ratio = if (p.width > 0 && p.height > 0) (p.width.toFloat() / p.height).coerceIn(0.6f, 1.8f) else 1f
@@ -684,6 +691,8 @@ internal fun PictureGrid(
                 .widthIn(max = 240.dp)
                 .fillMaxWidth(0.62f)
                 .aspectRatio(ratio)
+                // Before the clip: the cell (badge included) gives way while its picture is up.
+                .imageViewerOrigin(keys[0], PictureShape)
                 .clip(PictureShape)
                 .clickable { onOpen(0) },
         ) {
@@ -706,6 +715,7 @@ internal fun PictureGrid(
                         Modifier
                             .weight(1f)
                             .aspectRatio(1f)
+                            .imageViewerOrigin(keys[index], PictureShape)
                             .clip(PictureShape)
                             .clickable { onOpen(index) },
                         shape = PictureShape,

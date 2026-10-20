@@ -53,6 +53,7 @@ import com.gpo.pilipala.feature.dynamics.VoteCard
 import com.gpo.pilipala.feature.dynamics.VoteSummary
 import com.gpo.pilipala.feature.dynamics.normalizeUrl
 import com.gpo.pilipala.feature.dynamics.voteSummaryOf
+import com.gpo.pilipala.feature.media.imageViewerOrigin
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.FameMode
@@ -478,9 +479,17 @@ internal fun parseHtml(html: String, style: ParseStyle): ParsedArticle {
 
 private val ImageShape = ContinuousRoundedCornerShape(12.dp)
 
-/** One block (non-lazy; quotes render their children inline). */
+/**
+ * One block (non-lazy; quotes render their children inline). An image opens
+ * the viewer at its index ([onImage]) and is its origin under [imageKey].
+ */
 @Composable
-internal fun ArticleBlockView(block: ArticleBlock, onImage: (Int) -> Unit, modifier: Modifier = Modifier) {
+internal fun ArticleBlockView(
+    block: ArticleBlock,
+    onImage: (Int) -> Unit,
+    imageKey: (Int) -> String,
+    modifier: Modifier = Modifier,
+) {
     val body = MaterialTheme.typography.bodyLarge
     when (block) {
         is ArticleBlock.Paragraph -> SelectionContainer(modifier) {
@@ -519,6 +528,7 @@ internal fun ArticleBlockView(block: ArticleBlock, onImage: (Int) -> Unit, modif
                 Modifier
                     .then(if (narrow) Modifier.width(block.width.dp.coerceAtMost(400.dp)) else Modifier.fillMaxWidth())
                     .aspectRatio(ratio)
+                    .imageViewerOrigin(imageKey(block.index), ImageShape)
                     .clip(ImageShape)
                     .clickable { onImage(block.index) },
                 shape = ImageShape,
@@ -551,7 +561,7 @@ internal fun ArticleBlockView(block: ArticleBlock, onImage: (Int) -> Unit, modif
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            block.children.forEach { ArticleBlockView(it, onImage) }
+            block.children.forEach { ArticleBlockView(it, onImage, imageKey) }
         }
         is ArticleBlock.ListItem -> Row(
             modifier.fillMaxWidth().padding(start = ((block.level - 1).coerceAtLeast(0) * 20).dp),

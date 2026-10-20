@@ -88,7 +88,9 @@ import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.core.util.IdUtils
-import com.gpo.pilipala.feature.dynamics.ImageViewerDialog
+import com.gpo.pilipala.feature.media.LocalImageViewer
+import com.gpo.pilipala.feature.media.ViewerImage
+import com.gpo.pilipala.feature.media.imageViewerOrigin
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
@@ -133,7 +135,6 @@ internal fun WhisperConversation(
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf(false) }
-    var viewer by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(loggedIn) { if (loggedIn) vm.ensureLoaded(needPeer = route.name.isBlank() || route.face.isBlank()) }
     DisposableEffect(vm) {
         vm.setActive(true)
@@ -218,7 +219,7 @@ internal fun WhisperConversation(
                     !loggedIn -> LoginPrompt()
                     vm.loading && vm.messages.isEmpty() -> LoadingState()
                     vm.error != null && vm.messages.isEmpty() -> ErrorState(vm.error!!, onRetry = vm::load)
-                    else -> MessageList(vm, route, onImage = { viewer = it }, onCopy = copy)
+                    else -> MessageList(vm, route, onCopy = copy)
                 }
             }
             if (loggedIn) {
@@ -249,18 +250,12 @@ internal fun WhisperConversation(
             dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("取消") } },
         )
     }
-
-    // Edge-to-edge viewer with pinch zoom, save and share (shared with dynamics).
-    viewer?.let { url ->
-        ImageViewerDialog(urls = listOf(url), initial = 0, onDismiss = { viewer = null })
-    }
 }
 
 @Composable
 private fun MessageList(
     vm: WhisperDetailViewModel,
     route: Route.WhisperDetail,
-    onImage: (String) -> Unit,
     onCopy: (String) -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -287,7 +282,7 @@ private fun MessageList(
     ) {
         visible.forEachIndexed { i, m ->
             item(key = m.key) {
-                ChatItem(m, vm.emotes, route, onImage, onCopy, Modifier.animateItem())
+                ChatItem(m, vm.emotes, route, onCopy, Modifier.animateItem())
             }
             val older = visible.getOrNull(i + 1)
             if (older == null || m.timestamp - older.timestamp > 300) {
@@ -325,12 +320,13 @@ private fun chatTime(ts: Long): String {
 
 private val SystemTypes = setOf(10, 13, 16, 18)
 
+private val PictureShape = ContinuousRoundedCornerShape(16.dp)
+
 @Composable
 private fun ChatItem(
     m: WhisperMsg,
     emotes: Map<String, String>,
     route: Route.WhisperDetail,
-    onImage: (String) -> Unit,
     onCopy: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -370,7 +366,7 @@ private fun ChatItem(
                     )
                     .then(if (bare) Modifier else Modifier.padding(horizontal = 14.dp, vertical = 10.dp)),
             ) {
-                MessageBody(m, emotes, onContainer, onImage)
+                MessageBody(m, emotes, onContainer)
             }
             if (m.status == 1) {
                 Text(
@@ -385,8 +381,9 @@ private fun ChatItem(
 }
 
 @Composable
-private fun MessageBody(m: WhisperMsg, emotes: Map<String, String>, color: Color, onImage: (String) -> Unit) {
+private fun MessageBody(m: WhisperMsg, emotes: Map<String, String>, color: Color) {
     val nav = LocalNavigator.current
+    val viewer = LocalImageViewer.current
     val c = m.content
     when (m.type) {
         1 -> EmojiText(c.str("content"), emotes, color)
@@ -394,10 +391,15 @@ private fun MessageBody(m: WhisperMsg, emotes: Map<String, String>, color: Color
             val url = c.str("url")
             val w = c.double("width").takeIf { it > 0 } ?: 1.0
             val h = c.double("height").takeIf { it > 0 } ?: 1.0
+            val key = "whisper:${m.key}"
             NetImage(
                 url,
-                Modifier.width(200.dp).aspectRatio((w / h).toFloat().coerceIn(0.4f, 2.5f)).clickable { onImage(url) },
-                shape = ContinuousRoundedCornerShape(16.dp),
+                Modifier
+                    .width(200.dp)
+                    .aspectRatio((w / h).toFloat().coerceIn(0.4f, 2.5f))
+                    .imageViewerOrigin(key, PictureShape)
+                    .clickable { viewer.open(listOf(ViewerImage(url, c.double("width").toInt(), c.double("height").toInt())), 0, listOf(key)) },
+                shape = PictureShape,
                 thumbWidth = 400.dp,
             )
         }

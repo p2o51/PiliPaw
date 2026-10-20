@@ -100,6 +100,9 @@ import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.feature.media.LocalImageViewer
+import com.gpo.pilipala.feature.media.ViewerImage
+import com.gpo.pilipala.feature.media.imageViewerOrigin
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
@@ -525,7 +528,6 @@ private fun VoteBlock(
     val nav = LocalNavigator.current
     val toast = rememberToast()
     val haptics = LocalHapticFeedback.current
-    val viewer = rememberImageViewerState()
     // Read the account so signing in (coming back from 登录), out or switching recomposes;
     // the cache key follows the cookie's mid, which a change of key refetches.
     val user by Account.user.collectAsState()
@@ -623,7 +625,6 @@ private fun VoteBlock(
                                 base = rowBase,
                                 track = color,
                                 onToggle = ::toggle,
-                                onView = { i -> viewer.open(data.options.map { it.image }.filter { it.isNotEmpty() }, i) },
                             )
                         } else {
                             shown.forEach { o ->
@@ -702,7 +703,6 @@ private fun VoteBlock(
             now = now,
         )
     }
-    ImageViewerHost(viewer)
 }
 
 @Composable
@@ -932,8 +932,12 @@ private fun ImageOptions(
     base: Color,
     track: Color,
     onToggle: (Int) -> Unit,
-    onView: (Int) -> Unit,
 ) {
+    val viewer = LocalImageViewer.current
+    // Every picture of the vote pages in the viewer (a card shows only the first few); each tile is its origin.
+    val withImage = remember(info) { info.options.filter { it.image.isNotEmpty() } }
+    val images = remember(withImage) { withImage.map { ViewerImage(it.image) } }
+    val keys = remember(info.id, withImage) { withImage.map { "vote:${info.id}:${it.idx}" } }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val gap = 8.dp
         val cols = if (compact) {
@@ -941,7 +945,6 @@ private fun ImageOptions(
         } else {
             ((maxWidth + gap) / (112.dp + gap)).toInt().coerceIn(2, 5)
         }
-        val withImage = info.options.filter { it.image.isNotEmpty() }
         Column(verticalArrangement = Arrangement.spacedBy(gap)) {
             options.chunked(cols).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
@@ -957,7 +960,8 @@ private fun ImageOptions(
                                 base = base,
                                 track = track,
                                 onClick = { onToggle(o.idx) },
-                                onView = { withImage.indexOf(o).takeIf { it >= 0 }?.let(onView) },
+                                originKey = "vote:${info.id}:${o.idx}",
+                                onView = { withImage.indexOf(o).takeIf { it >= 0 }?.let { viewer.open(images, it, keys) } },
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -980,6 +984,7 @@ private fun ImageTile(
     base: Color,
     track: Color,
     onClick: () -> Unit,
+    originKey: String,
     onView: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1009,7 +1014,7 @@ private fun ImageTile(
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             com.gpo.pilipala.ui.components.NetImage(
                 option.image,
-                Modifier.matchParentSize(),
+                Modifier.matchParentSize().imageViewerOrigin(originKey, ThumbShape),
                 contentDescription = option.desc,
                 shape = ThumbShape,
                 thumbWidth = 240.dp,
