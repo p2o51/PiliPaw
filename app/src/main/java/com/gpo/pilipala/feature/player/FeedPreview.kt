@@ -36,7 +36,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.ui.compose.ContentFrame
 import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
+import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.components.VideoItem
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import com.gpo.pilipala.ui.theme.YoinMotion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -66,7 +71,7 @@ internal object PreviewHandoff {
  * YouTube's feed preview for the 单列 home feeds: the card that settles in view plays,
  * muted, in its cover; opening it hands the playing player to the video page
  * ([PreviewHandoff]), so the picture flies into the page without reloading. One
- * controller per feed, created on demand; previews run on unmetered networks only.
+ * controller per feed, created on demand; [FeedPreviewMode] says on which networks.
  */
 @Stable
 class FeedPreview internal constructor(private val context: Context) : RememberObserver {
@@ -77,19 +82,35 @@ class FeedPreview internal constructor(private val context: Context) : RememberO
     var playingKey by mutableStateOf<String?>(null)
         private set
 
+    private val scope = MainScope()
+    private var resolveJob: Job? = null
+
     fun play(item: VideoItem) {
-        if (item.bvid.isEmpty() || item.cid <= 0 || item.target != null) return
+        if (item.bvid.isEmpty() || item.target != null) return
         if (playingKey == item.bvid) return
-        if (!unmetered()) {
+        if (!allowed()) {
             stop()
             return
         }
         val c = controller ?: PiliPlayerController(context, preview = true).also { controller = it }
         playingKey = item.bvid
-        c.load(PlayTarget(bvid = item.bvid, aid = item.aid, cid = item.cid, title = item.title, cover = item.cover))
+        resolveJob?.cancel()
+        if (item.cid > 0) {
+            c.load(item.toTarget(item.cid))
+            return
+        }
+        // Lists built from search or a space carry no cid: look up the first page's.
+        resolveJob = scope.launch {
+            val cid = runCatching { resolveFirstCid(QueueItem(bvid = item.bvid, aid = item.aid)) }.getOrNull() ?: 0L
+            if (cid > 0 && playingKey == item.bvid && controller === c) c.load(item.toTarget(cid))
+        }
     }
 
+    private fun VideoItem.toTarget(cid: Long) = PlayTarget(bvid = bvid, aid = aid, cid = cid, title = title, cover = cover)
+
     fun stop() {
+        resolveJob?.cancel()
+        resolveJob = null
         controller?.dispose()
         controller = null
         playingKey = null
@@ -110,15 +131,30 @@ class FeedPreview internal constructor(private val context: Context) : RememberO
         }
     }
 
-    private fun unmetered(): Boolean {
-        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
-        return !cm.isActiveNetworkMetered
+    private fun allowed(): Boolean = when (FeedPreviewMode.value) {
+        PreviewOff -> false
+        PreviewWifi -> {
+            val cm = context.getSystemService(ConnectivityManager::class.java)
+            cm != null && !cm.isActiveNetworkMetered
+        }
+        else -> true
     }
 
     override fun onRemembered() = Unit
-    override fun onForgotten() = stop()
-    override fun onAbandoned() = stop()
+
+    override fun onForgotten() {
+        stop()
+        scope.cancel()
+    }
+
+    override fun onAbandoned() = onForgotten()
 }
+
+/** 预览播放 (设置 › 外观 › 首页): off | wifi (unmetered networks) | always. */
+val FeedPreviewMode: AppSettings.Key<String> = AppSettings.register("feed_preview_mode", PreviewAlways)
+const val PreviewOff = "off"
+const val PreviewWifi = "wifi"
+const val PreviewAlways = "always"
 
 @Composable
 fun rememberFeedPreview(): FeedPreview {
@@ -203,6 +239,20 @@ fun FeedPreviewLayer(bvid: String, modifier: Modifier = Modifier) {
     val shown = on && c?.firstFrameRendered == true
     val alpha by animateFloatAsState(if (shown) 1f else 0f, YoinMotion.defaultEffectsSpec(), label = "previewIn")
     if (!on || c == null) return
+    // Until the first frame: the progress track alone along the cover's bottom, so the
+    // card shows it is about to play.
+    val track = MaterialTheme.colorScheme.primary
+    if (!shown) {
+        Box(modifier) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .background(track.copy(alpha = 0.35f)),
+            )
+        }
+    }
     Box(modifier.graphicsLayer { this.alpha = alpha }.background(Color.Black)) {
         ContentFrame(
             player = c.player,

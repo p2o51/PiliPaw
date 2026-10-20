@@ -46,6 +46,13 @@ internal object SettingsChoices {
         Choice(true, "单列"),
     )
 
+    /** 预览播放 for 单列 cards (FeedPreview.kt). */
+    val feedPreview = listOf(
+        Choice(com.gpo.pilipala.feature.player.PreviewOff, "关闭"),
+        Choice(com.gpo.pilipala.feature.player.PreviewWifi, "仅 Wi‑Fi"),
+        Choice(com.gpo.pilipala.feature.player.PreviewAlways, "始终"),
+    )
+
     val homeTab = listOf(
         Choice(0, "直播"),
         Choice(1, "推荐"),

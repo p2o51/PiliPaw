@@ -65,6 +65,7 @@ import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.asBool
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.feature.player.FeedPreviewMode
 import com.gpo.pilipala.ui.components.HomeSingleColumn
 import com.gpo.pilipala.ui.shell.ShellSection
 import com.gpo.pilipala.ui.shell.ShellSections
@@ -138,6 +139,7 @@ private fun ColumnScope.StyleBody() {
     val cover by AppSettings.coverColor.state.collectAsState()
     val homeTab by AppSettings.homeDefaultTab.state.collectAsState()
     val singleColumn by HomeSingleColumn.state.collectAsState()
+    val previewMode by FeedPreviewMode.state.collectAsState()
     val hiddenSections by ShellSections.hiddenKey.state.collectAsState()
     val seamStyle = currentSeamTopStyle()
     // Wallpaper colours exist from 8.1; the system's own dynamic scheme from 12.
@@ -234,6 +236,17 @@ private fun ColumnScope.StyleBody() {
                 choices = SettingsChoices.homeLayout,
                 selected = singleColumn,
                 onSelect = { AppSettings.set(HomeSingleColumn, it) },
+            )
+        }
+        item {
+            // 单列's cards play the one in view; 双列 has no preview, so the row waits for 单列.
+            SettingsToggleItem(
+                title = "预览播放",
+                icon = YoinSymbols.PlayCircle,
+                choices = SettingsChoices.feedPreview,
+                selected = previewMode,
+                onSelect = { AppSettings.set(FeedPreviewMode, it) },
+                enabled = singleColumn,
             )
         }
     }
