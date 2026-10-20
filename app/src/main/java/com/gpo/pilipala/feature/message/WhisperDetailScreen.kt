@@ -1,6 +1,42 @@
 package com.gpo.pilipala.feature.message
 
 import android.content.ClipData
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import com.gpo.pilipala.feature.reply.EmotePanel
+import com.gpo.pilipala.feature.reply.EmotePeekOverlay
+import com.gpo.pilipala.feature.reply.EmotePeekState
+import com.gpo.pilipala.feature.reply.PictureRow
+import com.gpo.pilipala.feature.reply.ReplyIcons
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
+import com.gpo.pilipala.feature.reply.crossfade
+import com.gpo.pilipala.feature.reply.replyMotion
+import com.gpo.pilipala.ui.theme.YoinMotion
+import com.gpo.yoin.symbols.PiliSymbols
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -140,6 +176,7 @@ internal fun WhisperConversation(
         vm.setActive(true)
         onDispose { vm.setActive(false) }
     }
+    val peek = remember { EmotePeekState() }
     val copy: (String) -> Unit = remember(clipboard, haptics, toast, scope) {
         { text ->
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -207,10 +244,11 @@ internal fun WhisperConversation(
             )
         },
     ) { padding ->
+        // The emote hold bubble floats over the whole conversation, so it can rise above the panel.
+        Box(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(top = padding.calculateTopPadding())
                 .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
                 .readingWidth(760.dp),
         ) {
@@ -223,8 +261,10 @@ internal fun WhisperConversation(
                 }
             }
             if (loggedIn) {
-                InputBar(vm) { err -> toast(err) }
+                InputBar(vm, peek) { err -> toast(err) }
             }
+        }
+        EmotePeekOverlay(peek, Modifier.matchParentSize())
         }
     }
 
@@ -599,54 +639,194 @@ private fun SystemItem(m: WhisperMsg, onCopy: (String) -> Unit, modifier: Modifi
 
 // ── Input ───────────────────────────────────────────────────────────────────
 
+/** Pictures one message batch can carry; each goes out as its own message. */
+private const val MaxPictures = 9
+
+private val UriListSaver = listSaver<SnapshotStateList<String>, String>(
+    save = { it.toList() },
+    restore = { it.toMutableStateList() },
+)
+
+/**
+ * Text field with the emote toggle (leading) and the photo picker (trailing),
+ * and the send button. The emote panel swaps with the keyboard, as in the
+ * comment composer. Picked pictures wait above the field (removable) until
+ * send; then they go out first, one message each, with the send button
+ * showing their progress, and the text after them.
+ */
 @Composable
-private fun InputBar(vm: WhisperDetailViewModel, onError: (String) -> Unit) {
+private fun InputBar(vm: WhisperDetailViewModel, peek: EmotePeekState, onError: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
-    var text by rememberSaveable { mutableStateOf("") }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val context = LocalContext.current
+    val focus = remember { FocusRequester() }
+    val motion = replyMotion()
+    var value by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
+    var panel by rememberSaveable { mutableStateOf(false) }
+    val pictures = rememberSaveable(saver = UriListSaver) { mutableStateListOf<String>() }
+    val remaining = MaxPictures - pictures.size
+    fun addPictures(uris: List<Uri>) {
+        val fresh = uris.map { it.toString() }.distinct().filter { it !in pictures }
+        pictures += fresh.take((MaxPictures - pictures.size).coerceAtLeast(0))
+    }
+    val pickMany = rememberLauncherForActivityResult(
+        remember(remaining) { ActivityResultContracts.PickMultipleVisualMedia(remaining.coerceAtLeast(2)) },
+    ) { uris -> addPictures(uris) }
+    val pickOne = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) addPictures(listOf(uri))
+    }
     val send: () -> Unit = {
-        val msg = text.trim()
-        if (msg.isNotEmpty() && !vm.sending) {
+        val msg = value.text.trim()
+        val picked = pictures.toList()
+        if ((msg.isNotEmpty() || picked.isNotEmpty()) && !vm.sending) {
+            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
             scope.launch {
-                val err = vm.send(msg)
-                if (err == null) {
-                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                    text = ""
-                } else {
-                    onError(err)
+                if (picked.isNotEmpty()) {
+                    val err = vm.sendPictures(context.contentResolver, context.cacheDir, picked.map(Uri::parse)) { sent ->
+                        pictures.remove(sent.toString())
+                    }
+                    if (err != null) {
+                        onError(err)
+                        return@launch
+                    }
+                }
+                if (msg.isNotEmpty()) {
+                    val err = vm.send(msg)
+                    if (err == null) value = TextFieldValue() else onError(err)
                 }
             }
         }
     }
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        TextField(
-            value = text,
-            onValueChange = { text = it },
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("发消息") },
-            maxLines = 5,
-            shape = ContinuousRoundedCornerShape(26.dp),
-            textStyle = MaterialTheme.typography.bodyLarge,
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                disabledIndicatorColor = Color.Transparent,
-            ),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-        )
-        FilledIconButton(
-            onClick = send,
-            enabled = text.isNotBlank() && !vm.sending,
-            shapes = IconButtonDefaults.shapes(),
-            modifier = Modifier.size(56.dp),
+    fun insert(text: String) {
+        val start = value.selection.min.coerceIn(0, value.text.length)
+        val end = value.selection.max.coerceIn(0, value.text.length)
+        value = TextFieldValue(value.text.substring(0, start) + text + value.text.substring(end), TextRange(start + text.length))
+    }
+    fun togglePanel() {
+        if (panel) {
+            panel = false
+            runCatching { focus.requestFocus() }
+            keyboard?.show()
+        } else {
+            keyboard?.hide()
+            panel = true
+        }
+    }
+    val progress = vm.picturesProgress
+    Column(Modifier.fillMaxWidth()) {
+        AnimatedVisibility(
+            visible = pictures.isNotEmpty(),
+            enter = expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
+            exit = shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(YoinMotion.defaultEffectsSpec()),
         ) {
-            Icon(YoinSymbols.Send, contentDescription = "发送")
+            PictureRow(
+                pictures = pictures,
+                removable = !vm.sending,
+                onRemove = { key ->
+                    if (!vm.sending) {
+                        haptic.performHapticFeedback(HapticFeedbackType.ToggleOff)
+                        pictures.remove(key)
+                    }
+                },
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TextField(
+                value = value,
+                onValueChange = { value = it },
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focus)
+                    .onFocusChanged { if (it.isFocused) panel = false },
+                placeholder = { Text("发消息") },
+                leadingIcon = {
+                    IconButton(onClick = ::togglePanel, shapes = IconButtonDefaults.shapes()) {
+                        AnimatedContent(
+                            targetState = panel,
+                            transitionSpec = {
+                                scaleIn(motion.scale) + fadeIn(motion.fade) togetherWith scaleOut(motion.scale) + fadeOut(motion.fade)
+                            },
+                            label = "whisperEmoteToggle",
+                        ) { showingPanel ->
+                            Icon(
+                                if (showingPanel) ReplyIcons.Keyboard else ReplyIcons.Emoji,
+                                contentDescription = if (showingPanel) "键盘" else "表情",
+                            )
+                        }
+                    }
+                },
+                trailingIcon = {
+                    IconButton(
+                        onClick = {
+                            keyboard?.hide()
+                            panel = false
+                            val request = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            when {
+                                remaining >= 2 -> pickMany.launch(request)
+                                remaining == 1 -> pickOne.launch(request)
+                            }
+                        },
+                        enabled = !vm.sending && remaining > 0,
+                        shapes = IconButtonDefaults.shapes(),
+                    ) {
+                        Icon(PiliSymbols.Image, contentDescription = "图片")
+                    }
+                },
+                maxLines = 5,
+                shape = ContinuousRoundedCornerShape(26.dp),
+                textStyle = MaterialTheme.typography.bodyLarge,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                ),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            )
+            FilledIconButton(
+                onClick = send,
+                enabled = (value.text.isNotBlank() || pictures.isNotEmpty()) && !vm.sending,
+                shapes = IconButtonDefaults.shapes(),
+                modifier = Modifier.size(56.dp),
+            ) {
+                AnimatedContent(
+                    targetState = progress != null,
+                    transitionSpec = { motion.crossfade() },
+                    label = "whisperSend",
+                ) { uploading ->
+                    if (uploading) {
+                        val p = vm.picturesProgress
+                        val shown by animateFloatAsState(
+                            if (p == null || p.second == 0) 0f else p.first.toFloat() / p.second,
+                            YoinMotion.defaultSpatialSpec(),
+                            label = "whisperPictures",
+                        )
+                        LoadingIndicator(progress = { shown }, modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(YoinSymbols.Send, contentDescription = "发送")
+                    }
+                }
+            }
+        }
+        AnimatedVisibility(
+            visible = panel,
+            enter = expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
+            exit = shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(YoinMotion.defaultEffectsSpec()),
+        ) {
+            EmotePanel(
+                peek = peek,
+                modifier = Modifier.fillMaxWidth().height(300.dp),
+                onPick = { e ->
+                    vm.noteEmote(e.text, e.url)
+                    insert(e.text)
+                },
+            )
         }
     }
 }

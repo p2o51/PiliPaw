@@ -1,5 +1,7 @@
 package com.gpo.pilipala.feature.message
 
+import android.content.ContentResolver
+import android.net.Uri
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -8,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.core.net.BiliException
 import com.gpo.pilipala.core.net.BiliHosts
 import com.gpo.pilipala.core.net.BiliJson
 import com.gpo.pilipala.core.net.arr
@@ -17,7 +20,10 @@ import com.gpo.pilipala.core.net.int
 import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
+import com.gpo.pilipala.feature.dynamics.DynamicsApi
 import com.gpo.pilipala.ui.components.friendlyMessage
+import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -25,7 +31,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.random.Random
@@ -211,49 +216,107 @@ internal class WhisperDetailViewModel(val talkerId: Long) : ViewModel() {
         }
     }
 
+    /** Picture upload progress (done / total) while pictures go out, else null. */
+    var picturesProgress by mutableStateOf<Pair<Int, Int>?>(null)
+        private set
+
+    /** Emote codes picked in the panel: their images, so a sent line renders before the next fetch. */
+    fun noteEmote(text: String, url: String) {
+        if (url.isNotEmpty() && text !in emotes) emotes = emotes + (text to url)
+    }
+
     /** Returns an error message, or null on success. */
     suspend fun send(text: String): String? {
         if (text.isBlank() || sending) return null
         sending = true
         return try {
-            val contentJson = buildJsonObject { put("content", text) }.toString()
-            val now = System.currentTimeMillis() / 1000
-            val res = BiliClient.postForm(
-                "${BiliHosts.VC}/web_im/v1/web_im/send_msg",
-                mapOf(
-                    "msg[sender_uid]" to BiliClient.mid,
-                    "msg[receiver_id]" to talkerId,
-                    "msg[receiver_type]" to 1,
-                    "msg[msg_type]" to 1,
-                    "msg[msg_status]" to 0,
-                    "msg[content]" to contentJson,
-                    "msg[timestamp]" to now,
-                    "msg[new_face_version]" to 1,
-                    "msg[dev_id]" to devId,
-                    "from_firework" to 0,
-                    "build" to 0,
-                    "mobi_app" to "web",
-                ),
-            )
-            if (res.int("code") != 0) {
-                res.str("message").ifEmpty { res.str("msg") }.ifEmpty { "发送失败" }
-            } else {
-                val d = res["data"].asObj
-                val key = d.str("msg_key").ifEmpty { "local${System.nanoTime()}" }
-                val sent = parseMsgContent(d.str("msg_content")) ?: JsonObject(mapOf("content" to JsonPrimitive(text)))
-                if (messages.none { it.key == key }) {
-                    messages.add(
-                        0,
-                        WhisperMsg(key, 0, BiliClient.mid, 1, sent, now, 0),
-                    )
-                }
-                null
-            }
-        } catch (e: Exception) {
-            e.friendlyMessage()
+            val content = buildJsonObject { put("content", text) }
+            postMsg(1, content)
         } finally {
             sending = false
         }
+    }
+
+    /**
+     * Sends [uris] one message each, in pick order: up to bilibili's image host
+     * (biz im), then as a picture message; [onSent] after each. Stops at the
+     * first failure and returns its message; null when all went out.
+     */
+    suspend fun sendPictures(resolver: ContentResolver, cacheDir: File, uris: List<Uri>, onSent: (Uri) -> Unit = {}): String? {
+        if (uris.isEmpty() || sending) return null
+        sending = true
+        picturesProgress = 0 to uris.size
+        return try {
+            for ((i, uri) in uris.withIndex()) {
+                val pic = try {
+                    DynamicsApi.uploadImage(resolver, cacheDir, uri, biz = "im")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    return (e as? BiliException)?.message?.takeIf { it.isNotBlank() && !it.startsWith("HTTP") }
+                        ?: if (e is java.net.UnknownHostException) "网络不可用" else "图片上传失败"
+                }
+                val content = buildJsonObject {
+                    put("url", pic.url)
+                    put("height", pic.height)
+                    put("width", pic.width)
+                    put("imageType", imageType(pic.url))
+                    put("original", 1)
+                    put("size", pic.sizeKb)
+                }
+                postMsg(2, content)?.let { return it }
+                onSent(uri)
+                picturesProgress = (i + 1) to uris.size
+            }
+            null
+        } finally {
+            sending = false
+            picturesProgress = null
+        }
+    }
+
+    private fun imageType(url: String): String = when (url.substringAfterLast('.').lowercase()) {
+        "png" -> "png"
+        "gif" -> "gif"
+        "webp" -> "webp"
+        else -> "jpeg"
+    }
+
+    /** One send_msg; on success the message joins the list right away. Returns an error message, or null. */
+    private suspend fun postMsg(type: Int, content: JsonObject): String? = try {
+        val now = System.currentTimeMillis() / 1000
+        val res = BiliClient.postForm(
+            "${BiliHosts.VC}/web_im/v1/web_im/send_msg",
+            mapOf(
+                "msg[sender_uid]" to BiliClient.mid,
+                "msg[receiver_id]" to talkerId,
+                "msg[receiver_type]" to 1,
+                "msg[msg_type]" to type,
+                "msg[msg_status]" to 0,
+                "msg[content]" to content.toString(),
+                "msg[timestamp]" to now,
+                "msg[new_face_version]" to 1,
+                "msg[dev_id]" to devId,
+                "from_firework" to 0,
+                "build" to 0,
+                "mobi_app" to "web",
+            ),
+        )
+        if (res.int("code") != 0) {
+            res.str("message").ifEmpty { res.str("msg") }.ifEmpty { "发送失败" }
+        } else {
+            val d = res["data"].asObj
+            val key = d.str("msg_key").ifEmpty { "local${System.nanoTime()}" }
+            val sent = parseMsgContent(d.str("msg_content")) ?: content
+            if (messages.none { it.key == key }) {
+                messages.add(0, WhisperMsg(key, 0, BiliClient.mid, type, sent, now, 0))
+            }
+            null
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        e.friendlyMessage()
     }
 
     suspend fun removeSession(): String? = try {

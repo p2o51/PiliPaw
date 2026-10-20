@@ -249,12 +249,13 @@ internal object DynamicsApi {
     }
 
     /**
-     * Uploads one picture for a new dynamic (multipart `file_up`, biz new_dyn).
+     * Uploads one picture (multipart `file_up`): biz new_dyn for a dynamic or a
+     * comment, im for a private message.
      * A JPEG/PNG/GIF/WebP within the size limit streams straight from the
      * picker's URI; anything else (HEIF, AVIF, oversized) is re-encoded to a
      * JPEG temp file first. Cancelling the caller cancels the request.
      */
-    suspend fun uploadImage(resolver: ContentResolver, cacheDir: File, uri: Uri): UploadedPic =
+    suspend fun uploadImage(resolver: ContentResolver, cacheDir: File, uri: Uri, biz: String = "new_dyn"): UploadedPic =
         withContext(Dispatchers.IO) {
             val file = prepareUpload(resolver, cacheDir, uri)
             try {
@@ -262,7 +263,7 @@ internal object DynamicsApi {
                     .setType(MultipartBody.FORM)
                     .addFormDataPart("file_up", file.name, file.body)
                     .addFormDataPart("category", "daily")
-                    .addFormDataPart("biz", "new_dyn")
+                    .addFormDataPart("biz", biz)
                     .addFormDataPart("csrf", BiliClient.csrf)
                     .build()
                 val req = Request.Builder().url(UPLOAD_URL).post(body).build()

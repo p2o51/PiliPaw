@@ -389,7 +389,7 @@ internal fun ReplyComposerSheet(
  * that spring in and out of place, each with a small chip that removes it.
  */
 @Composable
-private fun PictureRow(pictures: List<String>, removable: Boolean, onRemove: (String) -> Unit) {
+internal fun PictureRow(pictures: List<String>, removable: Boolean, onRemove: (String) -> Unit) {
     val motion = replyMotion()
     LazyRow(
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
