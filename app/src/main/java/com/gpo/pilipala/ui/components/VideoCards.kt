@@ -48,6 +48,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.feature.videomenu.VideoCardMenu
 import com.gpo.pilipala.feature.videomenu.isPlainVideo
+import com.gpo.pilipala.feature.player.FeedPreviewLayer
+import com.gpo.pilipala.feature.player.LocalFeedPreview
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.pageSharedSource
@@ -170,14 +172,23 @@ fun VideoCardL(
 ) {
     val nav = LocalNavigator.current
     val longClick = cardLongClick(item, onLongClick)
+    val preview = LocalFeedPreview.current
     Column(
         modifier = modifier
             .pageSharedSource(item.route())
             .clip(YoinContainerShapes.Card)
-            .combinedClickable(onLongClick = longClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) }),
+            .combinedClickable(
+                onLongClick = longClick,
+                onClick = {
+                    // A playing preview goes on as the page's player; any other stops.
+                    preview?.open(item.bvid)
+                    onClick?.invoke() ?: nav.push(item.route())
+                },
+            ),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).seamGraphic()) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 720.dp)
+            FeedPreviewLayer(item.bvid, Modifier.matchParentSize().clip(CoverShape))
             if (item.duration > 0) {
                 DurationChip(Fmt.duration(item.duration), Modifier.align(Alignment.BottomEnd).padding(8.dp))
             }

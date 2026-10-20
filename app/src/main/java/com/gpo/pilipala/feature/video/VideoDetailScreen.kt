@@ -100,7 +100,7 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     val context = LocalContext.current
     val toast = rememberToast()
     val gate = rememberLoginGate()
-    val playerState = rememberBiliPlayerState()
+    val playerState = rememberBiliPlayerState(adoptBvid = vm.bvid)
     var sheet by remember { mutableStateOf<VideoSheet?>(null) }
     var confirmUnfollow by remember { mutableStateOf(false) }
 

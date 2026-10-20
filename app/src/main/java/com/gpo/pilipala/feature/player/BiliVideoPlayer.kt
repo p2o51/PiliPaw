@@ -161,9 +161,10 @@ open class BiliPlayerState {
  * keeps playback going; it is released when forgotten.
  */
 @Composable
-fun rememberBiliPlayerState(): BiliPlayerState {
+fun rememberBiliPlayerState(adoptBvid: String = ""): BiliPlayerState {
     val context = LocalContext.current.applicationContext
-    return remember { PiliPlayerController(context) }
+    // Opened from a playing 单列 card: its preview carries on as this page's player (FeedPreview.kt).
+    return remember { PreviewHandoff.take(adoptBvid)?.also { it.adopt() } ?: PiliPlayerController(context) }
 }
 
 /**
@@ -368,7 +369,9 @@ fun BiliVideoPlayer(
     // (填充) or stretches it, which only a TextureView clips and scales cleanly.
     val fitSetting by PictureFitSetting.state.collectAsState()
     val pictureFit = pictureFitOf(fitSetting)
-    val surfaceType = if (turned || turning || cardFrame || landing || pictureFit != PictureFit.Fit) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
+    // A player handed over from a card's preview draws through a TextureView from the start, so
+    // its picture flies in with the page (a SurfaceView only after landing) and never swaps view.
+    val surfaceType = if (ctrl.handedOver || turned || turning || cardFrame || landing || pictureFit != PictureFit.Fit) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
     val view = LocalView.current
     val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
 
@@ -408,6 +411,8 @@ fun BiliVideoPlayer(
     // The page is still flying in (container transform): a SurfaceView would punch a square
     // hole through its rounded corners, so only the cover shows until it lands.
     val settled = LocalPageSettled.current
+    // The handed-over preview keeps playing through the flight: no cover over it.
+    val liveFlight = !settled && ctrl.handedOver
 
     // With auto-play the page opens on a clean picture (the strip would only fold away
     // again seconds later, moving the page); otherwise the controls offer play at once.
@@ -481,7 +486,7 @@ fun BiliVideoPlayer(
     val phase = ctrl.phase
     // 仅听声音 shows the subtitles as lyrics where the picture was (not in the PiP window).
     val lyricsShown = ctrl.audioOnly && !inPip && !pipEntering && target != null
-    val showCover = target == null || !settled || (!ctrl.firstFrameRendered && phase !is PlayerPhase.Error)
+    val showCover = target == null || (!settled && !liveFlight) || (!ctrl.firstFrameRendered && phase !is PlayerPhase.Error)
 
     // ── Pinch zoom (fullscreen picture card only) and 截图.
     val zoom = remember { PictureZoom() }
@@ -644,7 +649,7 @@ fun BiliVideoPlayer(
                             )
                             .then(if (fill) Modifier else Modifier.clip(LocalPlayerPictureShape.current).background(Color.Black)),
                     ) {
-                        if (settled) {
+                        if (settled || liveFlight) {
                             // The video view is rebuilt whenever its frame changes size (inline ⇄
                             // fullscreen, window resize). On some devices a resized SurfaceView keeps its
                             // old size and the picture sits small in a corner of the fullscreen frame; a

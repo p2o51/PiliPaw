@@ -71,7 +71,22 @@ private val sessionIds = AtomicInteger(0)
  * Remembered by [rememberBiliPlayerState]; released when forgotten.
  */
 @Stable
-internal class PiliPlayerController(private val context: Context) : BiliPlayerState(), RememberObserver {
+internal class PiliPlayerController(
+    private val context: Context,
+    preview: Boolean = false,
+) : BiliPlayerState(), RememberObserver {
+    /**
+     * A 单列 card's preview (FeedPreview.kt): muted, no audio focus, no session or
+     * notification, nothing written to history or resume memory. [adopt] turns it into a
+     * page's player, mid-play, when the card is opened.
+     */
+    var preview by mutableStateOf(preview)
+        private set
+
+    /** Came from a card's preview: the page draws it through a TextureView, flight included. */
+    var handedOver by mutableStateOf(false)
+        private set
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var exo: ExoPlayer? = null
     private var session: MediaSession? = null
@@ -345,7 +360,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         ) {
             return
         }
-        if (cur != null && cur.cid != t.cid) {
+        if (cur != null && cur.cid != t.cid && !preview) {
             ResumeMemory.put(cur.cid, positionMs)
             heartbeat(if (ended) -1 else exactPositionMs() / 1000, force = true)
         }
@@ -405,7 +420,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
                     else -> 0L
                 }
                 if (duration > 0) durationMs = duration
-                prepare(start, playWhenReady = force || fresh || AppSettings.autoPlay.value)
+                prepare(start, playWhenReady = force || fresh || preview || AppSettings.autoPlay.value)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -793,9 +808,32 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         syncBackgroundHost()
     }
 
+    /** The preview becomes a page's player: sound, focus, session and history from here on. */
+    fun adopt() {
+        if (!preview) return
+        preview = false
+        handedOver = true
+        exo?.let { p ->
+            p.setAudioAttributes(mediaAttributes, true)
+            p.volume = 1f
+        }
+        if (exo != null && session == null) buildSession(exo!!)
+        if (isPlaying) {
+            onPlayingChanged(true)
+            hostWanted = true
+            syncBackgroundHost()
+        }
+    }
+
+    /** Releases a preview no page took, scope included (it is not remembered by any composition). */
+    fun dispose() {
+        release()
+        scope.cancel()
+    }
+
     override fun release() {
         com.gpo.pilipala.feature.player.cdn.CdnRouter.endSession()
-        target?.let { t ->
+        if (!preview) target?.let { t ->
             ResumeMemory.put(t.cid, positionMs)
             heartbeat(if (ended) -1 else positionMs / 1000, force = true)
         }
@@ -858,23 +896,29 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     private fun ensurePlayer(): ExoPlayer {
         exo?.let { return it }
         val p = ExoPlayer.Builder(context)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-                    .build(),
-                true,
-            )
+            // A preview never takes audio focus: whatever the user is listening to keeps playing.
+            .setAudioAttributes(mediaAttributes, !preview)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
             .build()
         p.addListener(listener)
+        if (preview) p.volume = 0f
         exo = p
         player = p
         applyRepeat()
         applyVideoTrack()
+        if (!preview) buildSession(p)
+        return p
+    }
+
+    private val mediaAttributes: AudioAttributes = AudioAttributes.Builder()
+        .setUsage(C.USAGE_MEDIA)
+        .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+        .build()
+
+    private fun buildSession(p: ExoPlayer) {
         val sp = SessionPlayer(p)
         val buttons = sessionButtons()
         lastButtons = buttons
@@ -889,7 +933,6 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
         }.getOrNull()
         sessionPlayer = sp.takeIf { session != null }
         syncBackgroundHost()
-        return p
     }
 
     /** Hands the session to [PlaybackService] (notification + foreground) while background play or 仅听声音 wants it. */
@@ -1104,6 +1147,7 @@ internal class PiliPlayerController(private val context: Context) : BiliPlayerSt
     }
 
     private fun heartbeat(playedSeconds: Long, force: Boolean = false) {
+        if (preview) return
         val t = target ?: return
         if (!force && phase !is PlayerPhase.Ready) return
         if (!BiliClient.isLoggedIn || AppSettings.pauseHistory.value) return

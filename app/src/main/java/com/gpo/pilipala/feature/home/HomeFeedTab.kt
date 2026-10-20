@@ -96,32 +96,35 @@ internal fun CustomFeedTab(
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf<VideoItem?>(null) }
     val single = homeSingleColumn()
-    PagedGrid(
-        pager = vm.feed,
-        state = state,
-        columns = homeVideoColumns(),
-        key = { it.feedKey() },
-        horizontalSpacing = if (single) 16.dp else 12.dp,
-        reselect = reselect,
-        headerBehavior = headerBehavior,
-        header = {
-            item(span = { GridItemSpan(maxLineSpan) }, key = "feedSources", contentType = "sources") {
-                FeedSourceStrip(
-                    feed = feed,
-                    modifier = Modifier
-                        .animateItem(fadeInSpec = YoinMotion.defaultEffectsSpec(), placementSpec = YoinMotion.defaultSpatialSpec(), fadeOutSpec = YoinMotion.fastEffectsSpec())
-                        .bleedHorizontally(FeedPageMargin)
-                        .padding(bottom = 8.dp),
-                    contentPadding = PaddingValues(horizontal = FeedPageMargin),
-                )
+    PreviewHost(single, state, vm.feed.items, { it.feedKey() }) { previewModifier ->
+        PagedGrid(
+            pager = vm.feed,
+            state = state,
+            columns = homeVideoColumns(),
+            key = { it.feedKey() },
+            modifier = previewModifier,
+            horizontalSpacing = if (single) 16.dp else 12.dp,
+            reselect = reselect,
+            headerBehavior = headerBehavior,
+            header = {
+                item(span = { GridItemSpan(maxLineSpan) }, key = "feedSources", contentType = "sources") {
+                    FeedSourceStrip(
+                        feed = feed,
+                        modifier = Modifier
+                            .animateItem(fadeInSpec = YoinMotion.defaultEffectsSpec(), placementSpec = YoinMotion.defaultSpatialSpec(), fadeOutSpec = YoinMotion.fastEffectsSpec())
+                            .bleedHorizontally(FeedPageMargin)
+                            .padding(bottom = 8.dp),
+                        contentPadding = PaddingValues(horizontal = FeedPageMargin),
+                    )
+                }
+            },
+        ) { _, item ->
+            val onLong = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                menu = item
             }
-        },
-    ) { _, item ->
-        val onLong = {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            menu = item
+            if (single) VideoCardL(item, feedItemMotion(), onLongClick = onLong) else VideoCardV(item, feedItemMotion(), onLongClick = onLong)
         }
-        if (single) VideoCardL(item, feedItemMotion(), onLongClick = onLong) else VideoCardV(item, feedItemMotion(), onLongClick = onLong)
     }
     menu?.let { item ->
         FeedCardSheet(item = item, onDismiss = { menu = null }, onRemove = { vm.remove(item) })

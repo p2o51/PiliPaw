@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +55,9 @@ import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.VideoCardH
+import com.gpo.pilipala.feature.player.FeedPreviewEffect
+import com.gpo.pilipala.feature.player.LocalFeedPreview
+import com.gpo.pilipala.feature.player.rememberFeedPreview
 import com.gpo.pilipala.ui.components.VideoCardL
 import com.gpo.pilipala.ui.components.VideoCardV
 import com.gpo.pilipala.ui.components.homeSingleColumn
@@ -80,20 +84,24 @@ internal fun RcmdTab(state: LazyGridState, reselect: Flow<Unit>, headerBehavior:
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf<VideoItem?>(null) }
     val single = homeSingleColumn()
-    PagedGrid(
-        pager = vm.feed,
-        state = state,
-        columns = homeVideoColumns(),
-        key = { it.bvid.ifEmpty { it.target?.toString() ?: (it.title + it.cover) } },
-        horizontalSpacing = if (single) 16.dp else 12.dp,
-        reselect = reselect,
-        headerBehavior = headerBehavior,
-    ) { _, item ->
-        val onLong = {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            menu = item
+    val key: (VideoItem) -> Any = { it.bvid.ifEmpty { it.target?.toString() ?: (it.title + it.cover) } }
+    PreviewHost(single, state, vm.feed.items, key) { previewModifier ->
+        PagedGrid(
+            pager = vm.feed,
+            state = state,
+            columns = homeVideoColumns(),
+            key = key,
+            modifier = previewModifier,
+            horizontalSpacing = if (single) 16.dp else 12.dp,
+            reselect = reselect,
+            headerBehavior = headerBehavior,
+        ) { _, item ->
+            val onLong = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                menu = item
+            }
+            if (single) VideoCardL(item, feedItemMotion(), onLongClick = onLong) else VideoCardV(item, feedItemMotion(), onLongClick = onLong)
         }
-        if (single) VideoCardL(item, feedItemMotion(), onLongClick = onLong) else VideoCardV(item, feedItemMotion(), onLongClick = onLong)
     }
     menu?.let { item ->
         val ref = vm.appRef(item)
@@ -106,6 +114,29 @@ internal fun RcmdTab(state: LazyGridState, reselect: Flow<Unit>, headerBehavior:
     }
 }
 
+/**
+ * 单列 feeds preview the card in view (FeedPreview.kt): [content] gets the grid modifier
+ * that drives it, and the cards find the preview through [LocalFeedPreview]. 双列 feeds
+ * have none.
+ */
+@Composable
+internal fun PreviewHost(
+    single: Boolean,
+    state: LazyGridState,
+    items: List<VideoItem>,
+    key: (VideoItem) -> Any,
+    content: @Composable (Modifier) -> Unit,
+) {
+    if (!single) {
+        content(Modifier)
+        return
+    }
+    val preview = rememberFeedPreview()
+    val byKey = remember(items) { items.associateBy(key) }
+    val previewModifier = FeedPreviewEffect(preview, state) { byKey[it] }
+    CompositionLocalProvider(LocalFeedPreview provides preview) { content(previewModifier) }
+}
+
 // ── 热门 ────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -116,26 +147,29 @@ internal fun HotTab(state: LazyGridState, reselect: Flow<Unit>, headerBehavior: 
     val compact = widthClass() == WidthClass.Compact && !single
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf<VideoItem?>(null) }
-    PagedGrid(
-        pager = vm.feed,
-        state = state,
-        columns = if (compact) 1 else homeVideoColumns(),
-        key = { it.bvid },
-        // VideoCardH carries its own 16dp row padding.
-        horizontalPadding = if (compact) 0.dp else PageMargin,
-        topPadding = if (compact) 0.dp else 8.dp,
-        verticalSpacing = if (compact) 0.dp else 4.dp,
-        reselect = reselect,
-        headerBehavior = headerBehavior,
-    ) { _, item ->
-        val onLong = {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            menu = item
-        }
-        when {
-            compact -> VideoCardH(item, feedItemMotion(), onLongClick = onLong)
-            single -> VideoCardL(item, feedItemMotion(), onLongClick = onLong)
-            else -> VideoCardV(item, feedItemMotion(), onLongClick = onLong)
+    PreviewHost(single, state, vm.feed.items, { it.bvid }) { previewModifier ->
+        PagedGrid(
+            pager = vm.feed,
+            state = state,
+            columns = if (compact) 1 else homeVideoColumns(),
+            key = { it.bvid },
+            modifier = previewModifier,
+            // VideoCardH carries its own 16dp row padding.
+            horizontalPadding = if (compact) 0.dp else PageMargin,
+            topPadding = if (compact) 0.dp else 8.dp,
+            verticalSpacing = if (compact) 0.dp else 4.dp,
+            reselect = reselect,
+            headerBehavior = headerBehavior,
+        ) { _, item ->
+            val onLong = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                menu = item
+            }
+            when {
+                compact -> VideoCardH(item, feedItemMotion(), onLongClick = onLong)
+                single -> VideoCardL(item, feedItemMotion(), onLongClick = onLong)
+                else -> VideoCardV(item, feedItemMotion(), onLongClick = onLong)
+            }
         }
     }
     menu?.let { item ->
