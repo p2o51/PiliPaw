@@ -50,6 +50,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,6 +97,7 @@ private const val KEY_BAR = "reply:bar"
 private const val KEY_COMPOSE = "reply:compose"
 private const val KEY_STATE = "reply:state"
 private const val KEY_FOOTER = "reply:footer"
+private const val KEY_ANCHOR = "reply:anchor"
 
 /** The list's saveable state (expanded texts, item states) while a thread covers it. */
 private const val LIST_STATE_KEY = "reply:list"
@@ -234,7 +243,20 @@ private fun CommentList(
     val pillVisible by remember {
         derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.key == KEY_COMPOSE } }
     }
-    val hasContent = pager.items.isNotEmpty() || vm.top.isNotEmpty()
+    val hasContent = pager.items.isNotEmpty() || vm.top.isNotEmpty() || vm.anchored != null
+    // The comment a notification opened this list for lands pinned on top: bring it into
+    // view (a host's header, the dynamic or the article, sits above it in this list).
+    val anchoredId = vm.anchored?.rpid
+    LaunchedEffect(anchoredId != null) {
+        if (anchoredId == null || vm.anchorScrolled) return@LaunchedEffect
+        vm.anchorScrolled = true
+        repeat(2) { withFrameNanos { } }
+        // Counted from the end: the header's items come first and their number is the host's.
+        val tail = vm.top.size + if (pager.items.isEmpty()) 1 else pager.items.size + 1
+        val anchorIndex = listState.layoutInfo.totalItemsCount - tail - 1
+        val barIndex = anchorIndex - 1 - if (vm.readOnly) 0 else 1
+        if (barIndex > 0) listState.animateScrollToItem(barIndex)
+    }
     // Rows only fade as they land; placement springs stand down while a row resizes.
     val placement = remember(ui.layout) { ui.layout.gated(motion.offset) }
 
@@ -253,6 +275,13 @@ private fun CommentList(
                 if (!vm.readOnly) {
                     item(key = KEY_COMPOSE, contentType = "reply:compose") {
                         ComposePill(face = me?.face, label = "评论", modifier = Modifier.readingWidth(), onClick = openComposer)
+                    }
+                }
+                vm.anchored?.let { r ->
+                    item(key = KEY_ANCHOR, contentType = "reply") {
+                        AnchoredRow(vm, r, actions, replyItemMotion(motion, placement).readingWidth()) {
+                            actions.onOpenThread?.invoke(r)
+                        }
                     }
                 }
                 items(vm.top, key = { "reply:t${it.rpid}" }, contentType = { "reply" }) { r ->
@@ -483,3 +512,38 @@ internal fun PagerFooter(pager: Pager<Reply>, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/**
+ * The comment a notification opened the list for: it lands on a primaryContainer block
+ * that settles away on a slow spring once it has been seen, the way 官方 marks it.
+ */
+@Composable
+private fun AnchoredRow(vm: ReplyListViewModel, r: Reply, actions: ReplyActions, modifier: Modifier, onClick: () -> Unit) {
+    val glow = remember { Animatable(if (vm.anchorGlowed) 0f else 1f) }
+    LaunchedEffect(Unit) {
+        if (vm.anchorGlowed) return@LaunchedEffect
+        delay(AnchorHoldMs)
+        glow.animateTo(0f, spring(stiffness = Spring.StiffnessVeryLow))
+        vm.anchorGlowed = true
+    }
+    val tint = MaterialTheme.colorScheme.primaryContainer
+    ReplyRow(
+        r,
+        actions,
+        modifier.drawBehind {
+            val a = glow.value
+            if (a > 0f) {
+                val inset = 4.dp.toPx()
+                drawRoundRect(
+                    color = tint.copy(alpha = tint.alpha * a),
+                    topLeft = Offset(inset, 0f),
+                    size = Size(size.width - inset * 2, size.height),
+                    cornerRadius = CornerRadius(16.dp.toPx()),
+                )
+            }
+        },
+        onClick = onClick,
+    )
+}
+
+private const val AnchorHoldMs = 1400L

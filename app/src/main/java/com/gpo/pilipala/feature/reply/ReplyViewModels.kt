@@ -179,6 +179,21 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
         private set
 
     /**
+     * The thread a notification opened this list for ([ReplyAnchors]): pinned above 置顶
+     * and the rest, its root carrying the anchored reply as its only preview.
+     */
+    var anchored by mutableStateOf<Reply?>(null)
+        private set
+
+    /** The rpid the notification named (the root itself, or a reply inside it); 0 without one. */
+    var anchorRpid by mutableLongStateOf(0L)
+        private set
+
+    /** The pin was scrolled to / its highlight has settled: not again when the list comes back from a thread. */
+    var anchorScrolled = false
+    var anchorGlowed = false
+
+    /**
      * Sort switches: [requestedGen] bumps at the tap, [listGen] once the new
      * first page replaced the list. Rows keyed by their generation leave and
      * arrive as a plain cross-fade once the new order lands.
@@ -201,16 +216,17 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
             throw e
         }
         upperMid = page.upperMid
+        val pinned = anchored?.rpid ?: 0L
         if (cursor == null) {
             if (gen != listGen) listGen = gen
-            top = page.top
+            top = page.top.filter { it.rpid != pinned }
             count = page.count
             readOnly = page.readOnly
         }
         val topIds = top.map { it.rpid }.toSet()
         learnRelations(if (cursor == null) page.top + page.replies else page.replies)
         Page(
-            items = page.replies.filter { it.rpid !in topIds },
+            items = page.replies.filter { it.rpid !in topIds && it.rpid != pinned },
             hasMore = !page.isEnd && page.replies.isNotEmpty(),
             nextCursor = page.next.toString(),
         )
@@ -224,7 +240,22 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
     val threadStore = ViewModelStore()
 
     init {
+        ReplyAnchors.take(oid, type)?.let(::loadAnchor)
         pager.refresh()
+    }
+
+    private fun loadAnchor(anchor: ReplyAnchor) {
+        anchorRpid = anchor.rpid
+        viewModelScope.launch {
+            val page = runCatching { ReplyApi.thread(oid, type, anchor.root, 1) }.getOrNull() ?: return@launch
+            val root = page.root ?: return@launch
+            learnRelations(listOf(root) + page.replies)
+            val child = page.replies.firstOrNull { it.rpid == anchor.rpid }.takeIf { anchor.rpid != anchor.root }
+            anchored = root.copy(replies = listOfNotNull(child))
+            // Already listed (置顶, or a page that landed first): it lives only in the pin now.
+            top = top.filterNot { it.rpid == root.rpid }
+            pager.update { list -> list.filterNot { it.rpid == root.rpid } }
+        }
     }
 
     override fun onCleared() {
@@ -259,8 +290,16 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
 
     override fun removeLocally(rpid: Long) {
         val removedTop = top.any { it.rpid == rpid }
-        val removedMain = pager.items.any { it.rpid == rpid }
+        val removedMain = pager.items.any { it.rpid == rpid } || anchored?.rpid == rpid
         top = top.filterNot { it.rpid == rpid }
+        anchored?.let { a ->
+            anchored = when {
+                a.rpid == rpid -> null
+                a.replies.any { it.rpid == rpid } ->
+                    a.copy(replies = a.replies.filterNot { it.rpid == rpid }, rcount = (a.rcount - 1).coerceAtLeast(0))
+                else -> a
+            }
+        }
         pager.update { list ->
             list.filterNot { it.rpid == rpid }.map { r ->
                 if (r.replies.any { it.rpid == rpid }) {
@@ -284,6 +323,7 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
                 this
             }
             top = top.map { it.withChild() }
+            anchored = anchored?.withChild()
             pager.update { list -> list.map { it.withChild() } }
         }
     }

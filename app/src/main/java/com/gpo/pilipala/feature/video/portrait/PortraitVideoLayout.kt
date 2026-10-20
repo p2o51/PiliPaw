@@ -73,6 +73,7 @@ import com.gpo.pilipala.feature.player.BiliPlayerState
 import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.feature.player.PlayerSheet
 import com.gpo.pilipala.feature.player.SheetPage
+import com.gpo.pilipala.feature.reply.ReplyAnchors
 import com.gpo.pilipala.feature.reply.ReplyList
 import com.gpo.pilipala.feature.video.VideoDetailViewModel
 import com.gpo.pilipala.feature.video.findActivity
@@ -159,6 +160,13 @@ internal fun PortraitVideoLayout(
     val current = model.items.getOrNull(pager.settledPage)
     val currentDetail = vm.detail?.takeIf { it.bvid == current?.bvid }
     val commentAid = currentDetail?.aid ?: current?.aid ?: 0L
+    // Opened from a comment notification: the comments come up with it pinned on top.
+    LaunchedEffect(commentAid) {
+        if (commentAid > 0 && ReplyAnchors.has(commentAid, 1)) {
+            commentsOpen = true
+            panelOpen = true
+        }
+    }
     val commentCount = currentDetail?.reply ?: 0L
     val seek: (Long) -> Unit = { s -> playerState.seekTo(s * 1000) }
 

@@ -59,7 +59,11 @@ import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.LocalNavigator
+import com.gpo.pilipala.navigation.LinkRouter
+import com.gpo.pilipala.navigation.Navigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.feature.reply.ReplyAnchor
+import com.gpo.pilipala.feature.reply.ReplyAnchors
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.ErrorState
@@ -98,6 +102,8 @@ internal data class MsgEntry(
     val counts: Int = 0,
     val uri: String = "",
     val replyRoute: Route? = null,
+    /** The comment this entry is about: tapping opens [uri]'s page on its comments with it pinned. */
+    val anchor: ReplyAnchor? = null,
     val title: String = "",
     val cursor: Long = 0,
 )
@@ -200,6 +206,16 @@ internal class MessageListViewModel(private val kind: String) : ViewModel() {
         return if (oid > 0 && type > 0 && rpid > 0) Route.ReplyDetail(oid, type, rpid) else null
     }
 
+    /** A reply / @ item: the new comment ([source_id]) inside its thread. */
+    private fun commentAnchor(item: JsonObject?): ReplyAnchor? {
+        val rpid = item.long("source_id")
+        val oid = item.long("subject_id")
+        val type = item.int("business_id")
+        ReplyAnchors.parse(item.str("native_uri"), rpid, oid, type)?.let { return it }
+        val root = item.long("root_id").takeIf { it > 0 } ?: rpid
+        return if (oid > 0 && type > 0 && root > 0) ReplyAnchor(oid, type, root, rpid.takeIf { it > 0 } ?: root) else null
+    }
+
     private fun parseReply(o: JsonObject): MsgEntry {
         val item = o.obj("item")
         val type = item.str("type")
@@ -215,6 +231,7 @@ internal class MessageListViewModel(private val kind: String) : ViewModel() {
             time = o.long("reply_time"),
             uri = item.str("uri").ifEmpty { item.str("native_uri") },
             replyRoute = replyRoute(item),
+            anchor = commentAnchor(item),
         )
     }
 
@@ -232,6 +249,7 @@ internal class MessageListViewModel(private val kind: String) : ViewModel() {
             time = o.long("at_time"),
             uri = item.str("uri").ifEmpty { item.str("native_uri") }.ifEmpty { item.str("native_url") },
             replyRoute = replyRoute(item),
+            anchor = commentAnchor(item).takeIf { item.str("type") == "reply" },
         )
     }
 
@@ -246,6 +264,8 @@ internal class MessageListViewModel(private val kind: String) : ViewModel() {
             time = o.long("like_time"),
             counts = o.int("counts"),
             uri = item.str("uri").ifEmpty { item.str("native_uri") },
+            // A liked comment: the item is the user's own comment (item_id).
+            anchor = if (item.str("type") == "reply") ReplyAnchors.parse(item.str("native_uri"), item.long("item_id")) else null,
         )
     }
 
@@ -352,12 +372,7 @@ private fun FeedRow(e: MsgEntry, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .padding(horizontal = 4.dp)
             .clip(YoinContainerShapes.ListRow)
-            .clickable {
-                when {
-                    e.replyRoute != null -> nav.push(e.replyRoute)
-                    e.uri.isNotEmpty() -> nav.openUrl(e.uri)
-                }
-            }
+            .clickable { openEntry(nav, e) }
             .padding(horizontal = 12.dp, vertical = 12.dp),
     ) {
         Avatar(actor?.face, 42.dp) { actor?.let { nav.push(Route.Member(it.mid, it.face, it.name)) } }
@@ -395,6 +410,27 @@ private fun FeedRow(e: MsgEntry, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * A comment entry opens the page it was left on, at its comments, with the comment pinned
+ * on top (官方 does the same); without a native page for it, the thread page.
+ */
+private fun openEntry(nav: Navigator, e: MsgEntry) {
+    val anchor = e.anchor
+    if (anchor != null && e.uri.isNotEmpty()) {
+        val route = LinkRouter.route(e.uri)
+        if (route !is Route.Web) {
+            ReplyAnchors.put(anchor)
+            nav.push(route)
+            return
+        }
+    }
+    when {
+        e.replyRoute != null -> nav.push(e.replyRoute)
+        anchor != null && anchor.oid > 0 && anchor.type > 0 -> nav.push(Route.ReplyDetail(anchor.oid, anchor.type, anchor.root))
+        e.uri.isNotEmpty() -> nav.openUrl(e.uri)
+    }
+}
+
 @Composable
 private fun LikeRow(e: MsgEntry, modifier: Modifier = Modifier) {
     val nav = LocalNavigator.current
@@ -404,7 +440,7 @@ private fun LikeRow(e: MsgEntry, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .padding(horizontal = 4.dp)
             .clip(YoinContainerShapes.ListRow)
-            .clickable { if (e.uri.isNotEmpty()) nav.openUrl(e.uri) }
+            .clickable { openEntry(nav, e) }
             .padding(horizontal = 12.dp, vertical = 12.dp),
     ) {
         // Overlapping avatars, first on top. Only the front one opens a profile: the ones

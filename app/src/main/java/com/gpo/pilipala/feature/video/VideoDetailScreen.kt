@@ -64,6 +64,7 @@ import com.gpo.pilipala.feature.player.attachQueue
 import com.gpo.pilipala.feature.player.listening
 import com.gpo.pilipala.feature.player.setAudioOnly
 import com.gpo.pilipala.feature.player.rememberBiliPlayerState
+import com.gpo.pilipala.feature.reply.ReplyAnchors
 import com.gpo.pilipala.feature.reply.ReplyList
 import com.gpo.pilipala.feature.video.portrait.PortraitVideoLayout
 import com.gpo.pilipala.navigation.LocalNavigator
@@ -222,6 +223,11 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         gate { if (vm.up.following) confirmUnfollow = true else vm.up.toggle() }
     }
     val compactPagerState = rememberPagerState { 2 }
+    // Opened from a comment notification: straight to 评论, where the comment waits pinned.
+    val anchorAid = vm.detail?.aid ?: 0L
+    LaunchedEffect(anchorAid) {
+        if (anchorAid > 0 && ReplyAnchors.has(anchorAid, 1)) compactPagerState.animateScrollToPage(1)
+    }
 
     // Back from an immersive pager opened on this page returns to the classic layout.
     BackHandler(enabled = immersiveOn && handoff.fromClassic && !vm.fullscreen) { toClassic() }
