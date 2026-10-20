@@ -53,6 +53,7 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.feature.player.FeedPreviewLayer
 import com.gpo.pilipala.feature.player.LocalFeedPreview
 import com.gpo.pilipala.navigation.LocalNavigator
+import com.gpo.pilipala.navigation.transition.pageHeroCover
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.seam.seamGraphic
@@ -132,7 +133,7 @@ fun VideoCardV(
             .combinedClickable(onLongClick = longClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) }),
     ) {
         // Cover, scrim and badge are one print for the seams; the labels on it lift out whole.
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).seamGraphic()) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).pageHeroCover(item.route()).seamGraphic()) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 360.dp)
             CoverStats(item, Modifier.align(Alignment.BottomCenter))
             if (item.badge.isNotEmpty()) CoverBadge(item.badge, Modifier.align(Alignment.TopEnd).padding(6.dp))
@@ -196,7 +197,7 @@ fun VideoCardL(
                 },
             ),
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).seamGraphic()) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).pageHeroCover(item.route()).seamGraphic()) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 720.dp)
             if (item.duration > 0) {
                 DurationChip(Fmt.duration(item.duration), Modifier.align(Alignment.BottomEnd).padding(8.dp))
@@ -280,7 +281,7 @@ fun VideoCardH(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.width(coverWidth).aspectRatio(16f / 10f).seamGraphic()) {
+        Box(Modifier.width(coverWidth).aspectRatio(16f / 10f).pageHeroCover(item.route()).seamGraphic()) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = coverWidth)
             if (item.duration > 0) {
                 DurationChip(Fmt.duration(item.duration), Modifier.align(Alignment.BottomEnd).padding(4.dp))

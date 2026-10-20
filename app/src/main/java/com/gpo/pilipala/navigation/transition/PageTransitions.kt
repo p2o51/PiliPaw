@@ -45,6 +45,8 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.abs
 
 /*
  * Page transitions for the single NavDisplay (predictive-back doctrine,
@@ -119,6 +121,9 @@ class PageTransitions internal constructor(
     internal var phase by mutableStateOf(BackPhase.Idle)
         private set
 
+    /** No back is running: layout positions read now are the page's own, not a posed copy. */
+    val backIdle: Boolean get() = phase == BackPhase.Idle
+
     /** Closing page pose, 0..1: the eased gesture progress, then the commit ride. */
     internal val closing = Animatable(0f)
 
@@ -143,6 +148,55 @@ class PageTransitions internal constructor(
 
     private var pendingPops = 0
     private var generation = 0L
+
+    // ── Hero (PageHero.kt) ──────────────────────────────────────────────────
+
+    /** The picture flying home during a commit; null for every other back. */
+    internal var hero by mutableStateOf<HeroFlight?>(null)
+        private set
+
+    /** The hero's travel, 0 (its place on the closing page) → 1 (the cover beneath). */
+    internal val heroProgress = Animatable(0f)
+
+    private val covers = HashMap<String, HeroCoverNode>()
+
+    /** The cover each pushed entry was opened from (host px, as in the snapshot beneath it). */
+    private val pushedCovers = HashMap<String, Rect>()
+    private val heroes = HashMap<String, PageHeroCapture>()
+
+    internal fun registerCover(key: String, node: HeroCoverNode) {
+        covers[key] = node
+    }
+
+    internal fun unregisterCover(key: String, node: HeroCoverNode) {
+        if (covers[key] === node) covers.remove(key)
+    }
+
+    /** The cover placed last wins its key (the one on screen, as with card sources). */
+    internal fun noteCover(key: String, node: HeroCoverNode) {
+        covers[key] = node
+    }
+
+    internal fun registerHero(key: String, capture: PageHeroCapture) {
+        heroes[key] = capture
+    }
+
+    internal fun unregisterHero(key: String, capture: PageHeroCapture) {
+        if (heroes[key] === capture) heroes.remove(key)
+    }
+
+    private fun coverBounds(key: String): Rect? {
+        val c = covers[key]?.coordinates ?: return null
+        if (!c.isAttached) return null
+        return Rect(c.positionInRoot(), c.size.toSize())
+    }
+
+    /**
+     * Finger travel that counts as a whole gesture (px), so a wide window needs a
+     * proportionate swipe: the system's progress saturates after a phone's width
+     * (~412dp), which on a tablet is a third of the screen. Set by the host.
+     */
+    internal var gestureSpanPx by mutableFloatStateOf(0f)
 
     // ── Snapshots ───────────────────────────────────────────────────────────
 
@@ -255,6 +309,7 @@ class PageTransitions internal constructor(
     /** The entry left the back stack: its pixels can go. */
     internal fun onEntryPopped(key: Any) {
         snapshots.remove(key)
+        pushedCovers.remove(key.toString())
     }
 
     /**
@@ -290,6 +345,8 @@ class PageTransitions internal constructor(
             )
         }
         sceneMirror = backdrop == null
+        val cover = key?.let { coverBounds(it) }
+        if (container && cover != null && !cover.isEmpty) pushedCovers[route.toString()] = cover
     }
 
     /** A replace keeps the page beneath; the new top fades in on the forward mirror over the old one. */
@@ -352,6 +409,7 @@ class PageTransitions internal constructor(
         val owner = ++generation
         var sawGesture = false
         var initialTouchY = Float.NaN
+        var initialTouchX = Float.NaN
         try {
             events.collect { event ->
                 if (!sawGesture) {
@@ -360,10 +418,20 @@ class PageTransitions internal constructor(
                     phase = BackPhase.Gesture
                 }
                 if (initialTouchY.isNaN()) initialTouchY = event.touchY
+                if (initialTouchX.isNaN()) initialTouchX = event.touchX
                 swipeEdge = event.swipeEdge
                 touchYDelta = event.touchY - initialTouchY
+                // The finger's own travel against the window's span (see gestureSpanPx); the
+                // system's progress where the touch position is unknown.
+                val span = gestureSpanPx
+                val travel = abs(event.touchX - initialTouchX)
+                val progress = if (span > 0f && !event.touchX.isNaN() && !initialTouchX.isNaN()) {
+                    (travel / span).coerceIn(0f, 1f)
+                } else {
+                    event.progress
+                }
                 // Direct 1:1 tracking: the eased progress IS the pose.
-                closing.snapTo(YoinMotion.backGestureEasing.transform(event.progress))
+                closing.snapTo(YoinMotion.backGestureEasing.transform(progress))
             }
             launchCommit()
         } catch (e: CancellationException) {
@@ -407,11 +475,13 @@ class PageTransitions internal constructor(
             }
             seedProgress = closing.value
             if (beneath != null) {
+                prepareHero()
                 val ride = tween<Float>(BackMotionTokens.PostCommitDurationMs, easing = BackMotionTokens.EmphasizedEasing)
                 coroutineScope {
                     launch { behind.animateTo(0f, ride) }
                     launch { closing.animateTo(1f, ride) }
                     launch { exit.animateTo(1f, tween(BackMotionTokens.PostCommitDurationMs, easing = LinearEasing)) }
+                    if (hero != null) launch { heroProgress.animateTo(1f, heroSpec) }
                 }
             } else {
                 // Nothing to ride home (no valid pixels of the page beneath,
@@ -438,6 +508,8 @@ class PageTransitions internal constructor(
             if (generation != owner) return@launch
 
             beneath = null
+            hero = null
+            heroProgress.snapTo(0f)
             behind.snapTo(1f)
             snapshots.remove(revealedKey)
             phase = BackPhase.Idle
@@ -447,6 +519,27 @@ class PageTransitions internal constructor(
             }
         }
     }
+
+    /**
+     * The closing page's picture, if its route came from a cover and the page can give a
+     * frame of it: briefly waited for (a PixelCopy is a frame or two), else no hero.
+     */
+    private suspend fun prepareHero() {
+        hero = null
+        heroProgress.snapTo(0f)
+        val top = backStack.lastOrNull() as? Route ?: return
+        val cover = pushedCovers[top.toString()] ?: return
+        val capture = top.sharedKey()?.let { heroes[it] } ?: return
+        val shot = withTimeoutOrNull(HeroCaptureTimeoutMs) { runCatching { capture() }.getOrNull() } ?: return
+        if (shot.second.isEmpty) return
+        hero = HeroFlight(shot.first, shot.second, cover)
+    }
+
+    /** The picture's flight home: the slow spatial spring, landing with the page beneath. */
+    private val heroSpec: FiniteAnimationSpec<Float> = YoinMotion.slowSpatialSpec(
+        role = YoinMotionRole.Standard,
+        expressiveScheme = MotionScheme.expressive(),
+    )
 
     private val revealSpec = YoinMotion.defaultEffectsSpec<Float>(
         role = YoinMotionRole.Standard,
@@ -463,6 +556,9 @@ class PageTransitions internal constructor(
 
         /** Frames the live page draws, hidden, before it fades over its snapshot. */
         const val RevealHoldFrames = 3
+
+        /** How long a commit waits for the hero's frame before it goes without one. */
+        const val HeroCaptureTimeoutMs = 60L
 
         /** ≈ 0.2px of a full-window container's travel. */
         const val ContainerProgressThreshold = 1e-4f

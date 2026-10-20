@@ -10,6 +10,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.FrameRateCategory
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -48,20 +50,11 @@ internal fun Modifier.pageClosingTransform(t: PageTransitions): Modifier = graph
         else -> Unit
     }
     val p = t.closing.value
-    val scale = 1f - (1f - BackMotionTokens.PopPageScaleTarget) * p
-    scaleX = scale
-    scaleY = scale
-
-    val marginPx = BackMotionTokens.DisplayBoundsMargin.toPx()
-    // LEFT-edge swipes park the scaled page's right edge 8dp from the screen
-    // edge; RIGHT-edge swipes stay centred (AOSP asymmetry).
-    val dxTarget = if (t.swipeEdge == BackEventCompat.EDGE_LEFT) {
-        size.width * (1f - BackMotionTokens.PopPageScaleTarget) / 2f - marginPx
-    } else {
-        0f
-    }
-    translationX = dxTarget * p
-    translationY = verticalFollow(t.touchYDelta, size.height, scale, marginPx)
+    val pose = closingPose(t, size)
+    scaleX = pose.scale
+    scaleY = pose.scale
+    translationX = pose.tx
+    translationY = pose.ty
 
     alpha = max(1f - 5f * t.exit.value, 0f)
     shape = RoundedCornerShape(BackMotionTokens.PopPageCornerRadius * p)
@@ -91,14 +84,11 @@ internal fun BeneathPage(t: PageTransitions, fill: Color, over: Boolean = false)
                     if (t.phase != BackPhase.Committing) return@graphicsLayer
                     alpha = min(5f * t.exit.value, 1f)
                 }
-                val b = t.behind.value
-                val p = if (t.phase == BackPhase.Gesture) t.closing.value else t.seedProgress
-                val scale = 1f - (1f - BackMotionTokens.PopPageScaleTarget) * p * b
-                scaleX = scale
-                scaleY = scale
-                translationX = -BackMotionTokens.EnteringStartOffset.toPx() * b
-                val ty = if (t.phase == BackPhase.Gesture || t.phase == BackPhase.Committing) t.touchYDelta else 0f
-                translationY = verticalFollow(ty, size.height, scale, BackMotionTokens.DisplayBoundsMargin.toPx()) * b
+                val pose = beneathPose(t, size)
+                scaleX = pose.scale
+                scaleY = pose.scale
+                translationX = pose.tx
+                translationY = pose.ty
             }
             .drawBehind {
                 if (t.phase == BackPhase.Idle) return@drawBehind
@@ -112,6 +102,37 @@ internal fun BeneathPage(t: PageTransitions, fill: Color, over: Boolean = false)
                 drawRect(Color.Black)
                 drawImage(snap.image)
             },
+    )
+}
+
+/** A page's pose during a back: scale about its centre, then these offsets (px). */
+internal class BackPose(val scale: Float, val tx: Float, val ty: Float)
+
+/** The closing page's pose: AOSP CrossActivityBackAnimation pre-commit math. */
+internal fun Density.closingPose(t: PageTransitions, size: Size): BackPose {
+    val p = t.closing.value
+    val scale = 1f - (1f - BackMotionTokens.PopPageScaleTarget) * p
+    val marginPx = BackMotionTokens.DisplayBoundsMargin.toPx()
+    // LEFT-edge swipes park the scaled page's right edge 8dp from the screen
+    // edge; RIGHT-edge swipes stay centred (AOSP asymmetry).
+    val dxTarget = if (t.swipeEdge == BackEventCompat.EDGE_LEFT) {
+        size.width * (1f - BackMotionTokens.PopPageScaleTarget) / 2f - marginPx
+    } else {
+        0f
+    }
+    return BackPose(scale, dxTarget * p, verticalFollow(t.touchYDelta, size.height, scale, marginPx))
+}
+
+/** The revealed page's pose: parked at −96dp, scaling with the gesture, riding home on commit. */
+internal fun Density.beneathPose(t: PageTransitions, size: Size): BackPose {
+    val b = t.behind.value
+    val p = if (t.phase == BackPhase.Gesture) t.closing.value else t.seedProgress
+    val scale = 1f - (1f - BackMotionTokens.PopPageScaleTarget) * p * b
+    val ty = if (t.phase == BackPhase.Gesture || t.phase == BackPhase.Committing) t.touchYDelta else 0f
+    return BackPose(
+        scale,
+        -BackMotionTokens.EnteringStartOffset.toPx() * b,
+        verticalFollow(ty, size.height, scale, BackMotionTokens.DisplayBoundsMargin.toPx()) * b,
     )
 }
 

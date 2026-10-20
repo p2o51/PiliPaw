@@ -43,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.movableContentOf
@@ -64,6 +65,12 @@ import com.gpo.pilipala.feature.player.attachQueue
 import com.gpo.pilipala.feature.player.listening
 import com.gpo.pilipala.feature.player.setAudioOnly
 import com.gpo.pilipala.feature.player.rememberBiliPlayerState
+import com.gpo.pilipala.feature.player.captureVideoFrame
+import com.gpo.pilipala.feature.player.findVideoView
+import com.gpo.pilipala.navigation.transition.LocalPageTransitions
+import com.gpo.pilipala.navigation.transition.PageHeroEffect
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalView
 import com.gpo.pilipala.feature.reply.ReplyAnchors
 import com.gpo.pilipala.feature.reply.ReplyList
 import com.gpo.pilipala.feature.video.portrait.PortraitVideoLayout
@@ -223,6 +230,28 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         gate { if (vm.up.following) confirmUnfollow = true else vm.up.toggle() }
     }
     val compactPagerState = rememberPagerState { 2 }
+
+    // Back flies the picture's current frame home into the card it was opened from (PageHero.kt):
+    // the classic layout's inline picture only, as laid out while no back runs.
+    val heroView = LocalView.current
+    val transitions = LocalPageTransitions.current
+    val heroRect = remember { arrayOfNulls<Rect>(1) }
+    LaunchedEffect(handoff) {
+        snapshotFlow { handoff.classicRect }.collect { r ->
+            if (transitions?.backIdle != false) heroRect[0] = r
+        }
+    }
+    PageHeroEffect(Route.Video(bvid = vm.bvid)) {
+        val rect = heroRect[0] ?: return@PageHeroEffect null
+        if (vm.fullscreen || vm.immersive == true) return@PageHeroEffect null
+        val view = findVideoView(heroView.rootView, rect) ?: return@PageHeroEffect null
+        val frame = captureVideoFrame(view, view.width, view.height) ?: return@PageHeroEffect null
+        val loc = IntArray(2).also { view.getLocationInWindow(it) }
+        // The video view sits fitted inside the 16:9 slot; fly what it shows from where it is.
+        val bounds = Rect(loc[0].toFloat(), loc[1].toFloat(), (loc[0] + view.width).toFloat(), (loc[1] + view.height).toFloat())
+            .takeIf { it.overlaps(rect) } ?: rect
+        frame.asImageBitmap() to bounds
+    }
     // Opened from a comment notification: straight to 评论, where the comment waits pinned.
     val anchorAid = vm.detail?.aid ?: 0L
     LaunchedEffect(anchorAid) {

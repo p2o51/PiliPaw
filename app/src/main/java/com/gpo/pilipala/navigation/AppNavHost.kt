@@ -60,9 +60,11 @@ import com.gpo.pilipala.feature.settings.SettingsPageScreen
 import com.gpo.pilipala.feature.settings.SettingsScreen
 import com.gpo.pilipala.feature.video.VideoDetailScreen
 import com.gpo.pilipala.feature.web.WebScreen
+import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.navigation.transition.BackInputBlocker
 import com.gpo.pilipala.navigation.transition.BackPhase
 import com.gpo.pilipala.navigation.transition.BeneathPage
+import com.gpo.pilipala.navigation.transition.HeroOverlay
 import com.gpo.pilipala.navigation.transition.LocalPageTransitions
 import com.gpo.pilipala.navigation.transition.PageBackHandler
 import com.gpo.pilipala.navigation.transition.PageEntryFrame
@@ -113,7 +115,11 @@ fun AppNavHost(navigator: Navigator) {
             Modifier
                 .fillMaxSize()
                 .background(backdrop)
-                .onSizeChanged { transitions.hostSize = it }
+                .onSizeChanged {
+                    transitions.hostSize = it
+                    // A whole back gesture: the window's width, up to a wide phone's worth more.
+                    transitions.gestureSpanPx = minOf(it.width.toFloat(), with(density) { GestureSpanMax.toPx() })
+                }
                 .voteHighFrameRate(transitions.phase != BackPhase.Idle),
         ) {
             BeneathPage(transitions, backdrop)
@@ -147,10 +153,14 @@ fun AppNavHost(navigator: Navigator) {
                 )
             }
             BeneathPage(transitions, backdrop, over = true)
+            HeroOverlay(transitions)
             BackInputBlocker(transitions)
         }
     }
 }
+
+/** The finger travel of a whole back gesture on a wide window (a phone needs its own width). */
+private val GestureSpanMax = 600.dp
 
 private val appEntryProvider = entryProvider<NavKey> {
     entry<Route.Main> { MainShell() }
