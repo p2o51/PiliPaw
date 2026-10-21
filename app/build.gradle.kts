@@ -14,6 +14,7 @@ android {
         targetSdk = 36
         versionCode = 49
         versionName = "0.4.39"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -72,6 +73,9 @@ kotlin {
 dependencies {
     implementation(project(":yoin-symbols"))
     testImplementation("junit:junit:4.13.2")
+    // Gestures adb cannot send (two-finger pinch on the mini bar), driven on the device.
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     // YouTube: PipePipe's extractor (composite build of the PipePipeExtractor submodule).

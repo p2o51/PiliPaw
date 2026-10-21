@@ -5,6 +5,13 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -86,6 +93,18 @@ object KeepPlaying {
 
     /** Whether the bar has the screen to itself (scrolling down folds it into the nav bar's circle). */
     var compact by mutableStateOf(false)
+        internal set
+
+    /**
+     * Two-finger zoom, without steps: 1 is the bar, above 1 a floating window (1 → its smallest,
+     * 2 → nearly the screen's width). Pinching in past the bar folds it into the circle ([compact]);
+     * spreading past 2 opens the video.
+     */
+    var level by mutableFloatStateOf(1f)
+        internal set
+
+    /** The floating window's centre (window px), where it was dragged; unspecified: above the bar. */
+    var windowCenter by mutableStateOf(Offset.Unspecified)
         internal set
 
     /**
@@ -268,16 +287,24 @@ fun MiniBarHost() {
     if (KeepPlaying.asking) KeepAskDialog()
     val nav = NavSpot.bounds
     val density = LocalDensity.current
-    val fold by animateFloatAsState(
-        if (playing != null && KeepPlaying.compact && nav != null) 1f else 0f,
-        YoinMotion.defaultSpatialSpec(),
-        label = "miniFold",
-    )
+    // Live level while two fingers are down; at rest: the circle (scrolled), the bar, or the window's size.
+    var pinch by remember { mutableStateOf<Float?>(null) }
+    val restLevel = when {
+        KeepPlaying.level > 1f -> KeepPlaying.level
+        playing != null && KeepPlaying.compact && nav != null -> 0f
+        else -> 1f
+    }
+    val settled by animateFloatAsState(restLevel, YoinMotion.defaultSpatialSpec(), label = "miniLevel")
+    val level = pinch ?: settled
+    val fold = (1f - level).coerceIn(0f, 1f)
     val shown by animateFloatAsState(if (playing != null) 1f else 0f, YoinMotion.defaultEffectsSpec(), label = "miniShown")
     var last by remember { mutableStateOf<Playing?>(null) }
     if (playing != null) last = playing
     val p = playing ?: last ?: return
     if (shown <= 0.001f && playing == null) return
+    // Playing is rebuilt with every tick of progress; gestures read the latest one instead of
+    // restarting (a restart cut every pinch and swipe short).
+    val latest by androidx.compose.runtime.rememberUpdatedState(p)
 
     BoxWithConstraints(Modifier.fillMaxSize().navigationBarsPadding()) {
         val w = with(density) { maxWidth.toPx() }
@@ -320,21 +347,76 @@ fun MiniBarHost() {
         val scope = rememberCoroutineScope()
         val swipe = remember { Animatable(0f) }
         val springBack = YoinMotion.defaultSpatialSpec<Float>()
+        // Where a pinch lands: open the video, a window of that size, the bar, or the circle.
+        val settle: (Float) -> Unit = { l ->
+            when {
+                l > 2.15f -> {
+                    KeepPlaying.level = 1f
+                    KeepPlaying.compact = false
+                    latest.open()
+                }
+                l > 1.2f -> KeepPlaying.level = l.coerceAtMost(2f)
+                l > 0.5f -> {
+                    KeepPlaying.level = 1f
+                    KeepPlaying.compact = false
+                }
+                else -> {
+                    KeepPlaying.level = 1f
+                    KeepPlaying.compact = true
+                }
+            }
+        }
+        // Two fingers: the level follows how far apart they are against where they started (a
+        // doubled span adds one whole step), so the bar grows with the fingers, without steps.
+        val minSpan = with(density) { 48.dp.toPx() }
+        // Read on the Initial pass: the picture inside is an Android view that takes the touches first.
+        val pinchInput = Modifier.pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                var startSpan = 0f
+                var startLevel = level
+                do {
+                    val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    val down = event.changes.filter { it.pressed }
+                    if (down.size >= 2) {
+                        val span = (down[0].position - down[1].position).getDistance().coerceAtLeast(minSpan)
+                        if (startSpan == 0f) {
+                            startSpan = span
+                            startLevel = level
+                        }
+                        pinch = (startLevel + (span / startSpan - 1f)).coerceIn(-0.2f, 2.6f)
+                        if ((pinch ?: 0f) > 1f && KeepPlaying.windowCenter.isSpecified) {
+                            KeepPlaying.windowCenter += event.calculatePan()
+                        }
+                        event.changes.forEach { it.consume() }
+                    }
+                } while (event.changes.any { it.pressed })
+                pinch?.let { l ->
+                    pinch = null
+                    settle(l)
+                }
+            }
+        }
+        // Grown past the bar: the floating window. The bar's own node stays (empty, invisible) so a
+        // pinch that began on it keeps running while it turns into the window.
+        val windowed = level > 1f
         Box(
             Modifier
                 .offset { IntOffset((rect.left + swipe.value).roundToInt(), rect.top.roundToInt()) }
                 .size(with(density) { rect.width.toDp() }, with(density) { rect.height.toDp() })
+                // After offset and size: the pinch is read where the bar is.
+                .then(pinchInput)
                 .graphicsLayer {
                     alpha = shown * (1f - (abs(swipe.value) / (barRect.width * 0.6f)).coerceIn(0f, 1f))
                     translationY = (1f - shown) * barH
                 }
-                .pointerInput(p.close) {
+                .pointerInput(Unit) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
                             scope.launch {
                                 if (abs(swipe.value) > size.width * 0.35f) {
                                     swipe.animateTo(if (swipe.value > 0) size.width.toFloat() else -size.width.toFloat())
-                                    p.close()
+                                    latest.close()
                                     swipe.snapTo(0f)
                                 } else {
                                     swipe.animateTo(0f, springBack)
@@ -348,13 +430,111 @@ fun MiniBarHost() {
                     )
                 },
         ) {
-            if (fold < 0.999f) {
+            if (!windowed && fold < 0.999f) {
                 BarContent(p, Modifier.fillMaxSize().graphicsLayer { alpha = 1f - fold })
             }
-            if (fold > 0.001f) {
+            if (!windowed && fold > 0.001f) {
                 CircleContent(p, Modifier.fillMaxSize().graphicsLayer { alpha = fold })
             }
         }
+        if (windowed) {
+            FloatingWindow(
+                p = p,
+                t = (level - 1f).coerceIn(0f, 1.3f),
+                areaW = w,
+                areaH = h,
+                barRect = barRect,
+                pinchInput = pinchInput,
+                shown = shown,
+            )
+        }
+    }
+}
+
+/**
+ * The floating window: the picture alone, as wide as the pinch made it (16:9). Drag it anywhere;
+ * let it go near the bar's place and it docks back into the bar. A tap plays or pauses.
+ */
+@Composable
+private fun FloatingWindow(
+    p: Playing,
+    t: Float,
+    areaW: Float,
+    areaH: Float,
+    barRect: Rect,
+    pinchInput: Modifier,
+    shown: Float,
+) {
+    val density = LocalDensity.current
+    val side = with(density) { SideMargin.toPx() }
+    val minW = with(density) { 240.dp.toPx() }.coerceAtMost(areaW - side * 2)
+    val maxW = areaW - side * 2
+    // Past the largest size (on the way to opening the video) it swells a little more, never past the screen.
+    val width = (lerp(minW, maxW, t.coerceIn(0f, 1f)) * (1f + (t - 1f).coerceAtLeast(0f) * 0.15f)).coerceAtMost(areaW)
+    val height = (width * 9f / 16f).coerceAtMost(areaH)
+    val gap = with(density) { Gap.toPx() }
+    if (!KeepPlaying.windowCenter.isSpecified) {
+        KeepPlaying.windowCenter = Offset(areaW / 2f, barRect.top - gap - height / 2f)
+    }
+    // Kept on screen whatever the size.
+    val c = KeepPlaying.windowCenter
+    val cx = c.x.coerceIn(width / 2f, (areaW - width / 2f).coerceAtLeast(width / 2f))
+    val cy = c.y.coerceIn(height / 2f, (areaH - height / 2f).coerceAtLeast(height / 2f))
+    val dockY = barRect.top - with(density) { 24.dp.toPx() }
+    Box(
+        Modifier
+            .offset { IntOffset((cx - width / 2f).roundToInt(), (cy - height / 2f).roundToInt()) }
+            .size(with(density) { width.toDp() }, with(density) { height.toDp() })
+            .graphicsLayer { alpha = shown }
+            .shadow(12.dp, RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(24.dp))
+            .background(androidx.compose.ui.graphics.Color.Black)
+            .then(pinchInput)
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragEnd = {
+                        // Dropped over the bar's place: back into the bar.
+                        if (KeepPlaying.windowCenter.y + height / 2f > dockY + height * 0.5f) {
+                            KeepPlaying.level = 1f
+                            KeepPlaying.windowCenter = Offset.Unspecified
+                        }
+                    },
+                ) { change, drag ->
+                    change.consume()
+                    KeepPlaying.windowCenter = Offset(cx, cy) + drag
+                }
+            }
+            .clickable(onClick = p.toggle),
+    ) {
+        NetImage(p.cover, Modifier.fillMaxSize(), contentDescription = p.title, thumbWidth = 640.dp)
+        var ready by remember(p.player) { mutableStateOf(false) }
+        LaunchedEffect(p.player) {
+            kotlinx.coroutines.delay(300)
+            ready = true
+        }
+        p.player?.takeIf { ready }?.let { player ->
+            androidx.media3.ui.compose.ContentFrame(
+                player = player,
+                modifier = Modifier.fillMaxSize(),
+                surfaceType = androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW,
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                shutter = {},
+            )
+        }
+        if (!p.isPlaying) {
+            Box(
+                Modifier.align(Alignment.Center).size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) { Icon(YoinSymbols.PlayFilled, "播放", tint = MaterialTheme.colorScheme.onPrimaryContainer) }
+        }
+        val primary = MaterialTheme.colorScheme.primary
+        Box(
+            Modifier.fillMaxSize().drawWithContent {
+                drawContent()
+                val y = size.height - 2.dp.toPx()
+                drawLine(primary, Offset(0f, y), Offset(size.width * p.progress.coerceIn(0f, 1f), y), 4.dp.toPx())
+            },
+        )
     }
 }
 
