@@ -24,6 +24,9 @@ android {
     }
 
     compileOptions {
+        // YouTube's extractor is Java 25 bytecode (its own toolchain) and uses java.* APIs newer than
+        // minSdk: desugar them. The app itself stays on 17.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -31,6 +34,18 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    packaging {
+        resources {
+            // The extractor's jars (jsoup, bouncycastle, protobuf) ship overlapping metadata.
+            excludes += setOf(
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*",
+            )
+        }
     }
 
     lint {
@@ -57,6 +72,11 @@ kotlin {
 dependencies {
     implementation(project(":yoin-symbols"))
     testImplementation("junit:junit:4.13.2")
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
+
+    // YouTube: PipePipe's extractor (composite build of the PipePipeExtractor submodule).
+    implementation("com.github.InfinityLoop1308.PipePipeExtractor:extractor")
+    implementation("com.github.TeamNewPipe:nanojson:1d9e1aea9049fc9f85e68b43ba39fe7be1c1f751")
 
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)
