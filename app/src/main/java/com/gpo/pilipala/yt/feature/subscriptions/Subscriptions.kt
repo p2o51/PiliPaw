@@ -28,6 +28,13 @@ object Subscriptions {
             .orEmpty()
     }
 
+    /** Cloud sync: channels from another device join the list (none is removed). */
+    fun mergeIn(others: List<ChannelItem>) {
+        val now = _channels.value
+        val add = others.filter { o -> now.none { it.url == o.url } }
+        if (add.isNotEmpty()) save(now + add)
+    }
+
     fun isSubscribed(url: String): Boolean = _channels.value.any { it.url == url }
 
     fun toggle(channel: ChannelItem) {

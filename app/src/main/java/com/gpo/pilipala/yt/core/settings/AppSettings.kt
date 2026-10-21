@@ -71,6 +71,27 @@ object AppSettings {
         k.flow.value = v as T
     }
 
+    /** Every registered setting's current value, by name (cloud sync). */
+    fun snapshot(): Map<String, Any?> = keys.associate { it.name to it.value }
+
+    /** Takes [values] in (cloud sync): only names this build knows, only values of the right type. */
+    @Suppress("UNCHECKED_CAST")
+    fun restore(values: Map<String, Any?>) {
+        keys.forEach { k ->
+            val v = values[k.name] ?: return@forEach
+            val d = k.default
+            val typed: Any? = when (d) {
+                is Boolean -> v as? Boolean
+                is Int -> (v as? Number)?.toInt()
+                is Long -> (v as? Number)?.toLong()
+                is Float -> (v as? Number)?.toFloat()
+                is String -> v as? String
+                else -> null
+            }
+            if (typed != null && typed != k.value) set(k as Key<Any?>, typed)
+        }
+    }
+
     fun <T> set(k: Key<T>, value: T) {
         k.flow.value = value
         prefs.edit().apply {

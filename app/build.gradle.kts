@@ -77,6 +77,8 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     coreLibraryDesugaring(libs.desugar.jdk.libs)
+    // Cloud sync: the user's own Google Drive, hidden app folder only (feature/sources/PawCloud.kt).
+    implementation("com.google.android.gms:play-services-auth:22.0.0")
 
     // YouTube: PipePipe's extractor (composite build of the PipePipeExtractor submodule).
     implementation("com.github.InfinityLoop1308.PipePipeExtractor:extractor")

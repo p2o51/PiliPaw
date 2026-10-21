@@ -45,4 +45,20 @@ internal object LyricsStore {
     }
 
     private fun file(cid: Long): File? = dir?.let { File(it, "$cid.lrc") }
+
+    /** Cloud sync: every picked lyric as cid → LRC text. */
+    fun exportAll(): Map<String, String> =
+        dir?.listFiles { f -> f.extension == "lrc" }.orEmpty()
+            .associate { it.nameWithoutExtension to runCatching { it.readText() }.getOrDefault("") }
+            .filterValues { it.isNotEmpty() }
+
+    /** Cloud sync: lyrics picked on another device, for parts this one has none for. */
+    fun importMissing(others: Map<String, String>) {
+        others.forEach { (cid, text) ->
+            val id = cid.toLongOrNull() ?: return@forEach
+            val f = file(id) ?: return@forEach
+            if (!f.exists()) runCatching { f.writeText(text) }
+            cache.remove(id)
+        }
+    }
 }

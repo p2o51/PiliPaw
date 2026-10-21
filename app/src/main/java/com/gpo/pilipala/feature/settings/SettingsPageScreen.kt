@@ -870,6 +870,7 @@ private fun ColumnScope.ExtraBody() {
             )
         }
     }
+    CloudSyncGroup()
     SettingsGroup("应用") {
         item {
             SettingsItem(
@@ -890,6 +891,56 @@ private fun ColumnScope.ExtraBody() {
                         clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("PiliPaw crash", crash))
                         toast("已复制崩溃日志")
                     },
+                )
+            }
+        }
+    }
+}
+
+
+// ── 云同步 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 云同步 (feature/sources/PawCloud.kt): on/off, 立即同步, and what the state needs from the user:
+ * Google's consent sheet, or, when the Google Cloud project does not know this build, its package
+ * and certificate to register.
+ */
+@Composable
+private fun ColumnScope.CloudSyncGroup() {
+    val on by com.gpo.pilipala.feature.sources.PawCloud.enabled.state.collectAsState()
+    val state = com.gpo.pilipala.feature.sources.PawCloud.state
+    val consent = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult(),
+    ) { r -> com.gpo.pilipala.feature.sources.PawCloud.resumeAfterConsent(r.resultCode == android.app.Activity.RESULT_OK) }
+    androidx.compose.runtime.LaunchedEffect(state) {
+        if (state is com.gpo.pilipala.feature.sources.PawCloud.State.NeedsUser) {
+            consent.launch(androidx.activity.result.IntentSenderRequest.Builder(state.sender).build())
+        }
+    }
+    val summary = when (state) {
+        com.gpo.pilipala.feature.sources.PawCloud.State.Syncing -> "正在同步…"
+        is com.gpo.pilipala.feature.sources.PawCloud.State.Done -> "刚刚同步完"
+        is com.gpo.pilipala.feature.sources.PawCloud.State.Failed -> "同步失败：" + state.message
+        is com.gpo.pilipala.feature.sources.PawCloud.State.Misconfigured -> "这个版本还不能用云同步：需要在 Google Cloud 里登记 ${state.packageName}（SHA-1 ${state.sha1 ?: "未知"}）"
+        else -> if (on) "Mix、订阅、稍后再看、选过的歌词和设置，存在你自己的 Google Drive 里" else "存在你自己的 Google Drive 隐藏文件夹里，登录信息不会上传"
+    }
+    SettingsGroup("云同步") {
+        item {
+            SettingsSwitchItem(
+                "同步到 Google Drive",
+                on,
+                { if (it) com.gpo.pilipala.feature.sources.PawCloud.sync(interactive = true) else com.gpo.pilipala.feature.sources.PawCloud.turnOff() },
+                icon = YoinSymbols.Cloud,
+                summary = summary,
+            )
+        }
+        if (on) {
+            item {
+                SettingsItem(
+                    title = "立即同步",
+                    icon = YoinSymbols.Refresh,
+                    enabled = state != com.gpo.pilipala.feature.sources.PawCloud.State.Syncing,
+                    onClick = { com.gpo.pilipala.feature.sources.PawCloud.sync(interactive = true) },
                 )
             }
         }

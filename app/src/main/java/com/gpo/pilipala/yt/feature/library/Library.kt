@@ -146,6 +146,37 @@ object Library {
         return inNow
     }
 
+    /** Cloud sync: another device's watch later joins this one (by key, nothing removed). */
+    fun mergeWatchLater(others: List<LibItem>) {
+        val now = _watchLater.value
+        val add = others.filter { o -> now.none { it.key == o.key } }
+        if (add.isEmpty()) return
+        _watchLater.value = now + add
+        write("watch_later.json", items, _watchLater.value)
+    }
+
+    /**
+     * Cloud sync: another device's Mix lists. A list new here is added whole; one both have keeps
+     * this device's order and gains the other's videos and links at the end.
+     */
+    fun mergePlaylists(others: List<LocalPlaylist>) {
+        val now = _playlists.value.toMutableList()
+        others.forEach { o ->
+            val i = now.indexOfFirst { it.id == o.id }
+            if (i < 0) {
+                now += o
+            } else {
+                val mine = now[i]
+                val removed = mine.links.flatMap { it.removed }.toSet() + o.links.flatMap { it.removed }
+                now[i] = mine.copy(
+                    items = mine.items + o.items.filter { oi -> mine.items.none { it.key == oi.key } && oi.key !in removed },
+                    links = mine.links + o.links.filter { ol -> mine.links.none { it.id == ol.id } },
+                )
+            }
+        }
+        setPlaylists(now)
+    }
+
     // ── Playlists ───────────────────────────────────────────────────────────
 
     fun createPlaylist(name: String): LocalPlaylist {
