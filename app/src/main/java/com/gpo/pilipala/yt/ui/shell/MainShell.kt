@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -111,9 +112,27 @@ fun MainShell() {
     // The floating bar reports where it sits; main-tab lists marked with seamViewport
     // break their graphics into the halftone field around it (Yoin's dissolve).
     ProvideSeamBarField {
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-            // Lists clear the floating bar and, while a video is open, the mini player above it.
-            CompositionLocalProvider(LocalBottomBarInset provides floatingBarInset() + miniPlayerInset()) {
+        // The nav pill anchors the app's mini bar (as in the Bilibili shell).
+        val field = com.gpo.pilipala.ui.components.seam.LocalSeamBarField.current
+        val spotToken = remember { Any() }
+        LaunchedEffect(field) {
+            if (field == null) return@LaunchedEffect
+            androidx.compose.runtime.snapshotFlow { field.bounds.takeIf { field.attached && it.width > 0f } }
+                .collect { com.gpo.pilipala.feature.sources.NavSpot.place(spotToken, it) }
+        }
+        androidx.compose.runtime.DisposableEffect(spotToken) {
+            onDispose { com.gpo.pilipala.feature.sources.NavSpot.clear(spotToken) }
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .nestedScroll(com.gpo.pilipala.feature.sources.KeepPlaying.scroll),
+        ) {
+            // Lists clear the floating bar and, while a video is open, the mini bar above it.
+            CompositionLocalProvider(
+                LocalBottomBarInset provides floatingBarInset() + com.gpo.pilipala.feature.sources.miniBarInset(com.gpo.pilipala.core.source.VideoSource.YouTube),
+            ) {
                 val enterFade = YoinMotion.defaultEffectsSpec<Float>()
                 val enterScale = YoinMotion.defaultSpatialSpec<Float>()
                 val exitFade = YoinMotion.fastEffectsSpec<Float>()

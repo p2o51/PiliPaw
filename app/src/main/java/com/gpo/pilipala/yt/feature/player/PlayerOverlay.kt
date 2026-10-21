@@ -307,6 +307,10 @@ fun PlayerOverlayHost() {
                 }
             }
 
+            // Collapsed, the app's one mini bar (feature/sources/KeepPlaying.kt) stands for the player;
+            // this overlay only shows while it opens, is open, or is being dragged.
+            if (p <= 0.001f && !expanded && !dragging) return@BoxWithConstraints
+
             // Behind the full player: the page dims a little as it rises.
             if (p > 0.001f) {
                 Box(Modifier.fillMaxSize().graphicsLayer { alpha = p }.background(Color.Black.copy(alpha = 0.32f)))

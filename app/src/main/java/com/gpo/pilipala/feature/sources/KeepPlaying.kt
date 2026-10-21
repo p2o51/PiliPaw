@@ -106,8 +106,20 @@ object KeepPlaying {
  */
 object NavSpot {
     var bounds by mutableStateOf<Rect?>(null)
+        private set
+    private var owner: Any? = null
 
-    fun clear() {
+    /** A shell's nav pill moved (or appeared); the newest shell owns the spot. */
+    fun place(token: Any, rect: Rect?) {
+        if (rect == null && owner !== token) return
+        owner = if (rect == null) null else token
+        bounds = rect
+    }
+
+    /** A shell left: only its own spot goes (the next shell may already have placed its own). */
+    fun clear(token: Any) {
+        if (owner !== token) return
+        owner = null
         bounds = null
     }
 }
@@ -185,9 +197,9 @@ private fun currentPlaying(front: VideoSource): Playing? {
             close = { BiliKeeper.close() },
         )
     }
-    // The YouTube player outside its own part (in its part, its overlay is the bar).
-    val yt = Player.session
-    if (yt != null && front == VideoSource.Bilibili && KeepPlaying.on) {
+    // The YouTube player: always in its own part, and in the Bilibili part in 继续播放.
+    val yt = Player.session?.takeIf { !Player.expanded }
+    if (yt != null && (front == VideoSource.YouTube || KeepPlaying.on)) {
         var position by remember { mutableStateOf(0L) }
         LaunchedEffect(yt) {
             while (true) {
@@ -221,8 +233,8 @@ private val BarMaxWidth = 440.dp
 
 /** Extra bottom room a shell list needs while the bar sits above the nav bar (phones). */
 @Composable
-fun miniBarInset(): androidx.compose.ui.unit.Dp {
-    val showing = BiliKeeper.held != null || (Player.session != null && KeepPlaying.on)
+fun miniBarInset(front: VideoSource = VideoSource.Bilibili): androidx.compose.ui.unit.Dp {
+    val showing = BiliKeeper.held != null || (Player.session != null && (front == VideoSource.YouTube || KeepPlaying.on))
     return if (showing) BarHeight + Gap else 0.dp
 }
 

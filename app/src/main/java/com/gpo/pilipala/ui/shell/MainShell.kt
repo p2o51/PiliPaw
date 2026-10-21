@@ -116,8 +116,6 @@ fun MainShell() {
     val hidden by ShellSections.hiddenKey.state.collectAsState()
     val sections = remember(hidden) { ShellSections.visible(hidden) }
     FourTabsForMiniBar(sections)
-    // The nav bar's place on screen is the mini bar's anchor while this shell shows.
-    DisposableEffect(Unit) { onDispose { com.gpo.pilipala.feature.sources.NavSpot.clear() } }
     val tabs = remember(sections) { sections.map { it.tab } }
     var selectedOrdinal by rememberSaveable { mutableIntStateOf(ShellSection.Home.ordinal) }
     // A section switched off in settings while showing hands over to 首页.
@@ -154,10 +152,14 @@ fun MainShell() {
     ProvideSeamBarField {
         // The nav pill's rounded rectangle (as the seams know it) anchors the mini bar.
         val field = com.gpo.pilipala.ui.components.seam.LocalSeamBarField.current
+        val spotToken = remember { Any() }
         LaunchedEffect(field) {
             if (field == null) return@LaunchedEffect
             androidx.compose.runtime.snapshotFlow { field.bounds.takeIf { field.attached && it.width > 0f } }
-                .collect { com.gpo.pilipala.feature.sources.NavSpot.bounds = it }
+                .collect { com.gpo.pilipala.feature.sources.NavSpot.place(spotToken, it) }
+        }
+        androidx.compose.runtime.DisposableEffect(spotToken) {
+            onDispose { com.gpo.pilipala.feature.sources.NavSpot.clear(spotToken) }
         }
         Box(
             Modifier
