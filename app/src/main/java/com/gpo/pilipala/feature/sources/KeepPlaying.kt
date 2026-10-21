@@ -353,7 +353,7 @@ private fun BarContent(p: Playing, modifier: Modifier) {
                 .background(tone)
                 .clickable { p.seekBy(-15_000) },
             contentAlignment = Alignment.Center,
-        ) { Text("-15", style = MaterialTheme.typography.labelLarge, color = onTone) }
+        ) { SeekGlyph(forward = false, tint = onTone) }
         Box(
             Modifier
                 .weight(1f)
@@ -376,11 +376,17 @@ private fun BarContent(p: Playing, modifier: Modifier) {
                     },
             )
         }
+        // Paused, the block rounds into a circle (56 × 56): the play key stands apart.
+        val playCorner by androidx.compose.animation.core.animateDpAsState(
+            if (p.isPlaying) inner else outer,
+            YoinMotion.defaultSpatialSpec(),
+            label = "playCorner",
+        )
         Box(
             Modifier
                 .width(56.dp)
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(inner))
+                .clip(RoundedCornerShape(playCorner))
                 .background(MaterialTheme.colorScheme.primaryContainer)
                 .clickable(onClick = p.toggle),
             contentAlignment = Alignment.Center,
@@ -399,7 +405,26 @@ private fun BarContent(p: Playing, modifier: Modifier) {
                 .background(tone)
                 .clickable { p.seekBy(15_000) },
             contentAlignment = Alignment.Center,
-        ) { Text("+15", style = MaterialTheme.typography.labelLarge, color = onTone) }
+        ) { SeekGlyph(forward = true, tint = onTone) }
+    }
+}
+
+/** ±15 s: the circular arrow (mirrored for forward) with the 15 inside it. */
+@Composable
+private fun SeekGlyph(forward: Boolean, tint: androidx.compose.ui.graphics.Color) {
+    Box(contentAlignment = Alignment.Center) {
+        Icon(
+            com.gpo.yoin.symbols.PiliSymbols.Replay,
+            contentDescription = if (forward) "前进 15 秒" else "后退 15 秒",
+            tint = tint,
+            modifier = Modifier.size(30.dp).graphicsLayer { if (forward) scaleX = -1f },
+        )
+        Text(
+            "15",
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = androidx.compose.ui.unit.TextUnit(9f, androidx.compose.ui.unit.TextUnitType.Sp)),
+            color = tint,
+            modifier = Modifier.padding(top = 2.dp),
+        )
     }
 }
 
