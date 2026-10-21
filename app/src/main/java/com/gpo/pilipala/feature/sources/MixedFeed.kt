@@ -5,6 +5,7 @@ import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -61,7 +62,7 @@ internal data class MixedItem(val source: VideoSource, val card: VideoItem, val 
  * pages on its own; a page only shows what is newer than the oldest card either source still has
  * in hand, so a later page never has to slot a card in above ones already shown.
  */
-internal class MixedFeedViewModel : ViewModel() {
+internal class MixedFeedViewModel(private val only: VideoSource? = null) : ViewModel() {
     private class Lane(val source: VideoSource) {
         val buffer = ArrayList<MixedItem>()
         var cursor: String? = null
@@ -91,8 +92,8 @@ internal class MixedFeedViewModel : ViewModel() {
     private suspend fun load(reset: Boolean): Page<MixedItem> {
         if (reset) {
             lanes = buildList {
-                if (Sources.isOn(VideoSource.Bilibili) && Account.isLoggedIn) add(Lane(VideoSource.Bilibili))
-                if (Sources.isOn(VideoSource.YouTube)) add(Lane(VideoSource.YouTube))
+                if (only != VideoSource.YouTube && Sources.isOn(VideoSource.Bilibili) && Account.isLoggedIn) add(Lane(VideoSource.Bilibili))
+                if (only != VideoSource.Bilibili && Sources.isOn(VideoSource.YouTube)) add(Lane(VideoSource.YouTube))
             }
             biliBaseline = ""
         }
@@ -204,17 +205,43 @@ internal class MixedFeedViewModel : ViewModel() {
  * card hands its link to the YouTube part and brings it to the front.
  */
 @Composable
-internal fun MixedFollowTab(state: LazyGridState, reselect: Flow<Unit>, headerBehavior: TopAppBarScrollBehavior) {
-    val vm: MixedFeedViewModel = viewModel(key = "home_mixed") { MixedFeedViewModel() }
+internal fun MixedFollowTab(
+    state: LazyGridState,
+    reselect: Flow<Unit>,
+    headerBehavior: TopAppBarScrollBehavior,
+    only: VideoSource? = null,
+) {
+    val vm: MixedFeedViewModel = viewModel(key = "home_mixed_${only?.key ?: "all"}") { MixedFeedViewModel(only) }
+    val ytNav = com.gpo.pilipala.yt.navigation.LocalNavigator.current
     PagedGrid(
         pager = vm.feed,
         state = state,
         columns = homeVideoColumns(),
         key = { it.key },
         horizontalSpacing = 12.dp,
-        emptyLabel = "关注的人还没有新投稿",
+        emptyLabel = if (only == VideoSource.YouTube) "订阅的频道还没有新视频" else "关注的人还没有新投稿",
         reselect = reselect,
         headerBehavior = headerBehavior,
+        header = if (only == VideoSource.YouTube) {
+            {
+                item(key = "yt_actions", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                    // YouTube's own pages from Bilibili's Home: its search and its 我的.
+                    androidx.compose.foundation.layout.Row(
+                        androidx.compose.ui.Modifier.padding(bottom = 8.dp),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                    ) {
+                        androidx.compose.material3.FilledTonalButton(onClick = { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Search()) }) {
+                            androidx.compose.material3.Text("搜索 YouTube")
+                        }
+                        androidx.compose.material3.FilledTonalButton(onClick = { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Settings) }) {
+                            androidx.compose.material3.Text("订阅和 Mix")
+                        }
+                    }
+                }
+            }
+        } else {
+            null
+        },
     ) { _, item ->
         val url = item.ytUrl
         if (url == null) {
@@ -224,10 +251,8 @@ internal fun MixedFollowTab(state: LazyGridState, reselect: Flow<Unit>, headerBe
                 item.card,
                 feedItemMotion(),
                 onLongClick = {},
-                onClick = {
-                    Sources.show(VideoSource.YouTube)
-                    YtLinks.pending.trySend(url)
-                },
+                // Plays here, in the YouTube player over this page; nothing switches.
+                onClick = { com.gpo.pilipala.yt.feature.player.Player.play(url) },
             )
         }
     }

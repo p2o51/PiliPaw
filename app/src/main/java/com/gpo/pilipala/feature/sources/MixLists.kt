@@ -70,7 +70,6 @@ object BiliLinks {
     val pending = Channel<Route>(Channel.UNLIMITED)
 
     fun open(route: Route) {
-        Sources.show(VideoSource.Bilibili)
         pending.trySend(route)
     }
 }
@@ -104,7 +103,7 @@ object MixItems {
 
     private fun biliRoute(item: LibItem) = Route.Video(bvid = item.key.removePrefix("bili:"), cover = item.thumbnail, title = item.title)
 
-    /** For the YouTube part's list: a Bilibili row opens in the Bilibili part; null plays it here. */
+    /** For the YouTube part's list: a Bilibili row opens Bilibili's video page; null plays it in the YouTube player. */
     fun biliOpener(item: LibItem): (() -> Unit)? = if (isBili(item)) ({ BiliLinks.open(biliRoute(item)) }) else null
 
     /** From the Bilibili part: its own video page, or the YouTube part for a YouTube row. */
@@ -112,8 +111,7 @@ object MixItems {
         if (isBili(item)) {
             push(biliRoute(item))
         } else {
-            Sources.show(VideoSource.YouTube)
-            YtLinks.pending.trySend(item.url)
+            com.gpo.pilipala.yt.feature.player.Player.play(item.url, item.toVideo())
         }
     }
 }

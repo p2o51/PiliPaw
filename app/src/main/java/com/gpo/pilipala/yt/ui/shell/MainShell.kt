@@ -131,7 +131,7 @@ fun MainShell() {
         ) {
             // Lists clear the floating bar and, while a video is open, the mini bar above it.
             CompositionLocalProvider(
-                LocalBottomBarInset provides floatingBarInset() + com.gpo.pilipala.feature.sources.miniBarInset(com.gpo.pilipala.core.source.VideoSource.YouTube),
+                LocalBottomBarInset provides floatingBarInset() + com.gpo.pilipala.feature.sources.miniBarInset(),
             ) {
                 val enterFade = YoinMotion.defaultEffectsSpec<Float>()
                 val enterScale = YoinMotion.defaultSpatialSpec<Float>()

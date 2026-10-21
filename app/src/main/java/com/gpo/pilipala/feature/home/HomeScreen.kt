@@ -78,6 +78,7 @@ import kotlinx.coroutines.launch
 private data class HomeTab(val key: String, val label: String, val feedId: String? = null)
 
 private val MixedTab = HomeTab("follow", "关注")
+private val YouTubeTab = HomeTab("youtube", "YouTube")
 
 private val BuiltinTabs = listOf(
     HomeTab("live", "直播"),
@@ -97,7 +98,7 @@ fun HomeScreen() {
     val mixed = enabled.size > 1
     // Built-ins, then the user's feeds in their order.
     val tabs = remember(feeds, mixed) {
-        (if (mixed) listOf(MixedTab) else emptyList()) + BuiltinTabs + feeds.map { HomeTab(it.tabKey, it.name, it.id) }
+        (if (mixed) listOf(MixedTab, YouTubeTab) else emptyList()) + BuiltinTabs + feeds.map { HomeTab(it.tabKey, it.name, it.id) }
     }
     val labels = remember(tabs) { tabs.map { it.label } }
     val latestTabs by rememberUpdatedState(tabs)
@@ -114,6 +115,7 @@ fun HomeScreen() {
 
     // One scroll state per tab, hoisted so it survives the pager disposing pages.
     val mixedState = rememberLazyGridState()
+    val youtubeState = rememberLazyGridState()
     val liveState = rememberLazyGridState()
     val rcmdState = rememberLazyGridState()
     val hotState = rememberLazyGridState()
@@ -226,6 +228,9 @@ fun HomeScreen() {
             val feedId = tab.feedId
             when {
                 tab.key == MixedTab.key -> com.gpo.pilipala.feature.sources.MixedFollowTab(mixedState, reselect, behavior)
+                tab.key == YouTubeTab.key -> com.gpo.pilipala.feature.sources.MixedFollowTab(
+                    youtubeState, reselect, behavior, only = com.gpo.pilipala.core.source.VideoSource.YouTube,
+                )
                 feedId != null -> CustomFeedTab(feedId, feedStates.getOrPut(tab.key) { LazyGridState() }, reselect, behavior)
                 tab.key == "live" -> LiveTab(liveState, reselect, behavior)
                 tab.key == "rcmd" -> RcmdTab(rcmdState, reselect, behavior)
@@ -254,8 +259,7 @@ private fun HomeHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         com.gpo.pilipala.feature.sources.SourceDots(
-            current = com.gpo.pilipala.core.source.VideoSource.Bilibili,
-            onAccount = onAvatar,
+            singleFor = com.gpo.pilipala.core.source.VideoSource.Bilibili,
             single = { open -> HeaderAvatar(user, open) },
         )
         Spacer(Modifier.width(8.dp))

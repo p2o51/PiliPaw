@@ -179,7 +179,7 @@ fun PlayerOverlayHost() {
         return
     }
     val nav = LocalNavigator.current
-    val onShell = nav.backStack.lastOrNull() == Route.Main
+    val onShell = nav.backStack.lastOrNull().let { it == Route.Main || it == com.gpo.pilipala.navigation.Route.Main }
     val scope = rememberCoroutineScope()
     val progress = remember { Animatable(0f) }
     val spatial = YoinMotion.defaultSpatialSpec<Float>()

@@ -16,16 +16,23 @@ import com.gpo.pilipala.yt.navigation.transition.PageTransitions
  * a push freezes the page it covers (what a later back reveals); a pop plays the same
  * commit ride as a 3-button back and removes the entry only when it lands.
  */
-class Navigator(internal val backStack: NavBackStack<NavKey>, private val context: Context) {
+class Navigator(
+    internal val backStack: NavBackStack<NavKey>,
+    private val context: Context,
+    /** The app's one navigator: YouTube pages push onto the same stack as Bilibili's. */
+    private val host: com.gpo.pilipala.navigation.Navigator? = null,
+) {
     internal var transitions: PageTransitions? = null
 
     fun push(route: Route) {
+        host?.let { it.pushKey(route); return }
         transitions?.beforePush(route)
         backStack.add(route)
     }
 
     /** True when there was a page to leave; the entry is removed once the close motion lands. */
     fun pop(): Boolean {
+        host?.let { return it.pop() }
         if (backStack.size <= 1) return false
         val t = transitions
         if (t != null) t.requestPop() else backStack.removeAt(backStack.lastIndex)
@@ -33,12 +40,14 @@ class Navigator(internal val backStack: NavBackStack<NavKey>, private val contex
     }
 
     fun replace(route: Route) {
+        host?.let { it.replaceKey(route); return }
         transitions?.beforeReplace(route)
         if (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
         backStack.add(route)
     }
 
     fun popToMain() {
+        host?.let { it.popToMain(); return }
         while (backStack.size > 2) backStack.removeAt(backStack.lastIndex - 1)
         pop()
     }

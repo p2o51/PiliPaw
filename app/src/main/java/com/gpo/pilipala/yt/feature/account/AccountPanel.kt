@@ -52,12 +52,7 @@ private const val SignInGain = "登录后，首页是你的订阅和推荐，还
 @Composable
 fun ProfileButton(size: Dp = 40.dp, modifier: Modifier = Modifier) {
     var open by remember { mutableStateOf(false) }
-    com.gpo.pilipala.feature.sources.SourceDots(
-        current = com.gpo.pilipala.core.source.VideoSource.YouTube,
-        onAccount = { open = true },
-        modifier = modifier,
-        size = size,
-    )
+    com.gpo.pilipala.feature.sources.SourceDots(modifier = modifier, size = size)
     if (open) AccountPanel(onDismiss = { open = false })
 }
 

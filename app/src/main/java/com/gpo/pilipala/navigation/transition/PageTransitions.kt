@@ -327,9 +327,9 @@ class PageTransitions internal constructor(
      * Before [route] is pushed: freeze the page about to be covered (its
      * pixels are what a later back reveals) and pick the forward motion.
      */
-    internal fun beforePush(route: Route) {
+    internal fun beforePush(route: androidx.navigation3.runtime.NavKey) {
         val backdrop = captureTop()
-        val key = route.sharedKey()
+        val key = (route as? Route)?.sharedKey()
         val source = key?.let { sourceBounds(it) }
         val look = key?.let { sources[it] }
         val container = source != null && !source.isEmpty &&
@@ -350,7 +350,7 @@ class PageTransitions internal constructor(
     }
 
     /** A replace keeps the page beneath; the new top fades in on the forward mirror over the old one. */
-    internal fun beforeReplace(route: Route) {
+    internal fun beforeReplace(route: androidx.navigation3.runtime.NavKey) {
         val backdrop = captureTop()
         pendingEnter = backdrop?.let { PageEnter(route.toString(), false, it, Rect.Zero) }
         sceneMirror = backdrop == null

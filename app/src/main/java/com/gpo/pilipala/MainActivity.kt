@@ -71,7 +71,6 @@ import androidx.compose.runtime.getValue
 import com.gpo.pilipala.core.source.Sources
 import com.gpo.pilipala.core.source.VideoSource
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.pilipala.yt.YoutubeRoot
 import com.gpo.pilipala.yt.YtApp
 import com.gpo.pilipala.yt.YtLinks
 
@@ -134,36 +133,18 @@ class MainActivity : ComponentActivity() {
         }
         handleIntent(intent)
         setContent {
-            val front by Sources.front.collectAsState()
             val enabled by Sources.enabled.collectAsState()
             LaunchedEffect(enabled) { if (VideoSource.YouTube in enabled) YtApp.activate() }
-            // Leaving the YouTube part: its player has no screen any more, so it pauses. (The other
-            // way round needs nothing: either player starting takes audio focus from the other.)
-            // In 继续播放 it plays on, in the mini bar.
-            LaunchedEffect(front) {
-                if (front != VideoSource.YouTube && !com.gpo.pilipala.feature.sources.KeepPlaying.on) {
-                    com.gpo.pilipala.yt.feature.player.Player.exo.pause()
-                }
-            }
-            val enter = YoinMotion.defaultEffectsSpec<Float>()
-            val exit = YoinMotion.fastEffectsSpec<Float>()
-            // One part of the app at a time: the source on the dots' front (Home does not mix them yet).
             androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
-                AnimatedContent(
-                    targetState = front,
-                    transitionSpec = { fadeIn(enter).togetherWith(fadeOut(exit)) },
-                    label = "source",
-                ) { source ->
-                    if (source == VideoSource.YouTube) YoutubeRoot(this@MainActivity) else BiliRoot()
-                }
-                // 继续播放's bar, over both parts (and above every page).
-                PiliTheme { com.gpo.pilipala.feature.sources.MiniBarHost(front) }
+                AppRoot()
+                // 继续播放's bar, above every page, for either source's player.
+                PiliTheme { com.gpo.pilipala.feature.sources.MiniBarHost() }
             }
         }
     }
 
     @Composable
-    private fun BiliRoot() {
+    private fun AppRoot() {
             val handoff = checkNotNull(handoff)
             PiliTheme {
                 val snackbar = remember { SnackbarHostState() }
@@ -180,8 +161,11 @@ class MainActivity : ComponentActivity() {
                         navigator.push(link.route)
                     }
                 }
-                // A Bilibili page asked for from the YouTube part (a Mix list's row).
+                // A Bilibili page asked for from outside a page (the mini bar, a Mix row).
                 LaunchedEffect(Unit) { for (route in com.gpo.pilipala.feature.sources.BiliLinks.pending) navigator.push(route) }
+                // YouTube's pages go on the same stack: its navigator hands every push to this one.
+                val ytNavigator = remember(backStack) { com.gpo.pilipala.yt.navigation.Navigator(backStack, this@MainActivity, host = navigator) }
+                LaunchedEffect(Unit) { for (url in YtLinks.pending) ytNavigator.openUrl(url) }
                 LaunchedEffect(Unit) {
                     for (id in feedOpens) {
                         // Back to the shell's 首页, which switches to the feed's tab.
@@ -196,6 +180,7 @@ class MainActivity : ComponentActivity() {
                     LocalSnackbarHost provides snackbar,
                     com.gpo.pilipala.ui.components.LocalToastScope provides rootScope,
                     LocalSplashHandoff provides handoff,
+                    com.gpo.pilipala.yt.navigation.LocalNavigator provides ytNavigator,
                 ) {
                     // The picture viewer: its own window above every page, sheet and dialog.
                     ImageViewerHost {
@@ -314,10 +299,7 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
         // The YouTube player's notification, a YouTube link or a shared one: the YouTube part.
-        if (YtLinks.handleResume(intent)) {
-            Sources.show(VideoSource.YouTube)
-            return
-        }
+        if (YtLinks.handleResume(intent)) return
         val ytLink = when (intent.action) {
             Intent.ACTION_SEND -> YtLinks.firstLink(intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty())
             Intent.ACTION_VIEW -> intent.dataString?.takeIf(YtLinks::isYoutube)
@@ -325,12 +307,9 @@ class MainActivity : ComponentActivity() {
         }
         if (ytLink != null) {
             handoff?.divert()
-            Sources.show(VideoSource.YouTube)
             YtLinks.pending.trySend(ytLink)
             return
         }
-        // Anything else belongs to Bilibili.
-        if (intent.action != Intent.ACTION_MAIN && intent.data?.scheme != GlanceActionScheme) Sources.show(VideoSource.Bilibili)
         // The feed widget's header: that feed's tab on the home page.
         intent.getStringExtra(FeedWidget.ExtraFeedId)?.takeIf { it.isNotEmpty() }?.let { id ->
             intent.removeExtra(FeedWidget.ExtraFeedId)

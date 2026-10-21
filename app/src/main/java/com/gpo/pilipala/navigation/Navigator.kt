@@ -18,7 +18,10 @@ import com.gpo.pilipala.navigation.transition.PageTransitions
 class Navigator(internal val backStack: NavBackStack<NavKey>) {
     internal var transitions: PageTransitions? = null
 
-    fun push(route: Route) {
+    fun push(route: Route) = pushKey(route)
+
+    /** Any page of the app, the YouTube part's included (yt.navigation.Route). */
+    fun pushKey(route: NavKey) {
         transitions?.beforePush(route)
         backStack.add(route)
     }
@@ -31,7 +34,9 @@ class Navigator(internal val backStack: NavBackStack<NavKey>) {
         return true
     }
 
-    fun replace(route: Route) {
+    fun replace(route: Route) = replaceKey(route)
+
+    fun replaceKey(route: NavKey) {
         transitions?.beforeReplace(route)
         if (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
         backStack.add(route)

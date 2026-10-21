@@ -52,29 +52,3 @@ object YtLinks {
         return true
     }
 }
-
-/** The YouTube part of the app: PipePaw's theme, navigation and player over the shared shell. */
-@Composable
-fun YoutubeRoot(activity: Activity) {
-    PawTheme {
-        val snackbar = remember { SnackbarHostState() }
-        val rootScope = rememberCoroutineScope()
-        val backStack = rememberNavBackStack(Route.Main)
-        val navigator = remember(backStack) { Navigator(backStack, activity) }
-        LaunchedEffect(Unit) { for (url in YtLinks.pending) navigator.openUrl(url) }
-        // The single owner of the bar icon colour: pages' wishes, else the app's light/dark.
-        ApplySystemBars(activity.window, LocalPawDark.current)
-        CompositionLocalProvider(
-            LocalSnackbarHost provides snackbar,
-            LocalToastScope provides rootScope,
-        ) {
-            Box(Modifier.fillMaxSize()) {
-                AppNavHost(navigator)
-                SnackbarHost(
-                    snackbar,
-                    Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp),
-                )
-            }
-        }
-    }
-}

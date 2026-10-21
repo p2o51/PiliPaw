@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.source.Sources
+import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.core.source.VideoSource
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.rememberToast
@@ -94,17 +95,19 @@ private fun accountOf(source: VideoSource): SourceAccount = when (source) {
  * avatar; two sit side by side, overlapping. Tapping opens [SourcesSheet]; the ticks it leaves
  * take effect when it closes, and Home follows.
  *
- * [current]: the source whose part of the app is on screen; its row gets [onAccount]
- * (sign in, or the account's own page).
+ * [single]: with only [singleFor] ticked, that shell's own avatar button stands in for the dots
+ * (PiliPaw's lands the launch animation in it) and opens the same panel.
  */
 @Composable
 fun SourceDots(
-    current: VideoSource,
-    onAccount: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 40.dp,
+    singleFor: VideoSource? = null,
     single: (@Composable (onClick: () -> Unit) -> Unit)? = null,
 ) {
+    val biliNav = com.gpo.pilipala.navigation.LocalNavigator.current
+    var ytAccount by remember { mutableStateOf(false) }
+    if (ytAccount) com.gpo.pilipala.yt.feature.account.AccountPanel(onDismiss = { ytAccount = false })
     val enabled by Sources.enabled.collectAsState()
     var open by remember { mutableStateOf(false) }
     // Where the panel grows from (and shrinks back to): the dots' centre on screen.
@@ -114,7 +117,7 @@ fun SourceDots(
     }
     // Only this part's own source ticked: the part keeps its own avatar button (PiliPaw's lands
     // the launch animation in it), which opens the same panel.
-    if (single != null && enabled == setOf(current)) Box(track) { single { open = true } } else IconButton(
+    if (single != null && singleFor != null && enabled == setOf(singleFor)) Box(track) { single { open = true } } else IconButton(
         onClick = { open = true },
         shapes = IconButtonDefaults.shapes(),
         modifier = modifier.then(track).size(size + 8.dp),
@@ -144,10 +147,15 @@ fun SourceDots(
     if (open) {
         SourcesPanel(
             origin = origin,
-            current = current,
-            onAccount = {
+            onAccount = { source ->
                 open = false
-                onAccount()
+                when (source) {
+                    VideoSource.Bilibili -> {
+                        val u = Account.user.value
+                        biliNav.push(if (u != null) Route.Member(u.mid, u.face, u.name) else Route.Login)
+                    }
+                    VideoSource.YouTube -> ytAccount = true
+                }
             },
             onDismiss = { open = false },
         )
@@ -178,16 +186,14 @@ private fun SourceDot(source: VideoSource, size: Dp, modifier: Modifier = Modifi
 
 /**
  * The tick page, a card in the middle of the screen that grows out of the dots and shrinks back
- * into them. The round tick switches a source on or off; with two ticked, tapping a row picks the
- * one on screen (until Home mixes them). Changes are kept here and handed to [Sources] once the
- * card is gone, so Home refreshes once, on the way back. The last ticked source stays on.
+ * into them. The sources are peers: a row (or its round tick) switches one on or off, and Home
+ * shows what is ticked. Changes are handed to [Sources] once the card is gone, so Home refreshes
+ * once, on the way back. The last ticked source stays on.
  */
 @Composable
-private fun SourcesPanel(origin: Offset, current: VideoSource, onAccount: () -> Unit, onDismiss: () -> Unit) {
+private fun SourcesPanel(origin: Offset, onAccount: (VideoSource) -> Unit, onDismiss: () -> Unit) {
     val savedTicks by Sources.enabled.collectAsState()
-    val savedFront by Sources.front.collectAsState()
     var ticks by remember { mutableStateOf(savedTicks) }
-    var front by remember { mutableStateOf(savedFront) }
     val toast = rememberToast()
     val scope = rememberCoroutineScope()
     val progress = remember { Animatable(0f) }
@@ -200,7 +206,7 @@ private fun SourcesPanel(origin: Offset, current: VideoSource, onAccount: () -> 
         leaving = true
         scope.launch {
             progress.animateTo(0f, fastSpatial)
-            Sources.apply(ticks, front)
+            Sources.apply(ticks)
             then()
         }
     }
@@ -256,26 +262,21 @@ private fun SourcesPanel(origin: Offset, current: VideoSource, onAccount: () -> 
                 }
                 VideoSource.entries.forEach { source ->
                     val on = source in ticks
+                    val tick = {
+                        when {
+                            on && ticks.size == 1 -> toast("至少留一个")
+                            on -> ticks = ticks - source
+                            else -> ticks = ticks + source
+                        }
+                    }
+                    // Peers: a row only ticks; each account is managed from its own button.
                     SourceRow(
                         source = source,
                         ticked = on,
-                        showing = on && ticks.size > 1 && front == source,
-                        onTick = {
-                            when {
-                                on && ticks.size == 1 -> toast("至少留一个")
-                                on -> {
-                                    ticks = ticks - source
-                                    if (front == source) front = ticks.first()
-                                }
-                                // Ticked on: Home gains it (the mixed 关注); the part on screen stays.
-                                else -> ticks = ticks + source
-                            }
-                        },
-                        onRow = {
-                            if (!on) ticks = ticks + source
-                            front = source
-                        },
-                        onAccount = if (source == current) ({ leave(onAccount) }) else null,
+                        showing = false,
+                        onTick = tick,
+                        onRow = tick,
+                        onAccount = { leave { onAccount(source) } },
                     )
                 }
             }
@@ -294,7 +295,7 @@ private fun SourceRow(
 ) {
     val account = accountOf(source)
     val bg by animateColorAsState(
-        if (showing) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        if (ticked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
         YoinMotion.defaultEffectsSpec(),
         label = "rowBg",
     )
@@ -317,7 +318,7 @@ private fun SourceRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                if (showing) "${source.label} · 当前页面" else source.label,
+                source.label,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

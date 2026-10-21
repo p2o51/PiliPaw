@@ -8,6 +8,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
@@ -155,15 +157,30 @@ fun AppNavHost(navigator: Navigator) {
             BeneathPage(transitions, backdrop, over = true)
             HeroOverlay(transitions)
             BackInputBlocker(transitions)
+            // The YouTube player floats over every page of the one stack (it is not a route).
+            com.gpo.pilipala.yt.feature.player.PlayerOverlayHost()
         }
     }
+}
+
+/**
+ * The shell under every page: Bilibili's when it is ticked (both ticked: Bilibili's sections, Home
+ * holding both sources side by side), YouTube's when it is ticked alone.
+ */
+@androidx.compose.runtime.Composable
+private fun HomeShell() {
+    val enabled by com.gpo.pilipala.core.source.Sources.enabled.collectAsState()
+    if (com.gpo.pilipala.core.source.VideoSource.Bilibili in enabled) MainShell() else com.gpo.pilipala.yt.ui.shell.MainShell()
 }
 
 /** The finger travel of a whole back gesture on a wide window (a phone needs its own width). */
 private val GestureSpanMax = 600.dp
 
 private val appEntryProvider = entryProvider<NavKey> {
-    entry<Route.Main> { MainShell() }
+    entry<Route.Main> { HomeShell() }
+    // YouTube's own shell key, should one ever be on the stack (a link from an older state).
+    entry<com.gpo.pilipala.yt.navigation.Route.Main> { HomeShell() }
+    with(com.gpo.pilipala.yt.navigation.AppNavHostPages) { youtubePages() }
     entry<Route.Video> { VideoDetailScreen(it) }
     entry<Route.Bangumi> { BangumiDetailScreen(it) }
     entry<Route.LiveRoom> { LiveRoomScreen(it) }

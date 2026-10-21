@@ -180,9 +180,10 @@ private class Playing(
 )
 
 @Composable
-private fun currentPlaying(front: VideoSource): Playing? {
-    // In the YouTube part with its own player up, its overlay is the bar.
-    val bili = BiliKeeper.held?.takeIf { front == VideoSource.Bilibili || Player.session == null }
+private fun currentPlaying(): Playing? {
+    // Both kept: the one playing (starting either pauses the other).
+    val ytUp = Player.session != null && !Player.expanded
+    val bili = BiliKeeper.held?.takeIf { it.isPlaying || !ytUp || !Player.isPlaying }
     if (bili != null) {
         val t = bili.target
         return Playing(
@@ -197,9 +198,9 @@ private fun currentPlaying(front: VideoSource): Playing? {
             close = { BiliKeeper.close() },
         )
     }
-    // The YouTube player: always in its own part, and in the Bilibili part in 继续播放.
+    // The YouTube player collapsed: this bar is its mini player.
     val yt = Player.session?.takeIf { !Player.expanded }
-    if (yt != null && (front == VideoSource.YouTube || KeepPlaying.on)) {
+    if (yt != null) {
         var position by remember { mutableStateOf(0L) }
         LaunchedEffect(yt) {
             while (true) {
@@ -215,10 +216,7 @@ private fun currentPlaying(front: VideoSource): Playing? {
             progress = if (Player.durationMs > 0) position.toFloat() / Player.durationMs else 0f,
             toggle = { Player.toggle() },
             seekBy = { d -> Player.exo.seekTo((Player.exo.currentPosition + d).coerceAtLeast(0)) },
-            open = {
-                Sources.show(VideoSource.YouTube)
-                Player.expanded = true
-            },
+            open = { Player.expanded = true },
             close = { Player.close() },
         )
     }
@@ -233,8 +231,8 @@ private val BarMaxWidth = 440.dp
 
 /** Extra bottom room a shell list needs while the bar sits above the nav bar (phones). */
 @Composable
-fun miniBarInset(front: VideoSource = VideoSource.Bilibili): androidx.compose.ui.unit.Dp {
-    val showing = BiliKeeper.held != null || (Player.session != null && (front == VideoSource.YouTube || KeepPlaying.on))
+fun miniBarInset(): androidx.compose.ui.unit.Dp {
+    val showing = BiliKeeper.held != null || Player.session != null
     return if (showing) BarHeight + Gap else 0.dp
 }
 
@@ -245,8 +243,8 @@ fun miniBarInset(front: VideoSource = VideoSource.Bilibili): androidx.compose.ui
  * next to the nav bar. Tapping the picture (or the circle) reopens the video.
  */
 @Composable
-fun MiniBarHost(front: VideoSource) {
-    val playing = currentPlaying(front)
+fun MiniBarHost() {
+    val playing = currentPlaying()
     if (KeepPlaying.asking) KeepAskDialog()
     val nav = NavSpot.bounds
     val density = LocalDensity.current

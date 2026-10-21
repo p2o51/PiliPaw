@@ -135,6 +135,18 @@ fun AppNavHost(navigator: Navigator) {
 
 private val appEntryProvider = entryProvider<NavKey> {
     entry<Route.Main> { MainShell() }
+    ytPages()
+}
+
+/**
+ * The YouTube part's pushed pages, for any host: its own (above) or the app's one stack
+ * (navigation/AppNavHost.kt), where they sit beside Bilibili's pages.
+ */
+object AppNavHostPages {
+    fun androidx.navigation3.runtime.EntryProviderScope<NavKey>.youtubePages() = ytPages()
+}
+
+private fun androidx.navigation3.runtime.EntryProviderScope<NavKey>.ytPages() {
     entry<Route.Search> { SearchScreen(it) }
     entry<Route.SearchResult> { SearchResultScreen(it) }
     entry<Route.Channel> { ChannelScreen(it) }

@@ -134,7 +134,10 @@ internal class MineViewModel : ViewModel() {
     }
 }
 
-private data class MineTile(val label: String, val icon: ImageVector, val route: Route)
+private data class MineTile(val label: String, val icon: ImageVector, val route: androidx.navigation3.runtime.NavKey)
+
+/** YouTube's own 我的 (account, subscriptions, history, Mix, its settings), once YouTube is ticked. */
+private val YouTubeTile = MineTile("YouTube", YoinSymbols.PlayFilled, com.gpo.pilipala.yt.navigation.Route.Settings)
 
 private val MineTiles = listOf(
     MineTile("历史记录", PiliSymbols.History, Route.History),
@@ -394,7 +397,9 @@ private fun TileGrid(columns: Int) {
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        MineTiles.chunked(columns).forEach { row ->
+        val sources by com.gpo.pilipala.core.source.Sources.enabled.collectAsState()
+        val tiles = if (com.gpo.pilipala.core.source.VideoSource.YouTube in sources) MineTiles + YouTubeTile else MineTiles
+        tiles.chunked(columns).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { t -> Tile(t, Modifier.weight(1f)) }
                 // A lone last tile spans the row (7 tiles over 3 columns) instead of sitting by two gaps.
@@ -419,7 +424,7 @@ private fun Tile(tile: MineTile, modifier: Modifier) {
         onClick = {
             haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
             val r = tile.route
-            nav.push(
+            nav.pushKey(
                 when (r) {
                     is Route.Subscription -> Route.Subscription(BiliClient.mid)
                     is Route.Fav -> Route.Fav(BiliClient.mid)
