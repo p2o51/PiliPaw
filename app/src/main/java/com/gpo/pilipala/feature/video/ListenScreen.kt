@@ -172,6 +172,8 @@ internal fun ListenScreen(
                 onSearch = { sheet = ListenSheet.Search },
             )
         } else {
+            val pageH = maxHeight
+            val pageW = maxWidth
             // Portrait: the lyrics are the page, full width between the title and the
             // transport, large, with no card; the three ways on sit on the bottom edge.
             Column(
@@ -181,12 +183,39 @@ internal fun ListenScreen(
                     .padding(top = 8.dp, bottom = 2.dp),
             ) {
                 val fl = flight
+                // 展开歌词 folds the cover and title away and gives the lyrics the page.
+                var expanded by rememberSaveable { mutableStateOf(false) }
+                androidx.activity.compose.BackHandler(enabled = expanded) { expanded = false }
+                // The cover is held to about a quarter of the height: a tall phone shows it full
+                // width, a tablet in portrait gets a smaller card with the title and 点赞 beside it.
+                val coverMaxH = pageH * 0.22f
+                val contentW = pageW - 48.dp
+                val coverW = minOf(contentW, coverMaxH * (16f / 9f))
+                val side = contentW - coverW >= 160.dp
                 Column(Modifier.padding(horizontal = 24.dp)) {
                     Box(Modifier.listenReveal(fl, 0.3f)) { bar() }
-                    Spacer(Modifier.height(16.dp))
-                    ListenCover(cover, Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(20.dp))
-                    Box(Modifier.listenReveal(fl, 0.4f)) { TitleRow(vm, title, subtitle, gate) }
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = !expanded,
+                        enter = androidx.compose.animation.expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
+                        exit = androidx.compose.animation.shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
+                    ) {
+                        Column {
+                            Spacer(Modifier.height(16.dp))
+                            if (side) {
+                                Row(Modifier.fillMaxWidth().height(coverW * (9f / 16f))) {
+                                    ListenCover(cover, Modifier.width(coverW))
+                                    Spacer(Modifier.width(20.dp))
+                                    Box(Modifier.weight(1f).fillMaxHeight().listenReveal(fl, 0.4f)) {
+                                        SideTitle(vm, title, subtitle, gate)
+                                    }
+                                }
+                            } else {
+                                ListenCover(cover, Modifier.fillMaxWidth())
+                                Spacer(Modifier.height(20.dp))
+                                Box(Modifier.listenReveal(fl, 0.4f)) { TitleRow(vm, title, subtitle, gate) }
+                            }
+                        }
+                    }
                 }
                 BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).listenReveal(fl, 0.5f)) {
                     ImmersiveLyrics(
@@ -199,7 +228,13 @@ internal fun ListenScreen(
                     )
                 }
                 Column(Modifier.padding(horizontal = 24.dp).listenReveal(fl, 0.58f)) {
-                    ListenTransport(ctrl, controlSize = 56.dp, horizontalPadding = 0.dp)
+                    ListenTransport(
+                        ctrl,
+                        controlSize = 56.dp,
+                        horizontalPadding = 0.dp,
+                        lyricsExpanded = expanded,
+                        onExpandLyrics = { expanded = !expanded },
+                    )
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         if (queue != null) {
@@ -369,8 +404,6 @@ private fun ListenCover(cover: String, modifier: Modifier) {
 
 @Composable
 private fun TitleRow(vm: VideoDetailViewModel, title: String, subtitle: String, gate: (() -> Unit) -> Unit) {
-    val haptics = LocalHapticFeedback.current
-    val liked = vm.actions.liked
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -380,6 +413,15 @@ private fun TitleRow(vm: VideoDetailViewModel, title: String, subtitle: String, 
             }
         }
         Spacer(Modifier.width(12.dp))
+        LikeButton(vm, gate)
+    }
+}
+
+@Composable
+private fun LikeButton(vm: VideoDetailViewModel, gate: (() -> Unit) -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    val liked = vm.actions.liked
+    run {
         val scheme = MaterialTheme.colorScheme
         val container by animateColorAsState(if (liked) scheme.primary else scheme.secondaryContainer, YoinMotion.defaultEffectsSpec(), label = "listenLike")
         val content by animateColorAsState(if (liked) scheme.onPrimary else scheme.onSecondaryContainer, YoinMotion.defaultEffectsSpec(), label = "listenLikeContent")
@@ -394,6 +436,20 @@ private fun TitleRow(vm: VideoDetailViewModel, title: String, subtitle: String, 
         ) {
             Icon(if (liked) PiliSymbols.ThumbUpFilled else PiliSymbols.ThumbUp, contentDescription = if (liked) "取消点赞" else "点赞")
         }
+    }
+}
+
+/** Beside a held-down cover: the title on top, the UP under it, 点赞 at the bottom. */
+@Composable
+private fun SideTitle(vm: VideoDetailViewModel, title: String, subtitle: String, gate: (() -> Unit) -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        if (subtitle.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.weight(1f))
+        LikeButton(vm, gate)
     }
 }
 

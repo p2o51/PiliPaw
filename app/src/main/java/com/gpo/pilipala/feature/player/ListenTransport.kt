@@ -78,6 +78,8 @@ internal fun ListenTransport(
     controlSize: Dp,
     modifier: Modifier = Modifier,
     horizontalPadding: Dp = 16.dp,
+    lyricsExpanded: Boolean = false,
+    onExpandLyrics: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
@@ -138,6 +140,35 @@ internal fun ListenTransport(
                 Icon(YoinSymbols.SkipNextFilled, contentDescription = "下一个", modifier = Modifier.size(iconSize))
             }
             Spacer(Modifier.weight(1f))
+            // Yoin's tabletop pair: 展开歌词 beside the play-mode key, one small group (a cast
+            // button would join them here).
+            if (onExpandLyrics != null) {
+                val expandContainer by animateColorAsState(
+                    if (lyricsExpanded) scheme.primary else scheme.tertiaryContainer,
+                    YoinMotion.defaultEffectsSpec(),
+                    label = "listenExpand",
+                )
+                val expandContent by animateColorAsState(
+                    if (lyricsExpanded) scheme.onPrimary else scheme.onTertiaryContainer,
+                    YoinMotion.defaultEffectsSpec(),
+                    label = "listenExpandContent",
+                )
+                FilledIconButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onExpandLyrics()
+                    },
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = expandContainer, contentColor = expandContent),
+                    modifier = Modifier.size(controlSize),
+                ) {
+                    Icon(
+                        if (lyricsExpanded) YoinSymbols.UnfoldLess else YoinSymbols.UnfoldMore,
+                        contentDescription = if (lyricsExpanded) "收起歌词" else "展开歌词",
+                        modifier = Modifier.size(iconSize),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+            }
             ListenPlayModeButton(ctrl, controlSize, iconSize)
         }
         Row(
