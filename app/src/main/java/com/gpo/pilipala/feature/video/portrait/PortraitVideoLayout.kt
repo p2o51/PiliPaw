@@ -129,10 +129,12 @@ internal fun PortraitVideoLayout(
     var mode by remember { mutableStateOf(PortraitMode.Phone) }
 
     ImmersiveSystemBars()
-    // Douyin loops a video; restored when the layout goes away.
+    // Douyin loops a video; restored when the layout goes away. Not while a Mix plays through:
+    // the next video follows instead.
     DisposableEffect(ctrl) {
         val wasLooping = ctrl?.loop ?: false
-        ctrl?.changeLoop(true)
+        val mixing = com.gpo.pilipala.feature.sources.MixPlayback.current?.let { com.gpo.pilipala.feature.sources.MixItems.isBili(it) } == true
+        if (!mixing) ctrl?.changeLoop(true)
         onDispose { ctrl?.changeLoop(wasLooping) }
     }
     // The player joins only once the page has landed (a SurfaceView ignores the entry

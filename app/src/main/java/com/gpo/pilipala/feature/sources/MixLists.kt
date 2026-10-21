@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -264,6 +265,13 @@ fun MixListScreen(route: Route.MixList) {
             "${l.items.size} 个视频 · 哔哩哔哩 $bili · YouTube ${l.items.size - bili}"
         },
         actions = {
+            if (list != null && list.items.isNotEmpty()) {
+                // Plays the whole Mix, Bilibili and YouTube one after another (MixPlayback).
+                androidx.compose.material3.FilledTonalButton(onClick = { MixPlayback.start(list.id, 0) }) {
+                    Icon(YoinSymbols.PlayFilled, null, Modifier.size(18.dp))
+                    Text(" 全部播放")
+                }
+            }
             if (list != null) TextButton(onClick = { deleting = true }) { Text("删除") }
         },
     ) { padding ->
@@ -277,11 +285,13 @@ fun MixListScreen(route: Route.MixList) {
             }
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp)) {
-                items(list.items, key = { it.key }) { item ->
+                itemsIndexed(list.items, key = { _, it -> it.key }) { i, item ->
                     MixRow(
                         item,
                         Modifier.animateItem(),
-                        onClick = { MixItems.open(item) { r -> nav.push(r) } },
+                        playing = MixPlayback.listId == list.id && MixPlayback.index == i,
+                        // From here on through the rest of the Mix.
+                        onClick = { MixPlayback.start(list.id, i) },
                         onLongClick = { menu = item },
                     )
                 }
@@ -317,7 +327,7 @@ fun MixListScreen(route: Route.MixList) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MixRow(item: LibItem, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun MixRow(item: LibItem, modifier: Modifier, playing: Boolean = false, onClick: () -> Unit, onLongClick: () -> Unit) {
     val source = MixItems.source(item)
     Row(
         modifier
@@ -348,7 +358,11 @@ private fun MixRow(item: LibItem, modifier: Modifier, onClick: () -> Unit, onLon
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(source.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            Text(
+                if (playing) "${source.label} · 正在播放" else source.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+            )
         }
     }
 }

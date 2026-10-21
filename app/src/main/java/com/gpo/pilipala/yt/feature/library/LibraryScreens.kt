@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -147,6 +148,9 @@ fun LocalPlaylistScreen(route: Route.LocalPlaylist) {
     Column(Modifier.fillMaxSize()) {
         PawTopBar(title = p?.name ?: "Mix", onBack = { nav.pop() }, actions = {
             if (p != null) {
+                if (p.items.isNotEmpty()) {
+                    IconButton(onClick = { com.gpo.pilipala.feature.sources.MixPlayback.start(p.id, 0) }) { Icon(YoinSymbols.PlayFilled, "全部播放") }
+                }
                 IconButton(onClick = { rename = true }) { Icon(YoinSymbols.Edit, "重命名") }
                 IconButton(onClick = { delete = true }) { Icon(YoinSymbols.Delete, "删除这个 Mix") }
             }
@@ -155,14 +159,15 @@ fun LocalPlaylistScreen(route: Route.LocalPlaylist) {
             EmptyState("还没有视频", icon = YoinSymbols.Library)
         } else {
             LazyColumn(Modifier.fillMaxSize().readingWidth(), contentPadding = PaddingValues(bottom = miniPlayerInset() + 24.dp)) {
-                items(p.items, key = { it.key }) { item ->
+                itemsIndexed(p.items, key = { _, it -> it.key }) { i, item ->
                     VideoRow(
                         item.toVideo(),
                         onLongClick = {
                             Library.removeFromPlaylist(p.id, item.key)
                             toast("已移除")
                         },
-                        onClick = com.gpo.pilipala.feature.sources.MixItems.biliOpener(item),
+                        // From here on through the rest of the Mix, either source.
+                        onClick = { com.gpo.pilipala.feature.sources.MixPlayback.start(p.id, i) },
                     )
                 }
             }
