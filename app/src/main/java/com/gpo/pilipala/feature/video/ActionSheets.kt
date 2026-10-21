@@ -230,8 +230,18 @@ private fun CoinFace(tint: Color, rim: Color, modifier: Modifier) {
 
 /** 收藏: my folders with checkboxes; only the changed folders are sent. */
 @Composable
-internal fun FavSheet(actions: ArchiveActions, onDismiss: () -> Unit) {
+internal fun FavSheet(
+    actions: ArchiveActions,
+    onDismiss: () -> Unit,
+    mixItem: com.gpo.pilipala.yt.feature.library.LibItem? = null,
+) {
     val haptic = LocalHapticFeedback.current
+    var mix by remember { mutableStateOf(false) }
+    // 加到 Mix replaces this sheet (local lists, nothing to save on 完成).
+    if (mix && mixItem != null) {
+        com.gpo.pilipala.feature.sources.MixPickerSheet(mixItem, onDismiss = onDismiss)
+        return
+    }
     var folders by remember { mutableStateOf<List<FavFolder>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
@@ -252,7 +262,10 @@ internal fun FavSheet(actions: ArchiveActions, onDismiss: () -> Unit) {
     ) {
         // The 新建收藏夹 row has a text field: the column clears the keyboard too.
         Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(bottom = 16.dp)) {
-            Text("收藏到", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp))
+            Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("收藏到", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                if (mixItem != null) androidx.compose.material3.TextButton(onClick = { mix = true }) { Text("加到 Mix") }
+            }
             Spacer(Modifier.height(12.dp))
             val list = folders
             val effects = YoinMotion.defaultEffectsSpec<Float>()

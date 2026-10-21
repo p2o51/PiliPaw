@@ -334,7 +334,7 @@ private fun SourceRow(
  * in with a little overshoot.
  */
 @Composable
-private fun TickMark(ticked: Boolean, tint: Color, onClick: () -> Unit) {
+internal fun TickMark(ticked: Boolean, tint: Color, onClick: () -> Unit) {
     val fill by animateFloatAsState(
         if (ticked) 1f else 0f,
         spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow),

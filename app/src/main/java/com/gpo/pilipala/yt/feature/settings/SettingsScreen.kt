@@ -78,7 +78,7 @@ fun SettingsList(title: String, showBack: Boolean = false, bottom: Dp = 0.dp) {
                 }
             }
             item {
-                SettingsItem(title = "播放列表", icon = YoinSymbols.Playlist, onClick = { nav.push(com.gpo.pilipala.yt.navigation.Route.Playlists) })
+                SettingsItem(title = "Mix", icon = YoinSymbols.Playlist, onClick = { nav.push(com.gpo.pilipala.yt.navigation.Route.Playlists) })
             }
         }
         SettingsGroup("外观") {

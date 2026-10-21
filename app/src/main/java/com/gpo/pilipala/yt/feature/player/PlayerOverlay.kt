@@ -665,7 +665,7 @@ private fun VideoActions(info: StreamInfo) {
         FilledTonalButton(onClick = { addSheet = true }) {
             Icon(YoinSymbols.Add, null, Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("播放列表")
+            Text("加到 Mix")
         }
         FilledTonalButton(onClick = { Player.changeAudioOnly(true) }) {
             Icon(YoinSymbols.Headphones, null, Modifier.size(18.dp))

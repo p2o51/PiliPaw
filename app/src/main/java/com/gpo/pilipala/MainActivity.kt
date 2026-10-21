@@ -171,6 +171,8 @@ class MainActivity : ComponentActivity() {
                         navigator.push(link.route)
                     }
                 }
+                // A Bilibili page asked for from the YouTube part (a Mix list's row).
+                LaunchedEffect(Unit) { for (route in com.gpo.pilipala.feature.sources.BiliLinks.pending) navigator.push(route) }
                 LaunchedEffect(Unit) {
                     for (id in feedOpens) {
                         // Back to the shell's 首页, which switches to the feed's tab.

@@ -1,5 +1,7 @@
 package com.gpo.pilipala.feature.library
 
+import com.gpo.pilipala.feature.sources.mixSection
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -136,6 +138,10 @@ fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
     var sheetFolder by remember { mutableStateOf<FavFolder?>(null) }
     var editor by remember { mutableStateOf<FolderEditorState?>(null) }
     var confirmDelete by remember { mutableStateOf<FavFolder?>(null) }
+    val mixLists by com.gpo.pilipala.yt.feature.library.Library.playlists.collectAsState()
+    val sources by com.gpo.pilipala.core.source.Sources.enabled.collectAsState()
+    val showMix = vm.isOwner && (mixLists.isNotEmpty() || com.gpo.pilipala.core.source.VideoSource.YouTube in sources)
+    var namingMix by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
     LoadMoreEffect(gridState) { vm.created.loadMore() }
     val barInset = if (asTab) LocalBottomBarInset.current else 0.dp
@@ -173,6 +179,9 @@ fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (showMix) {
+                    mixSection(mixLists, onOpen = { nav.push(Route.MixList(it.id, it.name)) }, onNew = { namingMix = true })
+                }
                 sectionHeader("h_created", if (vm.isOwner) "我创建的" else "创建的收藏夹")
                 items(vm.created.items, key = { "c${it.id}" }) { folder ->
                     val route = Route.FavDetail(folder.id, folder.title, folder.cover)
@@ -204,6 +213,30 @@ fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
                 }
             }
         }
+    }
+
+    if (namingMix) {
+        var name by remember { mutableStateOf("") }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { namingMix = false },
+            title = { Text("新建 Mix") },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    placeholder = { Text("名字") },
+                )
+            },
+            confirmButton = {
+                TextButton(enabled = name.isNotBlank(), onClick = {
+                    val list = com.gpo.pilipala.yt.feature.library.Library.createPlaylist(name)
+                    namingMix = false
+                    nav.push(Route.MixList(list.id, list.name))
+                }) { Text("新建") }
+            },
+            dismissButton = { TextButton(onClick = { namingMix = false }) { Text("取消") } },
+        )
     }
 
     sheetFolder?.let { folder ->

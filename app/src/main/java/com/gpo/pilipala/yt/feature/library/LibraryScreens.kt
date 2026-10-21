@@ -101,11 +101,11 @@ fun PlaylistsScreen() {
     val lists by Library.playlists.collectAsState()
     var create by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        PawTopBar(title = "播放列表", onBack = { nav.pop() }, actions = {
-            IconButton(onClick = { create = true }) { Icon(YoinSymbols.Add, "新建播放列表") }
+        PawTopBar(title = "Mix", onBack = { nav.pop() }, actions = {
+            IconButton(onClick = { create = true }) { Icon(YoinSymbols.Add, "新建 Mix") }
         })
         if (lists.isEmpty()) {
-            EmptyState("还没有播放列表", icon = YoinSymbols.Library)
+            EmptyState("还没有 Mix", icon = YoinSymbols.Library)
         } else {
             LazyColumn(Modifier.fillMaxSize().readingWidth(), contentPadding = PaddingValues(bottom = miniPlayerInset() + 24.dp)) {
                 items(lists, key = { it.id }) { p ->
@@ -132,7 +132,7 @@ fun PlaylistsScreen() {
             }
         }
     }
-    if (create) NameDialog("新建播放列表", "", onDismiss = { create = false }) { Library.createPlaylist(it) }
+    if (create) NameDialog("新建 Mix", "", onDismiss = { create = false }) { Library.createPlaylist(it) }
 }
 
 /** One local playlist: its videos (long press takes one out), 重命名 and 删除 in the bar. */
@@ -145,10 +145,10 @@ fun LocalPlaylistScreen(route: Route.LocalPlaylist) {
     var rename by remember { mutableStateOf(false) }
     var delete by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        PawTopBar(title = p?.name ?: "播放列表", onBack = { nav.pop() }, actions = {
+        PawTopBar(title = p?.name ?: "Mix", onBack = { nav.pop() }, actions = {
             if (p != null) {
                 IconButton(onClick = { rename = true }) { Icon(YoinSymbols.Edit, "重命名") }
-                IconButton(onClick = { delete = true }) { Icon(YoinSymbols.Delete, "删除播放列表") }
+                IconButton(onClick = { delete = true }) { Icon(YoinSymbols.Delete, "删除这个 Mix") }
             }
         })
         if (p == null || p.items.isEmpty()) {
@@ -156,10 +156,14 @@ fun LocalPlaylistScreen(route: Route.LocalPlaylist) {
         } else {
             LazyColumn(Modifier.fillMaxSize().readingWidth(), contentPadding = PaddingValues(bottom = miniPlayerInset() + 24.dp)) {
                 items(p.items, key = { it.key }) { item ->
-                    VideoRow(item.toVideo(), onLongClick = {
-                        Library.removeFromPlaylist(p.id, item.key)
-                        toast("已移除")
-                    })
+                    VideoRow(
+                        item.toVideo(),
+                        onLongClick = {
+                            Library.removeFromPlaylist(p.id, item.key)
+                            toast("已移除")
+                        },
+                        onClick = com.gpo.pilipala.feature.sources.MixItems.biliOpener(item),
+                    )
                 }
             }
         }
@@ -209,7 +213,7 @@ fun AddToPlaylistSheet(video: com.gpo.pilipala.yt.core.extractor.VideoItem, onDi
     var create by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, properties = rememberSheetProperties()) {
         Column(Modifier.fillMaxWidth().padding(bottom = sheetBottomPadding())) {
-            Text("加入播放列表", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+            Text("加到 Mix", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
             lists.forEach { p ->
                 val inIt = p.items.any { it.key == Library.keyOf(video.url) }
                 Row(
@@ -236,12 +240,12 @@ fun AddToPlaylistSheet(video: com.gpo.pilipala.yt.core.extractor.VideoItem, onDi
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Icon(YoinSymbols.Add, null, tint = MaterialTheme.colorScheme.primary)
-                Text("新建播放列表", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
+                Text("新建 Mix", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
     if (create) {
-        NameDialog("新建播放列表", "", onDismiss = { create = false }) {
+        NameDialog("新建 Mix", "", onDismiss = { create = false }) {
             val p = Library.createPlaylist(it)
             Library.togglePlaylist(p.id, video)
             toast("已加入「${p.name}」")

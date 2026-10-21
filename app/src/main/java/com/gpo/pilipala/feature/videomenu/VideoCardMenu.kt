@@ -135,6 +135,7 @@ internal fun VideoCardMenu(
     val context = LocalContext.current
     var page by remember { mutableStateOf(MenuPage.Actions) }
     var feedOpen by remember { mutableStateOf(false) }
+    var mixOpen by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     val loggedIn = BiliClient.isLoggedIn
     val url = if (isVideo) item.webUrl() else ""
@@ -144,6 +145,15 @@ internal fun VideoCardMenu(
     // 添加到 Feed hands over to the feed sheet once this one is down.
     if (feedOpen) {
         FeedSourceSheet(upMid = item.ownerMid, upName = item.ownerName, upFace = item.ownerFace, onDismiss = onDismiss)
+        return
+    }
+
+    // 加到 Mix likewise, once this sheet is down.
+    if (mixOpen) {
+        com.gpo.pilipala.feature.sources.MixPickerSheet(
+            com.gpo.pilipala.feature.sources.MixItems.bili(item.bvid, item.title, item.cover, item.ownerName, item.ownerMid, item.duration),
+            onDismiss = onDismiss,
+        )
         return
     }
 
@@ -204,6 +214,7 @@ internal fun VideoCardMenu(
                             },
                         )
                     }
+                    add(MenuRow(YoinSymbols.Library, "加到 Mix") { hide { mixOpen = true } })
                     add(MenuRow(YoinSymbols.Download, "缓存") { page = MenuPage.Cache })
                     if (url.isNotEmpty()) {
                         add(MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } })

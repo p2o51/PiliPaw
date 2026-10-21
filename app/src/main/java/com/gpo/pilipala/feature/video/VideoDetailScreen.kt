@@ -392,7 +392,11 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
                 sheet = null
             },
         )
-        VideoSheet.Fav -> FavSheet(a, onDismiss = { sheet = null })
+        VideoSheet.Fav -> FavSheet(
+            a,
+            onDismiss = { sheet = null },
+            mixItem = d?.let { com.gpo.pilipala.feature.sources.MixItems.bili(it.bvid, it.title, it.pic, it.ownerName, it.ownerMid, it.duration) },
+        )
         VideoSheet.Triple -> TripleSheet(
             liked = a.liked,
             coined = a.coined,

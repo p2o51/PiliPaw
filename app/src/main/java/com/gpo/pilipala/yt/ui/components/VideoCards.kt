@@ -93,13 +93,15 @@ fun VideoRow(
     progress: Float? = null,
     /** Null: the video menu ([VideoMenuSheet]). */
     onLongClick: (() -> Unit)? = null,
+    /** Null: plays here. A Mix list's Bilibili row opens in the Bilibili part instead. */
+    onClick: (() -> Unit)? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
     if (menu) VideoMenuSheet(video, onDismiss = { menu = false })
     Row(
         modifier
             .fillMaxWidth()
-            .combinedClickable(onLongClick = onLongClick ?: { menu = true }) { Player.play(video.url, video) }
+            .combinedClickable(onLongClick = onLongClick ?: { menu = true }) { onClick?.invoke() ?: Player.play(video.url, video) }
             .padding(horizontal = 16.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

@@ -152,6 +152,23 @@ object Library {
         return inNow
     }
 
+    fun inPlaylistKey(id: String, key: String): Boolean =
+        _playlists.value.firstOrNull { it.id == id }?.items?.any { it.key == key } == true
+
+    /**
+     * Any source's [item] ("bili:…" or "yt:…") added to the end of playlist [id], or taken out;
+     * returns whether it is in now. The merged app's Mix lists go through here.
+     */
+    fun togglePlaylistItem(id: String, item: LibItem): Boolean {
+        var inNow = false
+        setPlaylists(_playlists.value.map { p ->
+            if (p.id != id) return@map p
+            inNow = p.items.none { it.key == item.key }
+            p.copy(items = if (inNow) p.items + item.copy(at = System.currentTimeMillis()) else p.items.filterNot { it.key == item.key })
+        })
+        return inNow
+    }
+
     fun removeFromPlaylist(id: String, key: String) =
         setPlaylists(_playlists.value.map { if (it.id == id) it.copy(items = it.items.filterNot { i -> i.key == key }) else it })
 

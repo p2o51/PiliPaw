@@ -74,6 +74,8 @@ sealed interface Route : NavKey {
     @Serializable data class Fav(val mid: Long = 0) : Route
     @Serializable data class FavDetail(val mediaId: Long, val title: String = "", val cover: String = "") : Route
     @Serializable data object Later : Route
+    /** A Mix list: Bilibili and YouTube videos in one local list (feature/sources). */
+    @Serializable data class MixList(val id: String, val title: String = "") : Route
     @Serializable data object History : Route
     @Serializable data class Subscription(val mid: Long) : Route
     @Serializable data class SubDetail(val seasonId: Long, val type: Int, val title: String = "", val cover: String = "") : Route
