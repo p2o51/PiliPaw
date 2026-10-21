@@ -142,8 +142,10 @@ internal object BiliKeeper {
             0 -> KeepPlaying.asking = true
         }
         held?.takeIf { it !== ctrl }?.dispose()
-        // No page, no picture: the sound carries on, the video track rests.
-        ctrl.setBackground(true)
+        // The picture carries on in the mini bar. The page's own lifecycle stopped as it left, which
+        // rested the video track (BiliVideoPlayer): wake it, the app is still on screen. MiniBarHost
+        // rests it again whenever the app itself goes away.
+        ctrl.setBackground(false)
         held = ctrl
         return true
     }
@@ -177,6 +179,8 @@ private class Playing(
     val seekBy: (Long) -> Unit,
     val open: () -> Unit,
     val close: () -> Unit,
+    /** The live picture for the bar, when there is one (not in 仅听声音, not before it loads). */
+    val player: androidx.media3.common.Player? = null,
 )
 
 @Composable
@@ -196,10 +200,12 @@ private fun currentPlaying(): Playing? {
             seekBy = { d -> bili.seekTo((bili.positionMs + d).coerceAtLeast(0)) },
             open = { BiliKeeper.route(bili)?.let(BiliLinks::open) },
             close = { BiliKeeper.close() },
+            player = bili.player.takeIf { !bili.audioOnly },
         )
     }
     // The YouTube player collapsed: this bar is its mini player.
-    val yt = Player.session?.takeIf { !Player.expanded }
+    // A video that failed (or a live stream that ended) leaves the bar instead of sitting there blank.
+    val yt = Player.session?.takeIf { !Player.expanded && it.error == null }
     if (yt != null) {
         var position by remember { mutableStateOf(0L) }
         LaunchedEffect(yt) {
@@ -218,6 +224,7 @@ private fun currentPlaying(): Playing? {
             seekBy = { d -> Player.exo.seekTo((Player.exo.currentPosition + d).coerceAtLeast(0)) },
             open = { Player.expanded = true },
             close = { Player.close() },
+            player = Player.exo.takeIf { yt.info != null && !Player.audioOnly },
         )
     }
     return null
@@ -245,6 +252,19 @@ fun miniBarInset(): androidx.compose.ui.unit.Dp {
 @Composable
 fun MiniBarHost() {
     val playing = currentPlaying()
+    // The app goes away: a kept Bilibili player drops its picture (sound only), and takes it back on return.
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            when (e) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> BiliKeeper.held?.setBackground(true)
+                androidx.lifecycle.Lifecycle.Event.ON_START -> BiliKeeper.held?.setBackground(false)
+                else -> Unit
+            }
+        }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
     if (KeepPlaying.asking) KeepAskDialog()
     val nav = NavSpot.bounds
     val density = LocalDensity.current
@@ -363,6 +383,23 @@ private fun BarContent(p: Playing, modifier: Modifier) {
                 .clickable(onClick = p.open),
         ) {
             NetImage(p.cover, Modifier.fillMaxSize(), contentDescription = p.title, thumbWidth = 320.dp)
+            // The video itself over its cover (a TextureView: it follows the bar's fold and swipe).
+            // Attached a beat after the bar appears: the page that let the player go detaches its own
+            // video view as it leaves, and that must not land after ours.
+            var ready by remember(p.player) { mutableStateOf(false) }
+            LaunchedEffect(p.player) {
+                kotlinx.coroutines.delay(400)
+                ready = true
+            }
+            p.player?.takeIf { ready }?.let { player ->
+                androidx.media3.ui.compose.ContentFrame(
+                    player = player,
+                    modifier = Modifier.fillMaxSize(),
+                    surfaceType = androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    shutter = {},
+                )
+            }
             // The progress line on the picture's inner (bottom) edge.
             val primary = MaterialTheme.colorScheme.primary
             Box(
