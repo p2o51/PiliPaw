@@ -213,7 +213,7 @@ private val appEntryProvider = entryProvider<NavKey> {
     entry<Route.Follow> { FollowScreen(it) }
     entry<Route.Fans> { FansScreen(it) }
     entry<Route.Blacklist> { BlacklistScreen() }
-    entry<Route.Messages> { MessagesScreen() }
+    entry<Route.Messages> { com.gpo.pilipala.feature.sources.MessagesHome() }
     entry<Route.MessageList> { MessageListScreen(it) }
     entry<Route.WhisperDetail> { WhisperDetailScreen(it) }
     entry<Route.Login> { LoginScreen() }

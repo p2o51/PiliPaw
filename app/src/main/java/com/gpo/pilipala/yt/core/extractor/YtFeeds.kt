@@ -103,3 +103,34 @@ object YtFeeds {
         return token
     }
 }
+
+/** One YouTube notification (signed in): what happened, when, and the video it points at. */
+data class YtNotification(val text: String, val time: String, val thumbnail: String, val videoUrl: String?, val read: Boolean)
+
+/** The signed-in account's notification inbox (the bell), from youtubei with its cookies. */
+object YtNotifications {
+    suspend fun load(): List<YtNotification> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val builder = YoutubeParsingHelper.prepareDesktopJsonBuilder(
+            NewPipe.getPreferredLocalization() ?: Localization.DEFAULT,
+            NewPipe.getPreferredContentCountry() ?: ContentCountry.DEFAULT,
+        )
+        builder.value("notificationsMenuRequestType", "NOTIFICATIONS_MENU_REQUEST_TYPE_INBOX")
+        val body = JsonWriter.string(builder.done()).toByteArray()
+        val json = YoutubeParsingHelper.getLoggedJsonPostResponse("notification/get_notification_menu", body, Localization.DEFAULT)
+        val out = ArrayList<YtNotification>()
+        YtFeeds.walk(json) { key, value ->
+            if (key != "notificationRenderer") return@walk
+            fun text(o: JsonObject): String = o.getString("simpleText")
+                ?: o.getArray("runs").joinToString("") { (it as? JsonObject)?.getString("text").orEmpty() }
+            val videoId = value.getObject("navigationEndpoint").getObject("watchEndpoint").getString("videoId")
+            out += YtNotification(
+                text = text(value.getObject("shortMessage")),
+                time = text(value.getObject("sentTimeText")),
+                thumbnail = value.getObject("videoThumbnail").getArray("thumbnails").let { a -> (a.lastOrNull() as? JsonObject)?.getString("url").orEmpty() },
+                videoUrl = videoId?.let { "https://www.youtube.com/watch?v=$it" },
+                read = value.getBoolean("read", false),
+            )
+        }
+        out
+    }
+}
