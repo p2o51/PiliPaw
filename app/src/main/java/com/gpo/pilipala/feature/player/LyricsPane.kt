@@ -242,6 +242,7 @@ internal fun LyricsList(
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
     textStyle: androidx.compose.ui.text.TextStyle? = null,
+    seat: Float = 0.5f,
 ) {
     val haptics = LocalHapticFeedback.current
     val still = rememberAnimationsRemoved()
@@ -277,8 +278,8 @@ internal fun LyricsList(
                 val row = info.visibleItemsInfo.firstOrNull { it.index == target }
                 if (!seated || still || !first || row == null) {
                     // First seat, no animations, a resize, or a cue far off screen: land at once.
-                    listState.scrollToItem(target, info.seatOffset(target))
-                    val again = listState.layoutInfo.seatOffset(target)
+                    listState.scrollToItem(target, info.seatOffset(target, seat))
+                    val again = listState.layoutInfo.seatOffset(target, seat)
                     listState.scrollToItem(target, again)
                     seated = true
                 } else {
@@ -287,10 +288,10 @@ internal fun LyricsList(
                     val now = listState.layoutInfo
                     val r = now.visibleItemsInfo.firstOrNull { it.index == target }
                     if (r != null) {
-                        val delta = (r.offset - now.viewportStartOffset) - now.seatTop(r.size)
+                        val delta = (r.offset - now.viewportStartOffset) - now.seatTop(r.size, seat)
                         if (delta != 0) listState.animateScrollBy(delta.toFloat(), glide)
                     } else {
-                        listState.scrollToItem(target, now.seatOffset(target))
+                        listState.scrollToItem(target, now.seatOffset(target, seat))
                     }
                 }
                 first = false
@@ -302,11 +303,13 @@ internal fun LyricsList(
         frameHeight >= 360.dp -> MaterialTheme.typography.headlineSmall
         else -> MaterialTheme.typography.titleLarge
     }
-    val pad = (frameHeight / 2 - 24.dp).coerceAtLeast(12.dp)
+    // [seat]: where the current cue sits (0.5 the middle; lower is nearer the top, Apple Music's).
+    val padTop = (frameHeight * seat - 24.dp).coerceAtLeast(12.dp)
+    val padBottom = (frameHeight * (1f - seat) - 24.dp).coerceAtLeast(12.dp)
     LazyColumn(
         state = listState,
         modifier = modifier.lyricsEdgeFade(),
-        contentPadding = PaddingValues(start = horizontalPadding, end = horizontalPadding, top = pad, bottom = pad),
+        contentPadding = PaddingValues(start = horizontalPadding, end = horizontalPadding, top = padTop, bottom = padBottom),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         itemsIndexed(lines, key = { i, _ -> i }) { i, line ->
@@ -396,15 +399,15 @@ private fun currentCueIndex(lines: List<SubtitleLine>, pos: Long): Int {
     return found
 }
 
-/** Where a [rowPx]-tall row's top sits so its centre is the viewport's. */
-private fun LazyListLayoutInfo.seatTop(rowPx: Int): Int = (viewportSize.height - rowPx) / 2
+/** Where a [rowPx]-tall row's top sits so its centre is [seat] of the way down the viewport. */
+private fun LazyListLayoutInfo.seatTop(rowPx: Int, seat: Float): Int = ((viewportSize.height - rowPx) * seat).toInt()
 
 /** scrollToItem offset seating [target] in the middle (a row not laid out yet is sized like the rest). */
-private fun LazyListLayoutInfo.seatOffset(target: Int): Int {
+private fun LazyListLayoutInfo.seatOffset(target: Int, seat: Float): Int {
     val rowPx = visibleItemsInfo.firstOrNull { it.index == target }?.size
         ?: visibleItemsInfo.takeIf { it.isNotEmpty() }?.let { rows -> rows.sumOf { it.size } / rows.size }
         ?: 0
-    return -viewportStartOffset - seatTop(rowPx)
+    return -viewportStartOffset - seatTop(rowPx, seat)
 }
 
 /** Both edges dissolve, so cues fade in and out instead of being cut by the frame. */

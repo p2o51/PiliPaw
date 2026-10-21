@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -162,7 +163,6 @@ internal fun ListenScreen(
             ListenTopBar(
                 header = header,
                 onCollapse = { nav.pop() },
-                onSearch = { sheet = ListenSheet.Search },
                 onShowVideo = { ctrl.toggleAudioOnly() },
             )
         }
@@ -194,6 +194,15 @@ internal fun ListenScreen(
                 val side = contentW - coverW >= 160.dp
                 Column(Modifier.padding(horizontal = 24.dp)) {
                     Box(Modifier.listenReveal(fl, 0.3f)) { bar() }
+                    // Expanded (Apple Music's lyrics): the cover steps down into one row with the
+                    // title beside it, and the lyrics, larger, take the page under it.
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = expanded,
+                        enter = androidx.compose.animation.expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
+                        exit = androidx.compose.animation.shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
+                    ) {
+                        CompactHeader(vm, cover, title, subtitle, gate, coverWidth = if (pageW >= 600.dp) 176.dp else 120.dp)
+                    }
                     androidx.compose.animation.AnimatedVisibility(
                         visible = !expanded,
                         enter = androidx.compose.animation.expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
@@ -218,12 +227,19 @@ internal fun ListenScreen(
                     }
                 }
                 BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).listenReveal(fl, 0.5f)) {
+                    val wideText = pageW >= 600.dp
                     ImmersiveLyrics(
                         ctrl = ctrl,
                         lines = lines,
                         frameHeight = maxHeight,
                         horizontalPadding = 24.dp,
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = when {
+                            expanded && wideText -> MaterialTheme.typography.displaySmall.copy(fontSize = 40.sp, lineHeight = 50.sp)
+                            expanded || wideText -> MaterialTheme.typography.headlineLarge
+                            else -> MaterialTheme.typography.headlineMedium
+                        },
+                        // The current line a third of the way down, so what comes next has the room.
+                        seat = 0.32f,
                         onSearch = { sheet = ListenSheet.Search },
                     )
                 }
@@ -243,7 +259,7 @@ internal fun ListenScreen(
                         QuietAction(PiliSymbols.Comment, d?.reply?.takeIf { it > 0 }?.let { "评论 ${Fmt.count(it)}" } ?: "评论") {
                             sheet = ListenSheet.Comments
                         }
-                        QuietAction(YoinSymbols.Tv, "显示画面") { ctrl.toggleAudioOnly() }
+                        QuietAction(YoinSymbols.Search, "搜歌词") { sheet = ListenSheet.Search }
                     }
                 }
             }
@@ -348,8 +364,7 @@ private fun FlyingCover(flight: ListenFlight, cover: String, origin: () -> Offse
 }
 
 @Composable
-private fun ListenTopBar(header: String, onCollapse: () -> Unit, onSearch: () -> Unit, onShowVideo: () -> Unit) {
-    var menu by remember { mutableStateOf(false) }
+private fun ListenTopBar(header: String, onCollapse: () -> Unit, onShowVideo: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
         FilledTonalIconButton(onClick = onCollapse, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp)) {
@@ -359,28 +374,9 @@ private fun ListenTopBar(header: String, onCollapse: () -> Unit, onSearch: () ->
             Text("正在听", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
             Text(header, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Box {
-            FilledTonalIconButton(onClick = { menu = true }, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp)) {
-                Icon(YoinSymbols.MoreVertical, contentDescription = "更多")
-            }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(
-                    text = { Text("搜索歌词") },
-                    leadingIcon = { Icon(YoinSymbols.Search, null) },
-                    onClick = {
-                        menu = false
-                        onSearch()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text("显示画面") },
-                    leadingIcon = { Icon(YoinSymbols.Tv, null) },
-                    onClick = {
-                        menu = false
-                        onShowVideo()
-                    },
-                )
-            }
+        // 显示画面 up here, out of the thumb's way (a cast button would sit beside it).
+        FilledTonalIconButton(onClick = onShowVideo, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp)) {
+            Icon(YoinSymbols.Tv, contentDescription = "显示画面")
         }
     }
 }
@@ -439,6 +435,30 @@ private fun LikeButton(vm: VideoDetailViewModel, gate: (() -> Unit) -> Unit) {
     }
 }
 
+/** Expanded lyrics' header: a small cover, the title and UP beside it, 点赞 at the end. */
+@Composable
+private fun CompactHeader(
+    vm: VideoDetailViewModel,
+    cover: String,
+    title: String,
+    subtitle: String,
+    gate: (() -> Unit) -> Unit,
+    coverWidth: Dp,
+) {
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        NetImage(cover, Modifier.width(coverWidth).aspectRatio(16f / 9f), shape = RoundedCornerShape(14.dp), thumbWidth = 360.dp)
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (subtitle.isNotEmpty()) {
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        LikeButton(vm, gate)
+    }
+}
+
 /** Beside a held-down cover: the title on top, the UP under it, 点赞 at the bottom. */
 @Composable
 private fun SideTitle(vm: VideoDetailViewModel, title: String, subtitle: String, gate: (() -> Unit) -> Unit) {
@@ -462,6 +482,7 @@ private fun ImmersiveLyrics(
     horizontalPadding: Dp,
     style: androidx.compose.ui.text.TextStyle,
     onSearch: () -> Unit,
+    seat: Float = 0.5f,
 ) {
     if (lines.isEmpty()) {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -482,6 +503,7 @@ private fun ImmersiveLyrics(
             horizontalPadding = horizontalPadding,
             modifier = Modifier.fillMaxSize(),
             textStyle = style,
+            seat = seat,
         )
     }
 }
