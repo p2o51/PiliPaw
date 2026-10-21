@@ -111,6 +111,21 @@ object Yt {
 
     suspend fun channel(url: String): ChannelInfo = io { ChannelInfo.getInfo(service, url) }
 
+    /** A playlist's title and its videos in order, every page (up to [maxPages]). */
+    suspend fun playlist(url: String, maxPages: Int = 20): Pair<String, List<VideoItem>> = io {
+        val info = org.schabi.newpipe.extractor.playlist.PlaylistInfo.getInfo(service, url)
+        val all = info.relatedItems.filterIsInstance<StreamInfoItem>().map { it.toVideo() }.toMutableList()
+        var next = info.nextPage
+        var pages = 1
+        while (next != null && pages < maxPages) {
+            val more = org.schabi.newpipe.extractor.playlist.PlaylistInfo.getMoreItems(service, url, next)
+            all += more.items.filterIsInstance<StreamInfoItem>().map { it.toVideo() }
+            next = more.nextPage
+            pages++
+        }
+        info.name.orEmpty() to all
+    }
+
     /** The uploads already on a loaded [ChannelInfo] (its first page). */
     fun channelFirstPage(info: ChannelInfo): Page<VideoItem> =
         page(info.relatedItems.map { it.toVideo() }.filterShortVideos(), info.nextPage)

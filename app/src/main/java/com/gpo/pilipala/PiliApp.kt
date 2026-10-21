@@ -26,6 +26,8 @@ class PiliApp : Application(), SingletonImageLoader.Factory {
         com.gpo.pilipala.feature.widget.WidgetStore.appContext = this
         com.gpo.pilipala.core.source.Sources.init(this)
         com.gpo.pilipala.yt.YtApp.init(this, active = com.gpo.pilipala.core.source.Sources.isOn(com.gpo.pilipala.core.source.VideoSource.YouTube))
+        // Mix lists that follow a 收藏夹 or a playlist catch up once per launch.
+        com.gpo.pilipala.feature.sources.MixSync.syncAll()
     }
 
     /**

@@ -27,6 +27,8 @@ data class LibItem(
     val at: Long,
     /** History only: where it was left, and whether it was watched to the end. */
     val positionMs: Long = 0,
+    /** Mix lists: the linked source list ([MixLink.id]) it came from; null when added by hand. */
+    val from: String? = null,
 ) {
     fun toVideo(): VideoItem = VideoItem(
         url = url, title = title, thumbnail = thumbnail, channelName = channelName, channelUrl = channelUrl,
@@ -35,8 +37,28 @@ data class LibItem(
     )
 }
 
+/**
+ * A source list a Mix follows: a Bilibili 收藏夹 ([kind] "bili_fav", [ref] its media id) or a
+ * YouTube playlist ("yt_playlist", [ref] its URL). [removed] holds the keys taken out of the Mix
+ * by hand, which a sync never brings back.
+ */
 @Serializable
-data class LocalPlaylist(val id: String, val name: String, val items: List<LibItem> = emptyList())
+data class MixLink(
+    val id: String,
+    val kind: String,
+    val ref: String,
+    val title: String,
+    val removed: List<String> = emptyList(),
+    val syncedAt: Long = 0,
+)
+
+@Serializable
+data class LocalPlaylist(
+    val id: String,
+    val name: String,
+    val items: List<LibItem> = emptyList(),
+    val links: List<MixLink> = emptyList(),
+)
 
 /**
  * 本机的资料库: history (recorded as videos play, with where they were left), watch later and
@@ -169,8 +191,20 @@ object Library {
         return inNow
     }
 
+    /** Takes [key] out of playlist [id]; one that came from a linked list is remembered as removed. */
     fun removeFromPlaylist(id: String, key: String) =
-        setPlaylists(_playlists.value.map { if (it.id == id) it.copy(items = it.items.filterNot { i -> i.key == key }) else it })
+        setPlaylists(_playlists.value.map { p ->
+            if (p.id != id) return@map p
+            val from = p.items.firstOrNull { it.key == key }?.from
+            p.copy(
+                items = p.items.filterNot { i -> i.key == key },
+                links = p.links.map { l -> if (l.id == from) l.copy(removed = (l.removed + key).distinct()) else l },
+            )
+        })
+
+    /** Replaces playlist [id] wholesale (a Mix sync's result). */
+    fun updatePlaylist(id: String, change: (LocalPlaylist) -> LocalPlaylist) =
+        setPlaylists(_playlists.value.map { if (it.id == id) change(it) else it })
 
     private fun setPlaylists(list: List<LocalPlaylist>) {
         _playlists.value = list

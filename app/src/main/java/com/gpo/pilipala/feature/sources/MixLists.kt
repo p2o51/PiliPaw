@@ -51,6 +51,11 @@ import com.gpo.pilipala.feature.library.FolderCard
 import com.gpo.pilipala.feature.library.ItemActionSheet
 import com.gpo.pilipala.feature.library.LibraryScaffold
 import com.gpo.pilipala.feature.library.SheetAction
+import com.gpo.pilipala.feature.library.toFavFolder
+import com.gpo.pilipala.core.net.arr
+import com.gpo.pilipala.core.net.asObj
+import com.gpo.pilipala.core.net.objects
+import androidx.compose.runtime.LaunchedEffect
 import com.gpo.pilipala.feature.library.sectionHeader
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
@@ -258,6 +263,9 @@ fun MixListScreen(route: Route.MixList) {
     val list = lists.firstOrNull { it.id == route.id }
     var menu by remember { mutableStateOf<LibItem?>(null) }
     var deleting by remember { mutableStateOf(false) }
+    var linking by remember { mutableStateOf(false) }
+    // Opening a Mix that follows something brings it up to date.
+    LaunchedEffect(route.id) { if (list?.links?.isNotEmpty() == true) MixSync.sync(route.id) }
     LibraryScaffold(
         title = list?.name ?: route.title.ifEmpty { "Mix" },
         subtitle = list?.let { l ->
@@ -272,6 +280,7 @@ fun MixListScreen(route: Route.MixList) {
                     Text(" 全部播放")
                 }
             }
+            if (list != null) TextButton(onClick = { linking = true }) { Text("关联") }
             if (list != null) TextButton(onClick = { deleting = true }) { Text("删除") }
         },
     ) { padding ->
@@ -285,6 +294,16 @@ fun MixListScreen(route: Route.MixList) {
             }
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp)) {
+                if (list.links.isNotEmpty()) {
+                    item(key = "links") {
+                        Text(
+                            "跟随：" + list.links.joinToString("、") { it.title.ifEmpty { if (it.kind == "bili_fav") "收藏夹" else "播放列表" } } + "。新增的会加到最后，原列表删掉的这里也会删掉。",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                }
                 itemsIndexed(list.items, key = { _, it -> it.key }) { i, item ->
                     MixRow(
                         item,
@@ -298,6 +317,7 @@ fun MixListScreen(route: Route.MixList) {
             }
         }
     }
+    if (linking && list != null) MixLinkSheet(list, onDismiss = { linking = false })
     menu?.let { item ->
         ItemActionSheet(
             title = item.title,
@@ -322,6 +342,109 @@ fun MixListScreen(route: Route.MixList) {
             ),
             onDismiss = { deleting = false },
         )
+    }
+}
+
+/**
+ * 关联: follow a Bilibili 收藏夹 (the signed-in account's own) or a YouTube playlist (its link).
+ * What is linked shows with 取消关联; a new link pulls its videos in at once.
+ */
+@Composable
+private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
+    val toast = rememberToast()
+    var folders by remember { mutableStateOf<List<FavFolder>?>(null) }
+    var url by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        val mid = com.gpo.pilipala.core.net.BiliClient.mid
+        if (mid <= 0) {
+            folders = emptyList()
+            return@LaunchedEffect
+        }
+        folders = runCatching {
+            com.gpo.pilipala.core.net.BiliClient.getData(
+                "/x/v3/fav/folder/created/list",
+                mapOf("up_mid" to mid, "pn" to 1, "ps" to 50),
+            ).asObj.arr("list").objects().map { it.toFavFolder() }
+        }.getOrDefault(emptyList())
+    }
+    val done: (Result<Int>) -> Unit = { r ->
+        r.onSuccess { n -> toast(if (n > 0) "已加入 $n 个视频" else "已关联，没有新视频") }
+            .onFailure { toast("同步失败：" + (it.message ?: "网络错误")) }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, properties = rememberSheetProperties()) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = sheetBottomPadding(8.dp)),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("关联", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 8.dp))
+            Text(
+                "跟着一个收藏夹或播放列表走：新增的视频加到 Mix 最后，删掉的也从 Mix 里拿掉；你自己加的不受影响。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+            list.links.forEach { l ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(l.title.ifEmpty { l.ref }, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (l.kind == "bili_fav") "哔哩哔哩收藏夹" else "YouTube 播放列表", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    TextButton(onClick = { MixSync.unlink(list.id, l.id) }) { Text("取消关联") }
+                }
+            }
+            Text("哔哩哔哩收藏夹", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp, top = 8.dp))
+            val fs = folders
+            when {
+                fs == null -> Text("加载中…", modifier = Modifier.padding(8.dp))
+                fs.isEmpty() -> Text("登录哔哩哔哩后可以关联自己的收藏夹", modifier = Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
+                    items(fs, key = { it.id }) { f ->
+                        val linked = list.links.any { it.id == "bili_fav:${f.id}" }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(20.dp))
+                                .combinedClickable(enabled = !linked) {
+                                    MixSync.link(list.id, MixSync.biliFolderLink(f.id, f.title), done)
+                                    onDismiss()
+                                }
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            NetImage(MixItems.secure(f.cover), Modifier.width(72.dp).aspectRatio(16f / 10f), shape = CoverShape, thumbWidth = 144.dp)
+                            Column(Modifier.weight(1f)) {
+                                Text(f.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${f.mediaCount} 个内容", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (linked) Text("已关联", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+            Text("YouTube 播放列表", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp, top = 8.dp))
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    singleLine = true,
+                    placeholder = { Text("粘贴播放列表链接") },
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    enabled = url.contains("list="),
+                    onClick = {
+                        MixSync.link(list.id, MixSync.youtubePlaylistLink(url.trim(), "YouTube 播放列表"), done)
+                        onDismiss()
+                    },
+                ) { Text("关联") }
+            }
+        }
     }
 }
 
