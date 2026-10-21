@@ -911,7 +911,7 @@ private fun ColumnScope.CloudSyncGroup() {
     val state = com.gpo.pilipala.feature.sources.PawCloud.state
     val consent = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult(),
-    ) { r -> com.gpo.pilipala.feature.sources.PawCloud.resumeAfterConsent(r.resultCode == android.app.Activity.RESULT_OK) }
+    ) { r -> com.gpo.pilipala.feature.sources.PawCloud.resumeAfterConsent(r.resultCode == android.app.Activity.RESULT_OK, r.data) }
     androidx.compose.runtime.LaunchedEffect(state) {
         if (state is com.gpo.pilipala.feature.sources.PawCloud.State.NeedsUser) {
             consent.launch(androidx.activity.result.IntentSenderRequest.Builder(state.sender).build())

@@ -137,9 +137,22 @@ object PawCloud {
         }
     }
 
-    /** The consent sheet came back; [granted] tells whether to carry on. */
-    fun resumeAfterConsent(granted: Boolean) {
-        if (granted) sync(interactive = true) else state = State.Idle
+    /**
+     * The consent sheet came back. Granted: carry on. Otherwise say why instead of going quiet
+     * (most often: Google Cloud does not know this package and certificate yet).
+     */
+    fun resumeAfterConsent(granted: Boolean, data: android.content.Intent?) {
+        if (granted) {
+            sync(interactive = true)
+            return
+        }
+        val code = runCatching { Identity.getAuthorizationClient(app).getAuthorizationResultFromIntent(data) }
+            .exceptionOrNull().let { (it as? ApiException)?.statusCode }
+        state = when (code) {
+            CommonStatusCodes.DEVELOPER_ERROR, null -> State.Misconfigured(app.packageName, signingSha1())
+            CommonStatusCodes.CANCELED -> State.Idle
+            else -> State.Failed(CommonStatusCodes.getStatusCodeString(code))
+        }
     }
 
     /** Stops syncing on this device; Drive keeps what is there. */
