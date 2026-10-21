@@ -123,7 +123,7 @@ import com.gpo.pilipala.yt.ui.components.ValueLabel
 import com.gpo.pilipala.yt.ui.components.VideoRow
 import com.gpo.pilipala.ui.shell.floatingBarInset
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
-import com.gpo.pilipala.yt.ui.theme.CoverTheme
+import com.gpo.pilipala.ui.theme.CoverTheme
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols

@@ -89,7 +89,9 @@ fun MainShell() {
     val activity = LocalActivity.current
     val toast = rememberToast()
     var armedAt by remember { mutableLongStateOf(0L) }
-    BackHandler {
+    // Never while the player is up: its own back collapses it, even when a link opened the player
+    // before this handler was registered (the later one would win).
+    BackHandler(enabled = !com.gpo.pilipala.yt.feature.player.Player.expanded) {
         val now = SystemClock.uptimeMillis()
         if (now - armedAt < ExitWindowMs) {
             activity?.finish()

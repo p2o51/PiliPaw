@@ -137,6 +137,9 @@ class MainActivity : ComponentActivity() {
             val front by Sources.front.collectAsState()
             val enabled by Sources.enabled.collectAsState()
             LaunchedEffect(enabled) { if (VideoSource.YouTube in enabled) YtApp.activate() }
+            // Leaving the YouTube part: its player has no screen any more, so it pauses. (The other
+            // way round needs nothing: either player starting takes audio focus from the other.)
+            LaunchedEffect(front) { if (front != VideoSource.YouTube) com.gpo.pilipala.yt.feature.player.Player.exo.pause() }
             val enter = YoinMotion.defaultEffectsSpec<Float>()
             val exit = YoinMotion.fastEffectsSpec<Float>()
             // One part of the app at a time: the source on the dots' front (Home does not mix them yet).

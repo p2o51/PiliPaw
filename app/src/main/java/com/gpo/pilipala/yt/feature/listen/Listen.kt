@@ -123,7 +123,7 @@ import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.sheetBottomPadding
 import com.gpo.pilipala.ui.theme.GoogleSansFlexRounded
-import com.gpo.pilipala.yt.ui.theme.LocalPageBackdrop
+import com.gpo.pilipala.ui.theme.LocalPageBackdrop
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.pilipala.ui.theme.withTabularFigures

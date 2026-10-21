@@ -297,7 +297,7 @@ private fun HomeHeader(onSearch: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         ProfileButton()
-        Text("PipePaw", style = MaterialTheme.typography.titleLarge)
+        Text("YouTube", style = MaterialTheme.typography.titleLarge)
         Row(
             Modifier
                 .weight(1f)

@@ -24,7 +24,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import com.gpo.pilipala.yt.ui.theme.LocalPageBackdrop
+import com.gpo.pilipala.ui.theme.LocalPageBackdrop
 import com.gpo.pilipala.yt.ui.theme.LocalPawDark
 import kotlin.math.min
 

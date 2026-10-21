@@ -50,7 +50,7 @@ import com.gpo.pilipala.yt.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.yt.ui.components.videoGridMinWidth
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
-import com.gpo.pilipala.yt.ui.theme.CoverTheme
+import com.gpo.pilipala.ui.theme.CoverTheme
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
