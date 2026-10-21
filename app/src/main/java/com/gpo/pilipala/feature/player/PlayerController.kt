@@ -902,9 +902,14 @@ internal class PiliPlayerController(
     override fun onRemembered() = Unit
 
     override fun onForgotten() {
+        // 继续播放: the page goes, the player stays (BiliKeeper), in the mini bar until a page takes it back.
+        if (com.gpo.pilipala.feature.sources.BiliKeeper.offer(this)) return
         release()
         scope.cancel()
     }
+
+    /** A page's player (not a feed preview) with a video it was playing: worth keeping when its page goes. */
+    val keepable: Boolean get() = !preview && target != null && !ended && (isPlaying || playWhenReady)
 
     override fun onAbandoned() {
         release()

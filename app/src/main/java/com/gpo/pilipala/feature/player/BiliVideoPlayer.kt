@@ -164,7 +164,12 @@ open class BiliPlayerState {
 fun rememberBiliPlayerState(adoptBvid: String = ""): BiliPlayerState {
     val context = LocalContext.current.applicationContext
     // Opened from a playing 单列 card: its preview carries on as this page's player (FeedPreview.kt).
-    return remember { PreviewHandoff.take(adoptBvid)?.also { it.adopt() } ?: PiliPlayerController(context) }
+    return remember {
+        // Back from the mini bar: the kept player carries on as this page's (KeepPlaying.kt).
+        com.gpo.pilipala.feature.sources.BiliKeeper.take(adoptBvid)
+            ?: PreviewHandoff.take(adoptBvid)?.also { it.adopt() }
+            ?: PiliPlayerController(context)
+    }
 }
 
 /**

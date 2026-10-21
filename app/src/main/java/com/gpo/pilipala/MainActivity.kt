@@ -139,16 +139,25 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(enabled) { if (VideoSource.YouTube in enabled) YtApp.activate() }
             // Leaving the YouTube part: its player has no screen any more, so it pauses. (The other
             // way round needs nothing: either player starting takes audio focus from the other.)
-            LaunchedEffect(front) { if (front != VideoSource.YouTube) com.gpo.pilipala.yt.feature.player.Player.exo.pause() }
+            // In 继续播放 it plays on, in the mini bar.
+            LaunchedEffect(front) {
+                if (front != VideoSource.YouTube && !com.gpo.pilipala.feature.sources.KeepPlaying.on) {
+                    com.gpo.pilipala.yt.feature.player.Player.exo.pause()
+                }
+            }
             val enter = YoinMotion.defaultEffectsSpec<Float>()
             val exit = YoinMotion.fastEffectsSpec<Float>()
             // One part of the app at a time: the source on the dots' front (Home does not mix them yet).
-            AnimatedContent(
-                targetState = front,
-                transitionSpec = { fadeIn(enter).togetherWith(fadeOut(exit)) },
-                label = "source",
-            ) { source ->
-                if (source == VideoSource.YouTube) YoutubeRoot(this@MainActivity) else BiliRoot()
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+                AnimatedContent(
+                    targetState = front,
+                    transitionSpec = { fadeIn(enter).togetherWith(fadeOut(exit)) },
+                    label = "source",
+                ) { source ->
+                    if (source == VideoSource.YouTube) YoutubeRoot(this@MainActivity) else BiliRoot()
+                }
+                // 继续播放's bar, over both parts (and above every page).
+                PiliTheme { com.gpo.pilipala.feature.sources.MiniBarHost(front) }
             }
         }
     }

@@ -17,6 +17,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import com.gpo.pilipala.ui.components.WidthClass
+import com.gpo.pilipala.ui.components.widthClass
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -111,6 +115,9 @@ object ShellSections {
 fun MainShell() {
     val hidden by ShellSections.hiddenKey.state.collectAsState()
     val sections = remember(hidden) { ShellSections.visible(hidden) }
+    FourTabsForMiniBar(sections)
+    // The nav bar's place on screen is the mini bar's anchor while this shell shows.
+    DisposableEffect(Unit) { onDispose { com.gpo.pilipala.feature.sources.NavSpot.clear() } }
     val tabs = remember(sections) { sections.map { it.tab } }
     var selectedOrdinal by rememberSaveable { mutableIntStateOf(ShellSection.Home.ordinal) }
     // A section switched off in settings while showing hands over to 首页.
@@ -145,8 +152,22 @@ fun MainShell() {
     // The floating bar reports where it sits; main-tab lists marked with seamViewport
     // break their graphics into the halftone field around it (Yoin's dissolve).
     ProvideSeamBarField {
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-            CompositionLocalProvider(LocalBottomBarInset provides floatingBarInset()) {
+        // The nav pill's rounded rectangle (as the seams know it) anchors the mini bar.
+        val field = com.gpo.pilipala.ui.components.seam.LocalSeamBarField.current
+        LaunchedEffect(field) {
+            if (field == null) return@LaunchedEffect
+            androidx.compose.runtime.snapshotFlow { field.bounds.takeIf { field.attached && it.width > 0f } }
+                .collect { com.gpo.pilipala.feature.sources.NavSpot.bounds = it }
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                // Scrolling down folds the mini bar into its circle beside the nav bar.
+                .nestedScroll(com.gpo.pilipala.feature.sources.KeepPlaying.scroll),
+        ) {
+            val barInset = floatingBarInset() + if (widthClass() == WidthClass.Compact) com.gpo.pilipala.feature.sources.miniBarInset() else 0.dp
+            CompositionLocalProvider(LocalBottomBarInset provides barInset) {
                 val enterFade = YoinMotion.defaultEffectsSpec<Float>()
                 val enterScale = YoinMotion.defaultSpatialSpec<Float>()
                 val exitFade = YoinMotion.fastEffectsSpec<Float>()
@@ -183,10 +204,34 @@ fun MainShell() {
                     selectedOrdinal = ShellSection.Home.ordinal
                     homeSearch.tryEmit(Unit)
                 },
-                modifier = Modifier.align(Alignment.BottomCenter).splashReveal(lift = 22.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .splashReveal(lift = 22.dp),
             )
         }
     }
 }
 
 private const val ExitWindowMs = 2000L
+
+/**
+ * 继续播放 on a phone: the mini bar's circle joins the nav bar's row, which then has room for four
+ * tabs. Once, the fifth (排行, else 动态) is switched off where the user can switch it back
+ * (设置 › 外观 › 底栏), and a toast says so.
+ */
+@Composable
+private fun FourTabsForMiniBar(sections: List<ShellSection>) {
+    val keep by com.gpo.pilipala.feature.sources.KeepPlaying.mode.state.collectAsState()
+    val compact = widthClass() == WidthClass.Compact
+    val done by FourTabsDone.state.collectAsState()
+    val toast = rememberToast()
+    LaunchedEffect(keep, compact, sections.size, done) {
+        if (keep != 2 || !compact || done || sections.size <= 4) return@LaunchedEffect
+        val drop = listOf(ShellSection.Rank, ShellSection.Dynamics, ShellSection.Fav).firstOrNull { it in sections } ?: return@LaunchedEffect
+        ShellSections.setShown(drop, false)
+        com.gpo.pilipala.core.settings.AppSettings.set(FourTabsDone, true)
+        toast("底栏要给迷你播放器留位置，「${drop.tab.label}」先收起来了，可以在 设置 › 外观 › 底栏 里换")
+    }
+}
+
+private val FourTabsDone = com.gpo.pilipala.core.settings.AppSettings.register("four_tabs_for_mini_bar", false)

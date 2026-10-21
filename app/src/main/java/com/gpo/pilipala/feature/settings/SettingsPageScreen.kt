@@ -493,6 +493,16 @@ private fun ColumnScope.PlayBody() {
     }
     SettingsGroup("后台") {
         item {
+            val keep by com.gpo.pilipala.feature.sources.KeepPlaying.mode.state.collectAsState()
+            SettingsSwitchItem(
+                "离开视频后继续播放",
+                keep == 2,
+                { AppSettings.set(com.gpo.pilipala.feature.sources.KeepPlaying.mode, if (it) 2 else 1) },
+                icon = YoinSymbols.PlayFilled,
+                summary = "回到首页时视频收进底部的迷你条，像 YouTube 那样",
+            )
+        }
+        item {
             SettingsSwitchItem("后台播放", bg, { AppSettings.set(AppSettings.backgroundPlay, it) }, icon = YoinSymbols.VolumeUp, summary = "进入后台时继续播放")
         }
         item {
