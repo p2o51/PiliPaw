@@ -77,6 +77,7 @@ internal fun ListenTransport(
     ctrl: PiliPlayerController,
     controlSize: Dp,
     modifier: Modifier = Modifier,
+    horizontalPadding: Dp = 16.dp,
 ) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
@@ -99,7 +100,7 @@ internal fun ListenTransport(
         modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = horizontalPadding, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(ListenRowGap),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

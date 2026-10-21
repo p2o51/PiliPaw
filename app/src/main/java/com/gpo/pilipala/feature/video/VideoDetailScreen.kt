@@ -343,6 +343,17 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
                 onLanded = { if (handoff.flight === f) handoff.flight = null },
             ) { m -> player(m, PlayerChrome.Minimal) }
         }
+        // 仅听声音 gets its own page over this one (the player keeps running beneath it).
+        val listening = ctrl?.audioOnly == true && !vm.fullscreen && !showImmersive
+        androidx.compose.animation.AnimatedVisibility(
+            visible = listening,
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()) +
+                androidx.compose.animation.slideInVertically(YoinMotion.defaultSpatialSpec()) { it / 8 },
+            exit = fadeOut(YoinMotion.fastEffectsSpec()) +
+                androidx.compose.animation.slideOutVertically(YoinMotion.fastSpatialSpec()) { it / 8 },
+        ) {
+            if (ctrl != null) ListenScreen(vm, ctrl, queue, gate)
+        }
     }
 
     val d = vm.detail

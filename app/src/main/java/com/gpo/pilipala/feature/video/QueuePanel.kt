@@ -358,7 +358,7 @@ private fun AudioOnlyToggle(checked: Boolean, onChange: (Boolean) -> Unit) {
 
 /** One queue entry; the current one is a primary-container block with a live equalizer. */
 @Composable
-private fun QueueRow(item: QueueItem, position: Int, current: Boolean, playing: Boolean, onClick: () -> Unit) {
+internal fun QueueRow(item: QueueItem, position: Int, current: Boolean, playing: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val container by animateColorAsState(
         if (current) colors.primaryContainer else colors.primaryContainer.copy(alpha = 0f),

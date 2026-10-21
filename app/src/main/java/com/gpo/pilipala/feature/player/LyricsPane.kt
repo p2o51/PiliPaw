@@ -129,7 +129,7 @@ internal fun LyricsPane(
 @Composable
 private fun LyricsContent(ctrl: PiliPlayerController, cover: String, frameW: Dp, frameH: Dp) {
     val wide = frameW >= 560.dp && frameW > frameH * 1.3f
-    val lines = ctrl.subtitleLines
+    val lines = ctrl.lyricLines()
     val waiting = !ctrl.subtitlesReady || ctrl.subtitleLoading
     val state = when {
         lines.isNotEmpty() -> LyricsState.Lines
@@ -188,6 +188,17 @@ private fun LyricsContent(ctrl: PiliPlayerController, cover: String, frameW: Dp,
 }
 
 
+/**
+ * What 仅听声音 shows as lyrics: the lines picked from 网易云 / QQ 音乐 for this part
+ * (LyricsStore) when there are any, else the video's own subtitles.
+ */
+@Composable
+internal fun PiliPlayerController.lyricLines(): List<SubtitleLine> {
+    val cid = target?.cid ?: 0L
+    LaunchedEffect(cid) { com.gpo.pilipala.feature.player.lyrics.LyricsStore.load(cid) }
+    return com.gpo.pilipala.feature.player.lyrics.LyricsStore.lines(cid) ?: subtitleLines
+}
+
 private enum class LyricsState { Waiting, Lines, Empty }
 
 /** The cover, centred, with a quiet label under it (none while the subtitles are on their way). */
@@ -223,7 +234,7 @@ private fun CoverWithLabel(cover: String, label: String?, frameWidth: Dp, frameH
  * track is instant, each new cue glides on the spatial spring, a user drag pauses it.
  */
 @Composable
-private fun LyricsList(
+internal fun LyricsList(
     lines: List<SubtitleLine>,
     positionMs: () -> Long,
     onSeek: (Long) -> Unit,
@@ -417,7 +428,7 @@ private fun Modifier.lyricsEdgeFade(): Modifier =
  * dark chrome surface at the top, its accent at the bottom, and a soft accent bloom.
  */
 @Composable
-private fun Modifier.lyricsBackdrop(): Modifier {
+internal fun Modifier.lyricsBackdrop(): Modifier {
     val scheme = MaterialTheme.colorScheme
     val backdrop = LocalPageBackdrop.current
     val fallbackBase = scheme.primary
