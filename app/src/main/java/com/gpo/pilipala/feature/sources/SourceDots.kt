@@ -69,12 +69,6 @@ import com.gpo.pilipala.yt.core.account.Accounts
 import com.gpo.pilipala.yt.core.account.Profile
 import com.gpo.yoin.symbols.YoinSymbols
 
-/** Each source's own colour: the dot when there is no avatar, and the ring around a ticked one. */
-private fun VideoSource.tint(): Color = when (this) {
-    VideoSource.Bilibili -> Color(0xFFFB7299)
-    VideoSource.YouTube -> Color(0xFFFF0033)
-}
-
 /** What the panel shows for a source's account: its avatar and name, or signed out. */
 private data class SourceAccount(val avatar: String?, val name: String?)
 
@@ -194,10 +188,10 @@ private fun SourceDot(source: VideoSource, size: Dp, modifier: Modifier = Modifi
         )
     } else {
         Box(
-            modifier.size(size).clip(CircleShape).background(source.tint()).then(ring),
+            modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer).then(ring),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(YoinSymbols.Person, contentDescription = source.label, tint = Color.White, modifier = Modifier.size(size * 0.55f))
+            Icon(YoinSymbols.Person, contentDescription = source.label, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(size * 0.55f))
         }
     }
 }
@@ -326,7 +320,8 @@ private fun SourceRow(
 ) {
     val account = accountOf(source)
     val bg by animateColorAsState(
-        if (ticked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        // One hue with the card (the theme's own tones), no second colour family.
+        if (ticked) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
         YoinMotion.defaultEffectsSpec(),
         label = "rowBg",
     )
@@ -353,7 +348,7 @@ private fun SourceRow(
         if (onAccount != null) {
             TextButton(onClick = onAccount) { Text(if (account.name == null) "登录" else "主页") }
         }
-        TickMark(ticked, source.tint(), onTick)
+        TickMark(ticked, MaterialTheme.colorScheme.primary, onTick)
     }
 }
 
@@ -439,7 +434,7 @@ internal fun TickMark(ticked: Boolean, tint: Color, onClick: () -> Unit) {
             Icon(
                 YoinSymbols.Check,
                 contentDescription = if (ticked) "已勾选" else "未勾选",
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier
                     .size(18.dp)
                     .graphicsLayer {
