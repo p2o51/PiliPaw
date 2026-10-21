@@ -187,12 +187,11 @@ internal fun ListenScreen(
                 // 展开歌词 folds the cover and title away and gives the lyrics the page.
                 var expanded by rememberSaveable { mutableStateOf(false) }
                 androidx.activity.compose.BackHandler(enabled = expanded) { expanded = false }
-                // The cover is held to about a quarter of the height: a tall phone shows it full
-                // width, a tablet in portrait gets a smaller card with the title and 点赞 beside it.
+                // The cover is held to about a fifth of the height: a tall phone shows it full
+                // width, a tablet in portrait a smaller card, centred, with the title under it.
                 val coverMaxH = pageH * 0.22f
                 val contentW = pageW - 48.dp
                 val coverW = minOf(contentW, coverMaxH * (16f / 9f))
-                val side = contentW - coverW >= 160.dp
                 Column(Modifier.padding(horizontal = 24.dp)) {
                     Box(Modifier.listenReveal(fl, 0.3f)) { bar() }
                     // Expanded (Apple Music's lyrics): the cover steps down into one row with the
@@ -209,17 +208,11 @@ internal fun ListenScreen(
                         enter = androidx.compose.animation.expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
                         exit = androidx.compose.animation.shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
                     ) {
-                        Column {
+                        Column(Modifier.fillMaxWidth()) {
                             Spacer(Modifier.height(16.dp))
-                            if (side) {
-                                Row(Modifier.fillMaxWidth().height(coverW * (9f / 16f))) {
-                                    ListenCover(cover, Modifier.width(coverW))
-                                    Spacer(Modifier.width(20.dp))
-                                    Box(Modifier.weight(1f).fillMaxHeight().listenReveal(fl, 0.4f)) {
-                                        SideTitle(vm, title, subtitle, gate)
-                                    }
-                                }
-                            } else {
+                            // The cover centred at its held-down size; the title row under it, on one
+                            // line, keeps to the cover's width.
+                            Column(Modifier.width(coverW).align(Alignment.CenterHorizontally)) {
                                 ListenCover(cover, Modifier.fillMaxWidth())
                                 Spacer(Modifier.height(20.dp))
                                 Box(Modifier.listenReveal(fl, 0.4f)) { TitleRow(vm, title, subtitle, gate) }
@@ -403,7 +396,13 @@ private fun ListenCover(cover: String, modifier: Modifier) {
 private fun TitleRow(vm: VideoDetailViewModel, title: String, subtitle: String, gate: (() -> Unit) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2_000),
+            )
             if (subtitle.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -462,27 +461,6 @@ private fun CompactHeader(
             }
         }
         Spacer(Modifier.width(12.dp))
-        LikeButton(vm, gate)
-    }
-}
-
-/** Beside a held-down cover: the title on top, the UP under it, 点赞 at the bottom. */
-@Composable
-private fun SideTitle(vm: VideoDetailViewModel, title: String, subtitle: String, gate: (() -> Unit) -> Unit) {
-    Column(Modifier.fillMaxSize()) {
-        // One line, the way a song title reads; a long one scrolls through rather than wrapping.
-        Text(
-            title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2_000),
-        )
-        if (subtitle.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        Spacer(Modifier.weight(1f))
         LikeButton(vm, gate)
     }
 }
