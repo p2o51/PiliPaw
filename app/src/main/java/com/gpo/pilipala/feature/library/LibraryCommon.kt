@@ -126,13 +126,14 @@ internal fun LibraryScaffold(
     subtitle: String? = null,
     actions: @Composable RowScope.() -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
+    showBack: Boolean = true,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
-        topBar = { PiliLargeTopBar(title = title, subtitle = subtitle, scrollBehavior = scrollBehavior, actions = actions) },
+        topBar = { PiliLargeTopBar(title = title, subtitle = subtitle, scrollBehavior = scrollBehavior, actions = actions, showBack = showBack) },
         floatingActionButton = floatingActionButton,
         content = content,
     )

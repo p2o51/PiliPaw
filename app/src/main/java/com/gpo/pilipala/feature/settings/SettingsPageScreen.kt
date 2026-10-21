@@ -862,5 +862,20 @@ private fun ColumnScope.ExtraBody() {
                 trailing = { ValueLabel(BuildConfig.VERSION_NAME) },
             )
         }
+        val crash = com.gpo.pilipala.core.util.CrashLog.read()
+        if (crash != null) {
+            item {
+                val clipboard = LocalContext.current.getSystemService(android.content.ClipboardManager::class.java)
+                SettingsItem(
+                    title = "上次崩溃",
+                    icon = YoinSymbols.Info,
+                    summary = crash.lineSequence().drop(2).firstOrNull { it.isNotBlank() }?.take(80),
+                    onClick = {
+                        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("PiliPaw crash", crash))
+                        toast("已复制崩溃日志")
+                    },
+                )
+            }
+        }
     }
 }

@@ -89,6 +89,7 @@ import com.gpo.pilipala.ui.components.LoadMoreEffect
 import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.VideoCardH
+import com.gpo.pilipala.ui.components.singleRoute
 import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
@@ -115,7 +116,10 @@ internal data class FavInfo(
 )
 
 /** One fav entry: the card model plus what batch-del needs. */
-internal data class FavMedia(val video: VideoItem, val id: Long, val type: Int)
+internal data class FavMedia(val video: VideoItem, val id: Long, val type: Int) {
+    /** A plain UGC video, so it can be played as part of the folder's queue. */
+    val queueable: Boolean get() = type == 2 && video.target == null && video.bvid.isNotEmpty()
+}
 
 internal class FavDetailViewModel(val mediaId: Long) : ViewModel() {
     var keyword by mutableStateOf("")
@@ -226,7 +230,9 @@ internal class FavDetailViewModel(val mediaId: Long) : ViewModel() {
         queueLoading = true
         try {
             val items = allQueueItems().let { if (shuffle) it.shuffled() else it }
-            val start = from?.let { b -> items.indexOfFirst { it.bvid == b } }?.coerceAtLeast(0) ?: 0
+            val start = from?.let { b -> items.indexOfFirst { it.bvid == b } }?.also { i ->
+                if (i < 0) throw IllegalStateException("没有可播放的视频")
+            } ?: 0
             val title = info.title.ifEmpty { "收藏夹" }
             return PlayQueues.create(title, items, start)?.let { PlayQueues.route(it) }
                 ?: throw IllegalStateException("没有可播放的视频")
@@ -391,7 +397,11 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
         scope.launch {
             runCatching { vm.buildQueue(shuffle, from) }
                 .onSuccess { r -> r?.let { nav.push(it.copy(audioOnly = listen)) } }
-                .onFailure { toast(it.friendlyMessage()) }
+                .onFailure {
+                    // The folder could not be listed (or this one is not in it): play the video alone.
+                    val single = from?.let { b -> vm.pager.items.firstOrNull { it.video.bvid == b } }
+                    if (single != null) nav.push(single.video.singleRoute(listen)) else toast(it.friendlyMessage())
+                }
         }
     }
 
@@ -468,9 +478,14 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
                         }
                     }
                     items(vm.pager.items, key = { "${it.id}:${it.type}" }) { m ->
+                        // A tap plays the folder from here (单集播放 in the menu opens it alone).
+                        val queueable = m.queueable
                         VideoCardH(
                             m.video,
                             modifier = Modifier.animateItem(),
+                            onClick = if (queueable) {
+                                { startQueue(false, m.video.bvid) }
+                            } else null,
                             onLongClick = {
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 sheet = m
@@ -488,8 +503,8 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
             m.video,
             isVideo = m.type == 2 && m.video.isPlainVideo,
             extras = buildList {
-                if (m.type == 2 && m.video.target == null && m.video.bvid.isNotEmpty()) {
-                    add(VideoMenuAction("从这里播放", YoinSymbols.Playlist) { startQueue(false, m.video.bvid) })
+                if (m.queueable) {
+                    add(VideoMenuAction("单集播放", YoinSymbols.PlayFilled) { nav.push(m.video.singleRoute(listen)) })
                 }
                 if (isOwner) {
                     add(

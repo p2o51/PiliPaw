@@ -27,6 +27,11 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import com.gpo.pilipala.core.account.Account
+import com.gpo.pilipala.ui.components.LocalBottomBarInset
+import com.gpo.pilipala.ui.shell.LocalTabReselect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -119,10 +124,12 @@ internal class FavViewModel(val mid: Long) : ViewModel() {
     }
 }
 
+/** [asTab]: the bottom bar's 收藏 section (no back, clear of the floating bar, reselect scrolls up). */
 @Composable
-fun FavScreen(route: Route.Fav) {
-    val mid = if (route.mid > 0) route.mid else BiliClient.mid
-    val vm = viewModel { FavViewModel(mid) }
+fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
+    val user by Account.user.collectAsState()
+    val mid = if (route.mid > 0) route.mid else (user?.mid?.takeIf { it > 0 } ?: BiliClient.mid)
+    val vm = viewModel(key = "fav:$mid") { FavViewModel(mid) }
     val nav = LocalNavigator.current
     val toast = rememberToast()
     val haptics = LocalHapticFeedback.current
@@ -131,12 +138,19 @@ fun FavScreen(route: Route.Fav) {
     var confirmDelete by remember { mutableStateOf<FavFolder?>(null) }
     val gridState = rememberLazyGridState()
     LoadMoreEffect(gridState) { vm.created.loadMore() }
+    val barInset = if (asTab) LocalBottomBarInset.current else 0.dp
+    if (asTab) {
+        val reselect = LocalTabReselect.current
+        LaunchedEffect(reselect) { reselect.collect { gridState.animateScrollToItem(0) } }
+    }
 
     LibraryScaffold(
         title = if (vm.isOwner) "我的收藏" else "收藏",
+        showBack = !asTab,
         floatingActionButton = {
             if (vm.isOwner && BiliClient.isLoggedIn) {
                 ExtendedFloatingActionButton(
+                    modifier = Modifier.padding(bottom = barInset),
                     onClick = { editor = FolderEditorState(null) },
                     expanded = !gridState.isScrollInProgress,
                     icon = { Icon(YoinSymbols.Add, null) },
@@ -154,7 +168,7 @@ fun FavScreen(route: Route.Fav) {
                     start = 12.dp,
                     end = 12.dp,
                     top = listPadding.calculateTopPadding(),
-                    bottom = listPadding.calculateBottomPadding() + 72.dp,
+                    bottom = listPadding.calculateBottomPadding() + 72.dp + barInset,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),

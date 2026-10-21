@@ -83,6 +83,8 @@ import com.gpo.pilipala.ui.components.FameMode
 import com.gpo.pilipala.ui.components.LoadingFooter
 import com.gpo.pilipala.ui.components.LoadingState
 import com.gpo.pilipala.ui.components.VideoCardH
+import com.gpo.pilipala.ui.components.VideoItem
+import com.gpo.pilipala.ui.components.singleRoute
 import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.CoverTheme
@@ -324,10 +326,13 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
                             page == 0 -> CommentsPane(vm, pad, seek)
                             page == 2 && queue != null -> QueueTab(queue, playerState, pad)
                             else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
-                                relatedItems(vm)
+                                relatedItems(vm) { playerState.listening }
                             }
                         }
                     },
+                    // Paused: pushing the comments up folds the player away (继续播放 brings it back).
+                    collapsible = ctrl != null && !ctrl.isPlaying && !ctrl.playWhenReady,
+                    onResume = { playerState.play() },
                 )
             }
         }
@@ -524,7 +529,7 @@ private fun IntroPane(
                     }
                     if (includeRelated) {
                         full("relatedGap") { Spacer(Modifier.height(20.dp)) }
-                        relatedGridItems(vm)
+                        relatedGridItems(vm) { player?.listening == true }
                     }
                 }
             }
@@ -609,14 +614,21 @@ private fun CommentsPane(vm: VideoDetailViewModel, pad: PaddingValues, onSeek: (
 }
 
 /** 相关推荐 for the side pane's 相关 tab (the tab names it, so no title). */
-private fun LazyListScope.relatedItems(vm: VideoDetailViewModel) {
+private fun LazyListScope.relatedItems(vm: VideoDetailViewModel, listening: () -> Boolean) {
     when {
         vm.relatedLoading && vm.related.isEmpty() -> item("relatedLoading") { LoadingFooter() }
         vm.related.isEmpty() -> item("relatedEmpty") {
             Box(Modifier.fillMaxWidth().height(200.dp)) { EmptyState("暂无相关推荐") }
         }
-        else -> items(vm.related, key = { "r_${it.bvid}" }) { VideoCardH(it) }
+        else -> items(vm.related, key = { "r_${it.bvid}" }) { RelatedCard(it, listening) }
     }
+}
+
+/** A 相关推荐 row; while the page only plays the sound, the video it opens listens too. */
+@Composable
+private fun RelatedCard(item: VideoItem, listening: () -> Boolean) {
+    val nav = LocalNavigator.current
+    VideoCardH(item, onClick = { nav.push(item.singleRoute(audioOnly = listening())) })
 }
 
 /** Narrowest cell for the 相关推荐 rows: one column on phones, two from tablet portrait. */
@@ -626,13 +638,13 @@ private val RelatedMinCell = 360.dp
 private fun LazyGridScope.full(key: String, content: @Composable LazyGridItemScope.() -> Unit) =
     item(key = key, span = { GridItemSpan(maxLineSpan) }, content = content)
 
-private fun LazyGridScope.relatedGridItems(vm: VideoDetailViewModel) {
+private fun LazyGridScope.relatedGridItems(vm: VideoDetailViewModel, listening: () -> Boolean) {
     full("relatedTitle") { SectionTitle("相关推荐", Modifier.padding(bottom = 4.dp)) }
     when {
         vm.relatedLoading && vm.related.isEmpty() -> full("relatedLoading") { LoadingFooter() }
         vm.related.isEmpty() -> full("relatedEmpty") {
             Box(Modifier.fillMaxWidth().height(200.dp)) { EmptyState("暂无相关推荐") }
         }
-        else -> gridItems(vm.related, key = { "r_${it.bvid}" }) { VideoCardH(it) }
+        else -> gridItems(vm.related, key = { "r_${it.bvid}" }) { RelatedCard(it, listening) }
     }
 }

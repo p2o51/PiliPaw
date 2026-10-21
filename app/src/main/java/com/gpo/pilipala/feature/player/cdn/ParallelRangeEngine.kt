@@ -237,7 +237,29 @@ internal class ParallelRangeEngine(
 
     // ── Workers ─────────────────────────────────────────────────────────────
 
+    /**
+     * A worker on the range pool. Anything but an IOException (a bad mirror URL, an OOM on a
+     * piece buffer, a listener throwing) would otherwise reach the thread's default handler and
+     * kill the app; it fails the piece instead, and the player sees a load error.
+     */
     private fun runPiece(p: Piece, opened: Response?) {
+        try {
+            runPieceOrThrow(p, opened)
+        } catch (t: Throwable) {
+            runCatching { opened?.close() }
+            lock.withLock {
+                if (!p.done && p.failed == null) p.failed = t as? IOException ?: IOException(t)
+                if (p.running) {
+                    p.running = false
+                    markBusy(-1)
+                }
+                p.call = null
+                changed.signalAll()
+            }
+        }
+    }
+
+    private fun runPieceOrThrow(p: Piece, opened: Response?) {
         var response = opened
         while (true) {
             val hostIndex = lock.withLock { if (closed) return finish(p); p.hostIndex }

@@ -17,6 +17,7 @@ import okhttp3.OkHttpClient
 class PiliApp : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
+        com.gpo.pilipala.core.util.CrashLog.install(this)
         BiliClient.init(this)
         AppSettings.init(this)
         com.gpo.pilipala.feature.player.cdn.CdnRouter.init(this)

@@ -31,8 +31,10 @@ import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.feature.dynamics.DynamicsScreen
 import com.gpo.pilipala.feature.home.HomeScreen
+import com.gpo.pilipala.feature.library.FavScreen
 import com.gpo.pilipala.feature.mine.MineScreen
 import com.gpo.pilipala.feature.rank.RankScreen
+import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.LocalBottomBarInset
 import com.gpo.pilipala.ui.components.seam.ProvideSeamBarField
 import com.gpo.pilipala.ui.launch.splashReveal
@@ -73,12 +75,13 @@ enum class ShellSection(val key: String, val tab: NavTab, val removable: Boolean
     Home("home", NavTab("首页", YoinSymbols.Home, YoinSymbols.HomeFilled), removable = false),
     Rank("rank", NavTab("排行", PiliSymbols.Trophy, PiliSymbols.TrophyFilled), removable = true),
     Dynamics("dynamics", NavTab("动态", PiliSymbols.Dynamic, PiliSymbols.DynamicFilled), removable = true),
+    Fav("fav", NavTab("收藏", YoinSymbols.Star, YoinSymbols.StarFilled), removable = true),
     Mine("mine", NavTab("我的", YoinSymbols.Person, PiliSymbols.PersonFilled), removable = false),
 }
 
 /**
  * 底栏 (设置 › 外观): which sections the bar shows. 首页 and 我的 always stay (我的 is where
- * settings live); 排行 and 动态 can go.
+ * settings live); 排行, 动态 and 收藏 can go.
  */
 object ShellSections {
     /** Keys of the hidden sections, comma separated. */
@@ -161,6 +164,7 @@ fun MainShell() {
                                 ShellSection.Home -> HomeScreen()
                                 ShellSection.Rank -> RankScreen()
                                 ShellSection.Dynamics -> DynamicsScreen()
+                                ShellSection.Fav -> FavScreen(Route.Fav(), asTab = true)
                                 ShellSection.Mine -> MineScreen()
                             }
                         }

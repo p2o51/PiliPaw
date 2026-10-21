@@ -108,7 +108,11 @@ private fun cardLongClick(item: VideoItem, onLongClick: (() -> Unit)?): (() -> U
     }
 }
 
-private fun VideoItem.route(): Route =target ?: Route.Video(bvid = bvid, aid = aid, cid = cid, cover = cover, title = title, progress = progress.coerceAtLeast(0))
+/** This video on its own (not as part of a list), listening only when [audioOnly]. */
+internal fun VideoItem.singleRoute(audioOnly: Boolean = false): Route =
+    route().let { r -> if (audioOnly && r is Route.Video) r.copy(audioOnly = true) else r }
+
+internal fun VideoItem.route(): Route =target ?: Route.Video(bvid = bvid, aid = aid, cid = cid, cover = cover, title = title, progress = progress.coerceAtLeast(0))
 
 /**
  * Grid card (home feeds). The page it opens grows out of it (container

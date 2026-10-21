@@ -844,8 +844,14 @@ internal class PiliPlayerController(
         scope.cancel()
     }
 
+    /** The CDN routing session this player began; another player's (a preview's, a page's) is left alone. */
+    private var cdnSession = -1L
+
     override fun release() {
-        com.gpo.pilipala.feature.player.cdn.CdnRouter.endSession()
+        if (cdnSession >= 0 && com.gpo.pilipala.feature.player.cdn.CdnRouter.sessionId() == cdnSession) {
+            com.gpo.pilipala.feature.player.cdn.CdnRouter.endSession()
+        }
+        cdnSession = -1L
         if (!preview) target?.let { t ->
             ResumeMemory.put(t.cid, positionMs)
             heartbeat(if (ended) -1 else positionMs / 1000, force = true)
@@ -1106,6 +1112,7 @@ internal class PiliPlayerController(
                 requiredBps = if (audioOnly) (a?.bandwidth ?: 0) else v.bandwidth,
                 bufferedAheadMs = { (bufferedMs - positionMs).coerceAtLeast(0) },
             )
+            cdnSession = com.gpo.pilipala.feature.player.cdn.CdnRouter.sessionId()
             if (a == null) return videoSource
             currentAudio = a.id
             val aUrls = com.gpo.pilipala.feature.player.cdn.CdnRouter.orderUrls(a.urls)

@@ -105,8 +105,11 @@ internal fun LyricsPane(
     bottomLift: () -> Float = { 0f },
 ) {
     val latestBackgroundTap by rememberUpdatedState(onBackgroundTap)
+    // A short frame (the 16:9 slot on a phone) keeps the transport a size down so the lines keep room.
+    BoxWithConstraints(modifier.fillMaxSize()) {
+    val controlSize = if (maxHeight < 320.dp) 40.dp else 48.dp
     Column(
-        modifier
+        Modifier
             .fillMaxSize()
             .lyricsBackdrop()
             .pointerInput(Unit) { detectTapGestures(onTap = { latestBackgroundTap() }) },
@@ -114,10 +117,12 @@ internal fun LyricsPane(
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
             LyricsContent(ctrl = ctrl, cover = cover, frameW = maxWidth, frameH = maxHeight)
         }
-        LyricsTransport(
+        ListenTransport(
             ctrl = ctrl,
+            controlSize = controlSize,
             modifier = Modifier.graphicsLayer { translationY = -bottomLift() },
         )
+    }
     }
 }
 
@@ -182,93 +187,6 @@ private fun LyricsContent(ctrl: PiliPlayerController, cover: String, frameW: Dp,
     }
 }
 
-/**
- * The docked transport: 上一个, a filled play / pause in the cover's primary, 下一个 (it steps
- * back while there is nothing to go to), then the playhead, a slim seek bar and the duration.
- * Its own [SeekScrub], so the chrome's seek bubble keeps following the chrome's bar.
- */
-@Composable
-private fun LyricsTransport(ctrl: PiliPlayerController, modifier: Modifier = Modifier) {
-    val scheme = MaterialTheme.colorScheme
-    val ink = remember(scheme) {
-        PlayerInk(
-            content = scheme.onSurface,
-            contentVariant = scheme.onSurfaceVariant,
-            pill = scheme.secondaryContainer,
-            pillContent = scheme.onSecondaryContainer,
-            trackRest = scheme.onSurface.copy(alpha = 0.14f),
-            trackBuffered = scheme.onSurface.copy(alpha = 0.26f),
-            trackPlayed = scheme.primary,
-        )
-    }
-    val scrub = remember { SeekScrub() }
-    val playing = ctrl.isPlaying || (ctrl.playWhenReady && !ctrl.ended)
-    val nextAlpha by animateFloatAsState(
-        targetValue = if (ctrl.hasNext) 1f else 0.38f,
-        animationSpec = YoinMotion.defaultEffectsSpec(),
-        label = "transportNext",
-    )
-    val timeStyle = MaterialTheme.typography.labelMedium.withTabularFigures()
-    val d = ctrl.durationMs
-    val shownMs = scrub.fraction?.let { (it * d).toLong() } ?: ctrl.positionMs
-    CompositionLocalProvider(LocalPlayerInk provides ink) {
-        Row(
-            modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                .height(TransportHeight)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = { ctrl.skipPrevious() },
-                shapes = IconButtonDefaults.shapes(),
-                colors = IconButtonDefaults.iconButtonColors(contentColor = scheme.onSurface),
-                modifier = Modifier.size(44.dp),
-            ) {
-                Icon(YoinSymbols.SkipPreviousFilled, contentDescription = "上一个")
-            }
-            FilledIconButton(
-                onClick = { ctrl.togglePlay() },
-                shapes = IconButtonDefaults.shapes(),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = scheme.primary,
-                    contentColor = scheme.onPrimary,
-                ),
-                modifier = Modifier.size(48.dp),
-            ) {
-                Icon(rememberPlayPauseSymbolPainter(playing), contentDescription = if (playing) "暂停" else "播放")
-            }
-            IconButton(
-                onClick = { ctrl.skipNext() },
-                enabled = ctrl.hasNext,
-                shapes = IconButtonDefaults.shapes(),
-                colors = IconButtonDefaults.iconButtonColors(
-                    contentColor = scheme.onSurface,
-                    disabledContentColor = scheme.onSurface,
-                ),
-                modifier = Modifier.size(44.dp).graphicsLayer { alpha = nextAlpha },
-            ) {
-                Icon(YoinSymbols.SkipNextFilled, contentDescription = "下一个")
-            }
-            Spacer(Modifier.width(8.dp))
-            Text(clock(shownMs), style = timeStyle, color = scheme.onSurface, maxLines = 1)
-            Spacer(Modifier.width(10.dp))
-            PlayerSeekBar(
-                ctrl = ctrl,
-                scrub = scrub,
-                onPoke = {},
-                frame = { null },
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(clock(d), style = timeStyle, color = scheme.onSurfaceVariant, maxLines = 1)
-            Spacer(Modifier.width(8.dp))
-        }
-    }
-}
-
-private val TransportHeight = 60.dp
 
 private enum class LyricsState { Waiting, Lines, Empty }
 

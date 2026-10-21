@@ -61,6 +61,7 @@ import com.gpo.pilipala.ui.components.VideoCardH
 import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.components.singleRoute
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
@@ -136,7 +137,7 @@ internal class LaterViewModel : ViewModel() {
             .filter { it.target == null && it.bvid.isNotEmpty() }
             .map { QueueItem(it.bvid, it.aid, it.cid, it.title, it.cover, it.ownerName, it.duration) }
             .let { if (shuffle) it.shuffled() else it }
-        val start = from?.let { b -> items.indexOfFirst { it.bvid == b } }?.coerceAtLeast(0) ?: 0
+        val start = from?.let { b -> items.indexOfFirst { it.bvid == b } }?.takeIf { it >= 0 } ?: if (from != null) return null else 0
         return PlayQueues.create("稍后再看", items, start)?.let { PlayQueues.route(it) }
     }
 }
@@ -246,6 +247,9 @@ fun LaterScreen() {
                                         haptics.performHapticFeedback(if (selected) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
                                         selection.toggle(item.aid)
                                     }
+                                } else if (item.target == null && item.bvid.isNotEmpty()) {
+                                    // A tap plays the list from here (单集播放 in the menu opens it alone).
+                                    { startQueue(false, item.bvid) }
                                 } else {
                                     null
                                 },
@@ -296,7 +300,7 @@ fun LaterScreen() {
             watchLater = false,
             extras = listOfNotNull(
                 if (item.target == null && item.bvid.isNotEmpty()) {
-                    VideoMenuAction("从这里播放", YoinSymbols.Playlist) { startQueue(false, item.bvid) }
+                    VideoMenuAction("单集播放", YoinSymbols.PlayFilled) { nav.push(item.singleRoute(listen)) }
                 } else {
                     null
                 },
