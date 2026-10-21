@@ -84,6 +84,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Velocity
 import com.gpo.pilipala.ui.components.BackButton
+import com.gpo.pilipala.ui.components.LocalPullRefreshEnabled
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.Job
@@ -304,15 +305,18 @@ private fun StackedDetail(
             }
         }
         DetailTabRow(tabs, pagerState, Color.Transparent)
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.weight(1f),
-            beyondViewportPageCount = 1,
-        ) { i ->
-            // Intro and comments sink under the tide line at the tab row instead of being
-            // cut there; the mask shows the page's own wash beneath (ui/components/seam).
-            Box(Modifier.fillMaxSize().seamViewport()) {
-                page(i, PaddingValues(bottom = bottomPadding))
+        // Folded: a pull down at the list's top unfolds the player instead of refreshing.
+        CompositionLocalProvider(LocalPullRefreshEnabled provides (collapse <= 0f)) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f),
+                beyondViewportPageCount = 1,
+            ) { i ->
+                // Intro and comments sink under the tide line at the tab row instead of being
+                // cut there; the mask shows the page's own wash beneath (ui/components/seam).
+                Box(Modifier.fillMaxSize().seamViewport()) {
+                    page(i, PaddingValues(bottom = bottomPadding))
+                }
             }
         }
     }

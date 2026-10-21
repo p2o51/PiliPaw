@@ -607,6 +607,8 @@ private fun CommentsPane(vm: VideoDetailViewModel, pad: PaddingValues, onSeek: (
                     modifier = Modifier.fillMaxSize().readingWidth(),
                     contentPadding = pad,
                     onTimestampClick = onSeek,
+                    // Threads open inside the tab: pushing a page would leave the player and pause it.
+                    threadsInPlace = true,
                 )
             }
         }

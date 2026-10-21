@@ -19,7 +19,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.pullToRefresh
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -58,21 +59,22 @@ fun RefreshBox(
         }
     }
     LaunchedEffect(shown) { if (shown) since = SystemClock.uptimeMillis() }
-    PullToRefreshBox(
-        isRefreshing = shown,
-        onRefresh = onRefresh,
-        modifier = modifier,
-        state = state,
-        indicator = {
-            PullToRefreshDefaults.LoadingIndicator(
-                state = state,
-                isRefreshing = shown,
-                modifier = Modifier.align(Alignment.TopCenter).padding(indicatorPadding),
-            )
-        },
-        content = content,
-    )
+    // PullToRefreshBox, with the pull switchable (LocalPullRefreshEnabled) without rebuilding the content.
+    Box(modifier.pullToRefresh(state = state, isRefreshing = shown, onRefresh = onRefresh, enabled = LocalPullRefreshEnabled.current)) {
+        content()
+        PullToRefreshDefaults.LoadingIndicator(
+            state = state,
+            isRefreshing = shown,
+            modifier = Modifier.align(Alignment.TopCenter).padding(indicatorPadding),
+        )
+    }
 }
+
+/**
+ * False where a pull down at the top means something else: the video page with its player
+ * folded away (DetailScaffold), where pulling down brings the picture back.
+ */
+val LocalPullRefreshEnabled = staticCompositionLocalOf { true }
 
 /** The shortest time the refresh indicator stays up once it appears. */
 private const val MinRefreshMs = 700L

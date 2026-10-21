@@ -361,6 +361,8 @@ private fun BangumiComments(vm: BangumiDetailViewModel, pad: PaddingValues, onSe
                     modifier = Modifier.fillMaxSize().readingWidth(),
                     contentPadding = pad,
                     onTimestampClick = onSeek,
+                    // Threads open inside the tab: pushing a page would leave the player and pause it.
+                    threadsInPlace = true,
                 )
             }
             vm.error != null -> ErrorState(vm.error.orEmpty(), onRetry = { vm.load() })

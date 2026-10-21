@@ -225,9 +225,14 @@ internal class FavDetailViewModel(val mediaId: Long) : ViewModel() {
     }
 
     /** Builds the folder's queue (shuffled list for 随机播放) and opens its first video (or [from]). */
+    /** Guards against a second build while one runs; [queueLoading] is only the play button's spinner. */
+    private var building = false
+
     suspend fun buildQueue(shuffle: Boolean, from: String? = null): Route.Video? {
-        if (queueLoading) return null
-        queueLoading = true
+        if (building) return null
+        building = true
+        // A tap on a row opens its video at once: the 播放全部 button should not flash a spinner for it.
+        if (from == null) queueLoading = true
         try {
             val items = allQueueItems().let { if (shuffle) it.shuffled() else it }
             val start = from?.let { b -> items.indexOfFirst { it.bvid == b } }?.also { i ->
@@ -237,6 +242,7 @@ internal class FavDetailViewModel(val mediaId: Long) : ViewModel() {
             return PlayQueues.create(title, items, start)?.let { PlayQueues.route(it) }
                 ?: throw IllegalStateException("没有可播放的视频")
         } finally {
+            building = false
             queueLoading = false
         }
     }
