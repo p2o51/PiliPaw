@@ -150,7 +150,7 @@ private val MineTiles = listOf(
 )
 
 @Composable
-fun MineScreen() {
+fun MineScreen(asPage: Boolean = false) {
     val user by Account.user.collectAsState()
     val vm = viewModel { MineViewModel() }
     val scope = rememberCoroutineScope()
@@ -174,7 +174,7 @@ fun MineScreen() {
             .statusBarsPadding()
             .padding(bottom = bottom),
     ) {
-        MineTopRow()
+        MineTopRow(asPage)
         Text(
             "我的",
             style = MaterialTheme.typography.displaySmall,
@@ -205,7 +205,7 @@ fun MineScreen() {
 }
 
 @Composable
-private fun MineTopRow() {
+private fun MineTopRow(asPage: Boolean) {
     val nav = LocalNavigator.current
     val dark = LocalPiliDark.current
     val haptics = LocalHapticFeedback.current
@@ -214,6 +214,13 @@ private fun MineTopRow() {
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Pushed from the avatar menu (no longer a tab): back on the left.
+        if (asPage) {
+            IconButton(onClick = { nav.pop() }, shapes = IconButtonDefaults.shapes()) {
+                Icon(YoinSymbols.Back, contentDescription = "返回")
+            }
+            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+        }
         IconButton(
             onClick = {
                 haptics.performHapticFeedback(if (dark) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)

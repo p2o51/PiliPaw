@@ -80,12 +80,12 @@ enum class ShellSection(val key: String, val tab: NavTab, val removable: Boolean
     Rank("rank", NavTab("排行", PiliSymbols.Trophy, PiliSymbols.TrophyFilled), removable = true),
     Dynamics("dynamics", NavTab("动态", PiliSymbols.Dynamic, PiliSymbols.DynamicFilled), removable = true),
     Fav("fav", NavTab("收藏", YoinSymbols.Star, YoinSymbols.StarFilled), removable = true),
-    Mine("mine", NavTab("我的", YoinSymbols.Person, PiliSymbols.PersonFilled), removable = false),
+    Mine("mine", NavTab("我的", YoinSymbols.Person, PiliSymbols.PersonFilled), removable = true),
 }
 
 /**
- * 底栏 (设置 › 外观): which sections the bar shows. 首页 and 我的 always stay (我的 is where
- * settings live); 排行, 动态 and 收藏 can go.
+ * 底栏 (设置 › 外观): which sections the bar shows. 首页 always stays; 我的 is off by default
+ * since it moved into the avatar menu at Home's top left (where 设置 lives too).
  */
 object ShellSections {
     /** Keys of the hidden sections, comma separated. */
@@ -115,6 +115,7 @@ object ShellSections {
 fun MainShell() {
     val hidden by ShellSections.hiddenKey.state.collectAsState()
     val sections = remember(hidden) { ShellSections.visible(hidden) }
+    MineMovedToAvatar()
     FourTabsForMiniBar(sections)
     val tabs = remember(sections) { sections.map { it.tab } }
     var selectedOrdinal by rememberSaveable { mutableIntStateOf(ShellSection.Home.ordinal) }
@@ -235,5 +236,23 @@ private fun FourTabsForMiniBar(sections: List<ShellSection>) {
         toast("底栏要给迷你播放器留位置，「${drop.tab.label}」先收起来了，可以在 设置 › 外观 › 底栏 里换")
     }
 }
+
+/**
+ * Once, on the first run with the avatar menu: 我的 leaves the bar (it is in the menu now) and a
+ * toast says where it went; 设置 › 外观 › 底栏 brings it back.
+ */
+@Composable
+private fun MineMovedToAvatar() {
+    val done by MineMovedDone.state.collectAsState()
+    val toast = rememberToast()
+    LaunchedEffect(done) {
+        if (done) return@LaunchedEffect
+        ShellSections.setShown(ShellSection.Mine, false)
+        com.gpo.pilipala.core.settings.AppSettings.set(MineMovedDone, true)
+        toast("「我的」搬到左上角头像里了：轻点或按住头像")
+    }
+}
+
+private val MineMovedDone = com.gpo.pilipala.core.settings.AppSettings.register("mine_moved_to_avatar", false)
 
 private val FourTabsDone = com.gpo.pilipala.core.settings.AppSettings.register("four_tabs_for_mini_bar", false)

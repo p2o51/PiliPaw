@@ -7,6 +7,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
@@ -106,21 +107,35 @@ fun SourceDots(
     single: (@Composable (onClick: () -> Unit) -> Unit)? = null,
 ) {
     val biliNav = com.gpo.pilipala.navigation.LocalNavigator.current
-    var ytAccount by remember { mutableStateOf(false) }
-    if (ytAccount) com.gpo.pilipala.yt.feature.account.AccountPanel(onDismiss = { ytAccount = false })
+    val ytNav = com.gpo.pilipala.yt.navigation.LocalNavigator.current
+    // Each account's own page: Bilibili's 我的 (or its sign-in), YouTube's account, subscriptions and Mix.
+    val openHome: (VideoSource) -> Unit = { source ->
+        when (source) {
+            VideoSource.Bilibili -> biliNav.push(if (Account.user.value != null) Route.MyHome else Route.Login)
+            VideoSource.YouTube -> ytNav.push(com.gpo.pilipala.yt.navigation.Route.Settings)
+        }
+    }
+    val openSettings = { biliNav.push(Route.Settings) }
     val enabled by Sources.enabled.collectAsState()
     var open by remember { mutableStateOf(false) }
     // Where the panel grows from (and shrinks back to): the dots' centre on screen.
     var origin by remember { mutableStateOf(Offset.Unspecified) }
-    val track = Modifier.onGloballyPositioned { c ->
-        origin = c.positionOnScreen() + Offset(c.size.width / 2f, c.size.height / 2f)
-    }
-    // Only this part's own source ticked: the part keeps its own avatar button (PiliPaw's lands
+    val hold = rememberHoldMenu(onHome = openHome, onSettings = openSettings)
+    val track = Modifier
+        .onGloballyPositioned { c ->
+            origin = c.positionOnScreen() + Offset(c.size.width / 2f, c.size.height / 2f)
+        }
+        // The avatar sits in the left edge's back-gesture zone; a slide that starts on it is ours.
+        .systemGestureExclusion()
+        // Press and hold: the accounts fan out; slide to one and let go (HoldMenu.kt).
+        .then(hold.modifier)
+    Box(modifier.then(track)) {
+    // Only this shell's own source ticked: the shell keeps its own avatar button (PiliPaw's lands
     // the launch animation in it), which opens the same panel.
-    if (single != null && singleFor != null && enabled == setOf(singleFor)) Box(track) { single { open = true } } else IconButton(
+    if (single != null && singleFor != null && enabled == setOf(singleFor)) single { open = true } else IconButton(
         onClick = { open = true },
         shapes = IconButtonDefaults.shapes(),
-        modifier = modifier.then(track).size(size + 8.dp),
+        modifier = Modifier.size(size + 8.dp),
     ) {
         Box(Modifier.size(size), contentAlignment = Alignment.Center) {
             val both = enabled.size > 1
@@ -144,23 +159,26 @@ fun SourceDots(
             }
         }
     }
+    HoldFan(hold)
+    }
     if (open) {
         SourcesPanel(
             origin = origin,
             onAccount = { source ->
                 open = false
-                when (source) {
-                    VideoSource.Bilibili -> {
-                        val u = Account.user.value
-                        biliNav.push(if (u != null) Route.Member(u.mid, u.face, u.name) else Route.Login)
-                    }
-                    VideoSource.YouTube -> ytAccount = true
-                }
+                openHome(source)
+            },
+            onSettings = {
+                open = false
+                openSettings()
             },
             onDismiss = { open = false },
         )
     }
 }
+
+@Composable
+internal fun SourceDotForMenu(source: VideoSource, size: Dp) = SourceDot(source, size)
 
 @Composable
 private fun SourceDot(source: VideoSource, size: Dp, modifier: Modifier = Modifier, ringed: Boolean = false) {
@@ -191,7 +209,7 @@ private fun SourceDot(source: VideoSource, size: Dp, modifier: Modifier = Modifi
  * once, on the way back. The last ticked source stays on.
  */
 @Composable
-private fun SourcesPanel(origin: Offset, onAccount: (VideoSource) -> Unit, onDismiss: () -> Unit) {
+private fun SourcesPanel(origin: Offset, onAccount: (VideoSource) -> Unit, onSettings: () -> Unit, onDismiss: () -> Unit) {
     val savedTicks by Sources.enabled.collectAsState()
     var ticks by remember { mutableStateOf(savedTicks) }
     val toast = rememberToast()
@@ -253,9 +271,9 @@ private fun SourcesPanel(origin: Offset, onAccount: (VideoSource) -> Unit, onDis
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 8.dp)) {
-                    Text("看哪些内容", style = MaterialTheme.typography.headlineSmall)
+                    Text("账号", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        "勾选后回到首页就会刷新",
+                        "勾选的会出现在首页；按住头像可以直接滑到账号主页",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -278,6 +296,19 @@ private fun SourcesPanel(origin: Offset, onAccount: (VideoSource) -> Unit, onDis
                         onRow = tick,
                         onAccount = { leave { onAccount(source) } },
                     )
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .clickable { leave(onSettings) }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    Icon(YoinSymbols.Settings, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("设置", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    Icon(YoinSymbols.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -310,24 +341,69 @@ private fun SourceRow(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         SourceDot(source, 48.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 account.name ?: "未登录",
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                source.label,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            AccountStats(source)
         }
         if (onAccount != null) {
-            TextButton(onClick = onAccount) { Text(if (account.name == null) "登录" else "账号") }
+            TextButton(onClick = onAccount) { Text(if (account.name == null) "登录" else "主页") }
         }
         TickMark(ticked, source.tint(), onTick)
     }
+}
+
+/**
+ * The account at a glance, under its name: Bilibili's 关注, 粉丝, 硬币 and level; YouTube's handle
+ * (or what signing in adds). Numbers go through [com.gpo.pilipala.ui.components.FameCount], so
+ * 隐藏数字 hides them here too.
+ */
+@Composable
+private fun AccountStats(source: VideoSource) {
+    when (source) {
+        VideoSource.Bilibili -> {
+            val user by Account.user.collectAsState()
+            val u = user
+            if (u == null) {
+                StatCaption("登录后看关注、收藏和稍后再看")
+                return
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Bottom) {
+                Stat(com.gpo.pilipala.core.util.Fmt.count(u.following.toLong()), "关注")
+                Stat(com.gpo.pilipala.core.util.Fmt.count(u.follower.toLong()), "粉丝")
+                Stat(if (u.coins % 1.0 == 0.0) u.coins.toLong().toString() else "%.1f".format(u.coins), "硬币")
+                Stat("LV${u.level}", "等级", hide = false)
+            }
+        }
+        VideoSource.YouTube -> {
+            val profile by Accounts.youtube.collectAsState()
+            val p = profile as? Profile.SignedIn
+            StatCaption(if (p != null) p.handle.ifEmpty { "已登录" } else "登录后首页有你的订阅和推荐")
+        }
+    }
+}
+
+@Composable
+private fun Stat(value: String, label: String, hide: Boolean = true) {
+    Column {
+        com.gpo.pilipala.ui.components.FameCount(
+            value,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+            hide = hide,
+            self = true,
+        )
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun StatCaption(text: String) {
+    Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
 
 /**

@@ -96,6 +96,8 @@ sealed interface Route : NavKey {
     // ── Account / settings / misc ───────────────────────────────────────────
     @Serializable data object Login : Route
     @Serializable data object Settings : Route
+    /** The Bilibili account's own page (what the 我的 tab was): from the avatar menu at Home's top left. */
+    @Serializable data object MyHome : Route
     /** page: "play" | "style" | "danmaku" | "privacy" | "recommend" | "extra" */
     @Serializable data class SettingsPage(val page: String) : Route
     @Serializable data object About : Route

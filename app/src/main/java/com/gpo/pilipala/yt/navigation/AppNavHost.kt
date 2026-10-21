@@ -150,7 +150,8 @@ private fun androidx.navigation3.runtime.EntryProviderScope<NavKey>.ytPages() {
     entry<Route.Search> { SearchScreen(it) }
     entry<Route.SearchResult> { SearchResultScreen(it) }
     entry<Route.Channel> { ChannelScreen(it) }
-    entry<Route.Settings> { SettingsScreen() }
+    // The YouTube account's page (from the avatar menu, or 我的 › YouTube): account, library, its own options.
+    entry<Route.Settings> { SettingsScreen(title = "YouTube") }
     entry<Route.SignIn> { com.gpo.pilipala.yt.feature.account.SignInScreen() }
     entry<Route.AccountVideos> { com.gpo.pilipala.yt.feature.account.AccountVideosScreen(it) }
     entry<Route.LocalList> { com.gpo.pilipala.yt.feature.library.LocalListScreen(it) }

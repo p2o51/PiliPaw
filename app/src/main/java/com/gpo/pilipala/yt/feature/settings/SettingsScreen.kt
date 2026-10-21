@@ -27,8 +27,8 @@ import com.gpo.yoin.symbols.YoinSymbols
 
 /** 设置 as a pushed page (the 我的 tab shows the same list in place). */
 @Composable
-fun SettingsScreen() {
-    SettingsList(title = "设置", showBack = true)
+fun SettingsScreen(title: String = "设置") {
+    SettingsList(title = title, showBack = true)
 }
 
 /**
@@ -81,19 +81,7 @@ fun SettingsList(title: String, showBack: Boolean = false, bottom: Dp = 0.dp) {
                 SettingsItem(title = "Mix", icon = YoinSymbols.Playlist, onClick = { nav.push(com.gpo.pilipala.yt.navigation.Route.Playlists) })
             }
         }
-        SettingsGroup("外观") {
-            item {
-                SettingsToggleItem(
-                    title = "深浅",
-                    icon = PiliSymbols.DarkMode,
-                    choices = listOf(Choice(0, "跟随系统"), Choice(1, "浅色"), Choice(2, "深色")),
-                    selected = themeMode,
-                    onSelect = { AppSettings.set(AppSettings.themeMode, it) },
-                )
-            }
-            item { SettingsSwitchItem("壁纸配色", dynamic, { AppSettings.set(AppSettings.dynamicColor, it) }, icon = PiliSymbols.Palette) }
-            item { SettingsSwitchItem("封面取色", cover, { AppSettings.set(AppSettings.coverColor, it) }, icon = PiliSymbols.Image) }
-        }
+        // 外观 lives in the app's own 设置 (one theme for both sources).
         SettingsGroup("内容") {
             item { SettingsSwitchItem("隐藏 Shorts", hideShorts, { AppSettings.set(AppSettings.hideShorts, it) }, icon = PiliSymbols.Video) }
             item { SettingsItem(title = "屏蔽", icon = YoinSymbols.VisibilityOff, onClick = { nav.push(com.gpo.pilipala.yt.navigation.Route.Mutes) }) }
