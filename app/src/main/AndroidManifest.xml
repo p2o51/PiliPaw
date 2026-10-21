@@ -89,10 +89,33 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="bilibili" />
             </intent-filter>
+            <!-- YouTube links. Not verifiable for us, so on Android 12+ the owner turns these
+                 hosts on under 默认打开. -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="youtube.com" />
+                <data android:host="www.youtube.com" />
+                <data android:host="m.youtube.com" />
+                <data android:host="youtu.be" />
+            </intent-filter>
         </activity>
 
         <service
             android:name=".feature.player.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!-- The YouTube player's media session (notification, lock screen, Bluetooth keys). -->
+        <service
+            android:name=".yt.feature.player.PlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>

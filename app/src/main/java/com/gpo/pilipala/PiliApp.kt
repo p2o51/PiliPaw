@@ -24,6 +24,8 @@ class PiliApp : Application(), SingletonImageLoader.Factory {
         com.gpo.pilipala.feature.player.cdn.CdnRouter.init(this)
         Account.init(this)
         com.gpo.pilipala.feature.widget.WidgetStore.appContext = this
+        com.gpo.pilipala.core.source.Sources.init(this)
+        com.gpo.pilipala.yt.YtApp.init(this, active = com.gpo.pilipala.core.source.Sources.isOn(com.gpo.pilipala.core.source.VideoSource.YouTube))
     }
 
     /**

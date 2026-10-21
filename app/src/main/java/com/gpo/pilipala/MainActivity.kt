@@ -61,6 +61,19 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.gpo.pilipala.core.source.Sources
+import com.gpo.pilipala.core.source.VideoSource
+import com.gpo.pilipala.ui.theme.YoinMotion
+import com.gpo.pilipala.yt.YoutubeRoot
+import com.gpo.pilipala.yt.YtApp
+import com.gpo.pilipala.yt.YtLinks
 
 class MainActivity : ComponentActivity() {
     /** [resume]: from the media notification — the playing page may already be on top. */
@@ -121,6 +134,25 @@ class MainActivity : ComponentActivity() {
         }
         handleIntent(intent)
         setContent {
+            val front by Sources.front.collectAsState()
+            val enabled by Sources.enabled.collectAsState()
+            LaunchedEffect(enabled) { if (VideoSource.YouTube in enabled) YtApp.activate() }
+            val enter = YoinMotion.defaultEffectsSpec<Float>()
+            val exit = YoinMotion.fastEffectsSpec<Float>()
+            // One part of the app at a time: the source on the dots' front (Home does not mix them yet).
+            AnimatedContent(
+                targetState = front,
+                transitionSpec = { fadeIn(enter).togetherWith(fadeOut(exit)) },
+                label = "source",
+            ) { source ->
+                if (source == VideoSource.YouTube) YoutubeRoot(this@MainActivity) else BiliRoot()
+            }
+        }
+    }
+
+    @Composable
+    private fun BiliRoot() {
+            val handoff = checkNotNull(handoff)
             PiliTheme {
                 val snackbar = remember { SnackbarHostState() }
                 val rootScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -164,7 +196,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        }
     }
 
     /**
@@ -268,6 +299,24 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
+        // The YouTube player's notification, a YouTube link or a shared one: the YouTube part.
+        if (YtLinks.handleResume(intent)) {
+            Sources.show(VideoSource.YouTube)
+            return
+        }
+        val ytLink = when (intent.action) {
+            Intent.ACTION_SEND -> YtLinks.firstLink(intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty())
+            Intent.ACTION_VIEW -> intent.dataString?.takeIf(YtLinks::isYoutube)
+            else -> null
+        }
+        if (ytLink != null) {
+            handoff?.divert()
+            Sources.show(VideoSource.YouTube)
+            YtLinks.pending.trySend(ytLink)
+            return
+        }
+        // Anything else belongs to Bilibili.
+        if (intent.action != Intent.ACTION_MAIN && intent.data?.scheme != GlanceActionScheme) Sources.show(VideoSource.Bilibili)
         // The feed widget's header: that feed's tab on the home page.
         intent.getStringExtra(FeedWidget.ExtraFeedId)?.takeIf { it.isNotEmpty() }?.let { id ->
             intent.removeExtra(FeedWidget.ExtraFeedId)

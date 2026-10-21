@@ -236,7 +236,11 @@ private fun HomeHeader(
             .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        HeaderAvatar(user, onAvatar)
+        com.gpo.pilipala.feature.sources.SourceDots(
+            current = com.gpo.pilipala.core.source.VideoSource.Bilibili,
+            onAccount = onAvatar,
+            single = { open -> HeaderAvatar(user, open) },
+        )
         Spacer(Modifier.width(8.dp))
         Box(Modifier.weight(1f).splashReveal(), contentAlignment = Alignment.Center) {
             // The native search: it opens full screen over the shell, the bottom bar included.
