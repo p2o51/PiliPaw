@@ -70,6 +70,10 @@ import com.gpo.pilipala.feature.player.findVideoView
 import com.gpo.pilipala.navigation.transition.LocalPageTransitions
 import com.gpo.pilipala.navigation.transition.PageHeroEffect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.graphics.ImageBitmap
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.platform.LocalView
 import com.gpo.pilipala.feature.reply.ReplyAnchors
 import com.gpo.pilipala.feature.reply.ReplyList
@@ -343,17 +347,37 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
                 onLanded = { if (handoff.flight === f) handoff.flight = null },
             ) { m -> player(m, PlayerChrome.Minimal) }
         }
-        // 仅听声音 gets its own page over this one (the player keeps running beneath it).
+        // 仅听声音 gets its own page over this one (the player keeps running beneath it); the
+        // picture flies into its cover on the way in and back out of it (ListenFlight).
         val listening = ctrl?.audioOnly == true && !vm.fullscreen && !showImmersive
-        androidx.compose.animation.AnimatedVisibility(
-            visible = listening,
-            enter = fadeIn(YoinMotion.defaultEffectsSpec()) +
-                androidx.compose.animation.slideInVertically(YoinMotion.defaultSpatialSpec()) { it / 8 },
-            exit = fadeOut(YoinMotion.fastEffectsSpec()) +
-                androidx.compose.animation.slideOutVertically(YoinMotion.fastSpatialSpec()) { it / 8 },
-        ) {
-            if (ctrl != null) ListenScreen(vm, ctrl, queue, gate)
+        val listenP = remember { Animatable(if (listening) 1f else 0f) }
+        var listenShot by remember { mutableStateOf<ImageBitmap?>(null) }
+        // Slower than the page springs: the trip is short (picture slot → cover slot) and has to
+        // read as the picture becoming the cover, not a cut.
+        val listenIn = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.86f, stiffness = 110f)
+        val listenOut = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.9f, stiffness = 170f)
+        LaunchedEffect(listening) {
+            if (listening) {
+                if (listenP.value < 0.01f) {
+                    // The picture as it is now, so the flight starts from what is on screen.
+                    listenShot = handoff.classicRect?.let { r ->
+                        findVideoView(heroView.rootView, r)?.let { v ->
+                            withTimeoutOrNull(80) { captureVideoFrame(v, v.width, v.height) }?.asImageBitmap()
+                        }
+                    }
+                }
+                listenP.animateTo(1f, listenIn)
+                listenShot = null
+            } else {
+                listenShot = null
+                listenP.animateTo(0f, listenOut)
+            }
         }
+        val listenShown by remember { derivedStateOf { listenP.value > 0.001f } }
+        val flight = remember(listenP) {
+            ListenFlight(progress = { listenP.value }, from = { handoff.classicRect }, shot = { listenShot })
+        }
+        if (ctrl != null && (listening || listenShown)) ListenScreen(vm, ctrl, queue, gate, flight)
     }
 
     val d = vm.detail

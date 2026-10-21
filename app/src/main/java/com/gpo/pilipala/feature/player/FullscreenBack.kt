@@ -38,6 +38,8 @@ import com.gpo.pilipala.ui.theme.YoinMotionRole
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.map
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
@@ -93,6 +95,14 @@ internal class FullscreenBackState {
     // Per landing: where the picture was let go and the corner it lands with.
     internal var release: BackPose? = null
     internal var restRadius: Float = 0f
+
+    /**
+     * Starts a back ride driven by a finger on the picture (swipe down from the middle): send
+     * raw progress 0..1, close the channel to exit, close it with a CancellationException to
+     * spring back. False when fullscreen back is not animated right now (the caller then exits
+     * plainly). Set by FullscreenBackHandler.
+     */
+    internal var startSwipe: ((kotlinx.coroutines.channels.ReceiveChannel<Float>) -> Boolean)? = null
 
     // Set from composition, for computing the release pose at commit time.
     internal var frame: LayoutCoordinates? = null
@@ -349,12 +359,9 @@ internal fun FullscreenBackHandler(
     val latestWindow by rememberUpdatedState(windowSize)
     val landSpec = YoinMotion.defaultSpatialSpec<Float>(YoinMotionRole.Standard)
     val cancelSpec = YoinMotion.defaultSpatialSpec<Float>(YoinMotionRole.Standard)
-    PredictiveBackHandler(enabled = enabled) { events ->
-        if (!latestAnimate) {
-            events.collect { }
-            latestExit(false)
-            return@PredictiveBackHandler
-        }
+    // One ride for both drivers: the system back gesture and the swipe down from the middle of
+    // the picture (playerGestures), which feeds its own progress through [startSwipe].
+    suspend fun ride(events: kotlinx.coroutines.flow.Flow<Float>) {
         // The inline slot is a valid target only in the window it was measured in: when the
         // window is going to turn back (a phone or tablet that really rotated) the picture
         // heads for a centred card and the system's rotation takes it from there.
@@ -367,8 +374,8 @@ internal fun FullscreenBackHandler(
         state.turnFrom = from
         var moved = false
         try {
-            events.collect { e ->
-                val g = YoinMotion.backGestureEasing.transform(e.progress.coerceIn(0f, 1f))
+            events.collect { raw ->
+                val g = YoinMotion.backGestureEasing.transform(raw.coerceIn(0f, 1f))
                 if (g > 0f) moved = true
                 state.progress.snapTo(g)
                 if (from != 0f) turnAngle.snapTo(from * (1f - g))
@@ -388,7 +395,7 @@ internal fun FullscreenBackHandler(
             // pulled, so nothing lands; the plain exit, as before.
             state.progress.snapTo(0f)
             latestExit(false)
-            return@PredictiveBackHandler
+            return
         }
         // Commit: the inline picture lands from exactly where it was let go. The chrome is
         // held invisible first, so no frame shows it back at full strength (the fade above
@@ -410,5 +417,26 @@ internal fun FullscreenBackHandler(
                 state.release = null
             }
         }
+    }
+    PredictiveBackHandler(enabled = enabled) { events ->
+        if (!latestAnimate) {
+            events.collect { }
+            latestExit(false)
+            return@PredictiveBackHandler
+        }
+        ride(events.map { it.progress })
+    }
+    // The swipe: a closed channel commits, one closed with a CancellationException springs back.
+    val latestEnabled by rememberUpdatedState(enabled && animate)
+    androidx.compose.runtime.DisposableEffect(state) {
+        state.startSwipe = { channel ->
+            if (latestEnabled && !state.busy) {
+                scope.launch { ride(channel.consumeAsFlow()) }
+                true
+            } else {
+                false
+            }
+        }
+        onDispose { state.startSwipe = null }
     }
 }

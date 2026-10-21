@@ -70,6 +70,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Constraints
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.feature.player.ListenTransport
 import com.gpo.pilipala.feature.player.LyricsList
@@ -109,10 +126,10 @@ internal fun ListenScreen(
     ctrl: PiliPlayerController,
     queue: PlayQueue?,
     gate: (() -> Unit) -> Unit,
+    flight: ListenFlight? = null,
 ) {
     val nav = LocalNavigator.current
     var sheet by remember { mutableStateOf<ListenSheet?>(null) }
-    var lyricsOpen by rememberSaveable { mutableStateOf(false) }
     val lines = ctrl.lyricLines()
     val d = vm.detail
     val title = d?.title ?: ctrl.target?.title.orEmpty()
@@ -122,14 +139,24 @@ internal fun ListenScreen(
     val index by (queue?.index ?: remember { kotlinx.coroutines.flow.MutableStateFlow(0) }).collectAsState()
     val header = if (queue != null) "${queue.title} · ${index + 1} / ${queue.size}" else "仅听声音"
 
+    var rootOrigin by remember { mutableStateOf(Offset.Zero) }
+    CompositionLocalProvider(LocalListenFlight provides flight) {
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-            .lyricsBackdrop()
+            .onGloballyPositioned { rootOrigin = it.positionInWindow() }
             // Swallow touches so nothing reaches the video page beneath.
             .clickable(interactionSource = null, indication = null) {},
     ) {
+        // The page's wash comes up under the flying cover (it reaches full strength early).
+        val scheme = MaterialTheme.colorScheme
+        Box(
+            Modifier
+                .matchParentSize()
+                .graphicsLayer { alpha = flight?.let { (it.progress() / 0.6f).coerceIn(0f, 1f) } ?: 1f }
+                .background(scheme.surfaceContainerLowest)
+                .lyricsBackdrop(),
+        )
         val wide = maxWidth >= 840.dp && maxWidth > maxHeight
         val bar: @Composable () -> Unit = {
             ListenTopBar(
@@ -145,62 +172,49 @@ internal fun ListenScreen(
                 onSearch = { sheet = ListenSheet.Search },
             )
         } else {
-            val enter = YoinMotion.defaultEffectsSpec<Float>()
-            val exit = YoinMotion.fastEffectsSpec<Float>()
-            AnimatedContent(
-                targetState = lyricsOpen,
-                transitionSpec = { fadeIn(enter) togetherWith fadeOut(exit) },
-                label = "listenLyrics",
-            ) { open ->
-                if (open) {
-                    FullLyrics(
+            // Portrait: the lyrics are the page, full width between the title and the
+            // transport, large, with no card; the three ways on sit on the bottom edge.
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(top = 8.dp, bottom = 2.dp),
+            ) {
+                val fl = flight
+                Column(Modifier.padding(horizontal = 24.dp)) {
+                    Box(Modifier.listenReveal(fl, 0.3f)) { bar() }
+                    Spacer(Modifier.height(16.dp))
+                    ListenCover(cover, Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(20.dp))
+                    Box(Modifier.listenReveal(fl, 0.4f)) { TitleRow(vm, title, subtitle, gate) }
+                }
+                BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).listenReveal(fl, 0.5f)) {
+                    ImmersiveLyrics(
                         ctrl = ctrl,
                         lines = lines,
-                        cover = cover,
-                        title = title,
-                        subtitle = subtitle,
-                        onClose = { lyricsOpen = false },
+                        frameHeight = maxHeight,
+                        horizontalPadding = 24.dp,
+                        style = MaterialTheme.typography.headlineMedium,
                         onSearch = { sheet = ListenSheet.Search },
                     )
-                } else {
-                    Column(
-                        Modifier
-                            .fillMaxSize()
-                            .windowInsetsPadding(WindowInsets.safeDrawing)
-                            .padding(horizontal = 24.dp)
-                            .padding(top = 8.dp, bottom = 12.dp),
-                    ) {
-                        bar()
-                        Spacer(Modifier.height(16.dp))
-                        ListenCover(cover, Modifier.fillMaxWidth())
-                        Spacer(Modifier.height(22.dp))
-                        TitleRow(vm, title, subtitle, gate)
-                        Spacer(Modifier.height(18.dp))
-                        LyricsCard(
-                            ctrl = ctrl,
-                            lines = lines,
-                            onOpen = { lyricsOpen = true },
-                            onSearch = { sheet = ListenSheet.Search },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        // Transport and actions sit at the bottom, under the thumb.
-                        Spacer(Modifier.weight(1f))
-                        Spacer(Modifier.height(16.dp))
-                        ListenTransport(ctrl, controlSize = 56.dp, horizontalPadding = 0.dp)
-                        Spacer(Modifier.height(12.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            if (queue != null) {
-                                QuietAction(YoinSymbols.Playlist, "播放列表") { sheet = ListenSheet.Queue }
-                            }
-                            QuietAction(PiliSymbols.Comment, d?.reply?.takeIf { it > 0 }?.let { "评论 ${Fmt.count(it)}" } ?: "评论") {
-                                sheet = ListenSheet.Comments
-                            }
-                            QuietAction(YoinSymbols.Tv, "显示画面") { ctrl.toggleAudioOnly() }
+                }
+                Column(Modifier.padding(horizontal = 24.dp).listenReveal(fl, 0.58f)) {
+                    ListenTransport(ctrl, controlSize = 56.dp, horizontalPadding = 0.dp)
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        if (queue != null) {
+                            QuietAction(YoinSymbols.Playlist, "播放列表") { sheet = ListenSheet.Queue }
                         }
+                        QuietAction(PiliSymbols.Comment, d?.reply?.takeIf { it > 0 }?.let { "评论 ${Fmt.count(it)}" } ?: "评论") {
+                            sheet = ListenSheet.Comments
+                        }
+                        QuietAction(YoinSymbols.Tv, "显示画面") { ctrl.toggleAudioOnly() }
                     }
                 }
             }
         }
+        if (flight != null) FlyingCover(flight, cover) { rootOrigin }
+    }
     }
 
     when (sheet) {
@@ -220,6 +234,83 @@ internal fun ListenScreen(
 }
 
 private enum class ListenSheet { Queue, Comments, Search }
+
+/**
+ * The move between the video and 仅听声音, the core of listening: the picture lifts off its
+ * slot as a card and flies, on the slow spatial spring, into the cover's place, its corners
+ * rounding and a shadow growing under it, while the last video frame melts into the cover
+ * art; the page's wash comes up beneath, and the bar, title, lyrics and transport follow in
+ * turn. 显示画面 runs it back: the cover flies up into the picture's slot as the page fades.
+ * [progress]: 0 the video page, 1 the listen page (springs may overshoot either end).
+ */
+@Stable
+internal class ListenFlight(
+    val progress: () -> Float,
+    val from: () -> Rect?,
+    val shot: () -> ImageBitmap?,
+) {
+    /** The cover's slot on the listen page, in window px. */
+    var coverRect by mutableStateOf<Rect?>(null)
+
+    val flying: Boolean get() = abs(progress() - 1f) > 0.002f
+}
+
+private val LocalListenFlight = staticCompositionLocalOf<ListenFlight?> { null }
+
+/** A piece of the listen page that rises in once the flight has carried [start] of the way. */
+private fun Modifier.listenReveal(flight: ListenFlight?, start: Float): Modifier =
+    if (flight == null) this else graphicsLayer {
+        val t = ((flight.progress() - start) / (1f - start)).coerceIn(0f, 1f)
+        alpha = t
+        translationY = (1f - t) * 28.dp.toPx()
+    }
+
+/** The card in flight between the picture's slot and the cover's (see [ListenFlight]). */
+@Composable
+private fun FlyingCover(flight: ListenFlight, cover: String, origin: () -> Offset) {
+    val to = flight.coverRect ?: return
+    val corner = with(LocalDensity.current) { 28.dp.toPx() }
+    val shadow = with(LocalDensity.current) { 24.dp.toPx() }
+    val shot = flight.shot()
+    Box(
+        Modifier
+            .layout { m, c ->
+                val p = flight.progress()
+                val from = flight.from() ?: Rect(to.center, 0f).inflate(to.width * 0.45f).let {
+                    Rect(it.left, to.top + to.height * 0.05f, it.right, to.bottom - to.height * 0.05f)
+                }
+                val r = androidx.compose.ui.geometry.lerp(from, to, p)
+                val placeable = m.measure(
+                    Constraints.fixed(r.width.roundToInt().coerceAtLeast(1), r.height.roundToInt().coerceAtLeast(1)),
+                )
+                val o = origin()
+                layout(c.maxWidth, c.maxHeight) { placeable.place((r.left - o.x).roundToInt(), (r.top - o.y).roundToInt()) }
+            }
+            .graphicsLayer {
+                val p = flight.progress()
+                alpha = if (flight.flying) 1f else 0f
+                val k = p.coerceIn(0f, 1f)
+                shape = RoundedCornerShape(corner * k)
+                clip = true
+                shadowElevation = shadow * k
+            },
+    ) {
+        if (shot != null) {
+            androidx.compose.foundation.Image(shot, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
+        NetImage(
+            url = cover,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    // With the video's last frame under it, the art fades in during the flight.
+                    alpha = if (shot == null) 1f else ((flight.progress() - 0.15f) / 0.6f).coerceIn(0f, 1f)
+                },
+            shape = RectangleShape,
+            thumbWidth = 720.dp,
+        )
+    }
+}
 
 @Composable
 private fun ListenTopBar(header: String, onCollapse: () -> Unit, onSearch: () -> Unit, onShowVideo: () -> Unit) {
@@ -261,10 +352,14 @@ private fun ListenTopBar(header: String, onCollapse: () -> Unit, onSearch: () ->
 
 @Composable
 private fun ListenCover(cover: String, modifier: Modifier) {
+    val flight = LocalListenFlight.current
     NetImage(
         url = cover,
         modifier = modifier
             .aspectRatio(16f / 9f)
+            // Where the flying cover lands; hidden while it flies (FlyingCover draws it then).
+            .onGloballyPositioned { c -> flight?.coverRect = c.boundsInWindow() }
+            .graphicsLayer { alpha = if (flight?.flying == true) 0f else 1f }
             .shadow(24.dp, RoundedCornerShape(28.dp), clip = false)
             .clip(RoundedCornerShape(28.dp)),
         shape = RoundedCornerShape(28.dp),
@@ -302,55 +397,37 @@ private fun TitleRow(vm: VideoDetailViewModel, title: String, subtitle: String, 
     }
 }
 
-/** Three lines around the current one; a tap opens them all. Without lyrics: 搜索歌词. */
+/** The lyrics with no frame, the current line seated mid-height; without any: 搜索歌词. */
 @Composable
-private fun LyricsCard(
+private fun ImmersiveLyrics(
     ctrl: PiliPlayerController,
     lines: List<SubtitleLine>,
-    onOpen: () -> Unit,
+    frameHeight: Dp,
+    horizontalPadding: Dp,
+    style: androidx.compose.ui.text.TextStyle,
     onSearch: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    val scheme = MaterialTheme.colorScheme
-    Column(
-        modifier
-            .clip(RoundedCornerShape(24.dp))
-            .background(scheme.surfaceContainerHigh.copy(alpha = 0.6f))
-            .clickable(onClick = if (lines.isEmpty()) onSearch else onOpen)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (lines.isEmpty()) {
-            Text("这个视频没有字幕", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(YoinSymbols.Search, null, tint = scheme.primary, modifier = Modifier.size(18.dp))
+    if (lines.isEmpty()) {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("这个视频没有字幕", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = onSearch) {
+                Icon(YoinSymbols.Search, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("在网易云 / QQ 音乐搜索歌词", style = MaterialTheme.typography.titleSmall, color = scheme.primary)
-            }
-        } else {
-            val current by remember(lines) { derivedStateOf { cueAt(lines, ctrl.positionMs) } }
-            // The current line in the middle, except at the start, where the first three show.
-            val first = (current - 1).coerceIn(0, (lines.size - 3).coerceAtLeast(0))
-            val rows = listOf(first, first + 1, first + 2)
-            rows.forEach { i ->
-                val text = lines.getOrNull(i)?.text.orEmpty()
-                val now = i == current
-                Text(
-                    text.ifEmpty { " " },
-                    style = if (now) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (now) FontWeight.Bold else null,
-                    color = if (now) scheme.primary else scheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Text("在网易云 / QQ 音乐搜索歌词")
             }
         }
+    } else {
+        LyricsList(
+            lines = lines,
+            positionMs = { ctrl.positionMs },
+            onSeek = { ctrl.seekTo(it) },
+            frameHeight = frameHeight,
+            horizontalPadding = horizontalPadding,
+            modifier = Modifier.fillMaxSize(),
+            textStyle = style,
+        )
     }
-}
-
-private fun cueAt(lines: List<SubtitleLine>, pos: Long): Int {
-    val i = lines.indexOfLast { it.fromMs <= pos }
-    return i.coerceAtLeast(0)
 }
 
 @Composable
@@ -359,58 +436,6 @@ private fun QuietAction(icon: androidx.compose.ui.graphics.vector.ImageVector, l
         Icon(icon, null, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
         Text(label, style = MaterialTheme.typography.labelLarge)
-    }
-}
-
-/** The lyrics full height, under a small header; the transport stays below. */
-@Composable
-private fun FullLyrics(
-    ctrl: PiliPlayerController,
-    lines: List<SubtitleLine>,
-    cover: String,
-    title: String,
-    subtitle: String,
-    onClose: () -> Unit,
-    onSearch: () -> Unit,
-) {
-    androidx.activity.compose.BackHandler(onBack = onClose)
-    Column(
-        Modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(top = 8.dp, bottom = 12.dp),
-    ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp).height(64.dp), verticalAlignment = Alignment.CenterVertically) {
-            NetImage(cover, Modifier.width(64.dp).aspectRatio(16f / 9f), shape = RoundedCornerShape(10.dp), thumbWidth = 128.dp)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (subtitle.isNotEmpty()) {
-                    Text(subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            IconButton(onClick = onSearch, shapes = IconButtonDefaults.shapes()) { Icon(YoinSymbols.Search, contentDescription = "搜索歌词") }
-            FilledTonalIconButton(onClick = onClose, shapes = IconButtonDefaults.shapes()) { Icon(YoinSymbols.UnfoldLess, contentDescription = "收起歌词") }
-        }
-        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-            if (lines.isEmpty()) {
-                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("暂无歌词", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = onSearch) { Text("在网易云 / QQ 音乐搜索") }
-                }
-            } else {
-                LyricsList(
-                    lines = lines,
-                    positionMs = { ctrl.positionMs },
-                    onSeek = { ctrl.seekTo(it) },
-                    frameHeight = maxHeight,
-                    horizontalPadding = 24.dp,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-        }
-        ListenTransport(ctrl, controlSize = 48.dp, horizontalPadding = 24.dp)
     }
 }
 

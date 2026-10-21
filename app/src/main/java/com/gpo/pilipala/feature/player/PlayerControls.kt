@@ -245,6 +245,7 @@ internal fun Modifier.playerGestures(
     minimal: Boolean,
     onDoubleTap: ((Offset) -> Unit)?,
     onSwipeExit: (() -> Unit)? = null,
+    swipeBack: FullscreenBackState? = null,
 ): Modifier {
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -345,6 +346,9 @@ internal fun Modifier.playerGestures(
                 }
                 val startX = down.position.x
                 var travel = 0f
+                // The swipe drives fullscreen back's own ride (FullscreenBack.kt) when it can:
+                // the picture follows the finger home and lands, or springs back.
+                var ride: kotlinx.coroutines.channels.Channel<Float>? = null
                 var level = 0f
                 var lastStep = 0
                 val onDrag: (PointerInputChange, Offset) -> Unit = onDrag@{ change, drag ->
@@ -358,6 +362,10 @@ internal fun Modifier.playerGestures(
                             else -> 3
                         }
                         when (mode) {
+                            4 -> {
+                                val ch = kotlinx.coroutines.channels.Channel<Float>(kotlinx.coroutines.channels.Channel.CONFLATED)
+                                if (swipeBack?.startSwipe?.invoke(ch) == true) ride = ch
+                            }
                             2 -> {
                                 level = volume.fraction()
                                 lastStep = volume.index
@@ -400,6 +408,7 @@ internal fun Modifier.playerGestures(
                         4 -> {
                             val was = travel >= exitDistance
                             travel += drag.y
+                            ride?.trySend(travel.coerceAtLeast(0f) / (size.height * SwipeRideFraction))
                             // One tick each way across the line, so the finger knows a lift exits.
                             if (was != (travel >= exitDistance)) {
                                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
@@ -416,9 +425,13 @@ internal fun Modifier.playerGestures(
                         ctrl.seekTo(seekTarget)
                         haptics.performHapticFeedback(HapticFeedbackType.GestureEnd)
                     }
-                    if (ended && mode == 4 && travel >= exitDistance && latestFullscreen) {
-                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        latestSwipeExit?.invoke()
+                    val exits = ended && mode == 4 && travel >= exitDistance && latestFullscreen
+                    if (exits) haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                    val r = ride
+                    when {
+                        r != null && exits -> r.close()
+                        r != null -> r.close(kotlinx.coroutines.CancellationException("swipe back cancelled"))
+                        exits -> latestSwipeExit?.invoke()
                     }
                     feedback.seekTargetMs = null
                     feedback.level = null
@@ -429,6 +442,9 @@ internal fun Modifier.playerGestures(
 
 /** How far a fullscreen swipe down from the middle travels before lifting it exits fullscreen. */
 private val SwipeExitDistance = 72.dp
+
+/** The share of the picture's height a swipe travels for the back ride's full progress. */
+private const val SwipeRideFraction = 0.45f
 
 /** What the controls do; one set of callbacks for the inline and the fullscreen layout. */
 internal class ChromeActions(

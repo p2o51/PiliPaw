@@ -753,6 +753,7 @@ fun BiliVideoPlayer(
                                         minimal = !full,
                                         onDoubleTap = onDoubleTap,
                                         onSwipeExit = actions.onBack,
+                                        swipeBack = back,
                                     )
                                 },
                             ),

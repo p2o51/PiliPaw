@@ -241,6 +241,7 @@ internal fun LyricsList(
     frameHeight: Dp,
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
+    textStyle: androidx.compose.ui.text.TextStyle? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val still = rememberAnimationsRemoved()
@@ -296,7 +297,7 @@ internal fun LyricsList(
             }
     }
 
-    val style = when {
+    val style = textStyle ?: when {
         frameHeight >= 640.dp -> MaterialTheme.typography.headlineMedium
         frameHeight >= 360.dp -> MaterialTheme.typography.headlineSmall
         else -> MaterialTheme.typography.titleLarge
