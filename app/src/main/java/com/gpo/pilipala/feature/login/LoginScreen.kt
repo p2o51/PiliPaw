@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.login
 
+import com.gpo.pilipala.core.util.ScopeErrors
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -73,7 +74,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /** Outlives the login page (it pops itself on success). */
-private val DetachedScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+private val DetachedScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + ScopeErrors)
 
 @Composable
 fun LoginScreen() {

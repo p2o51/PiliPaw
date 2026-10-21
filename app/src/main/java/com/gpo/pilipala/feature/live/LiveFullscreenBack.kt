@@ -252,7 +252,7 @@ private suspend fun copyPicture(window: Window, rect: Rect): ImageBitmap? {
     val w = rect.width.roundToInt()
     val h = rect.height.roundToInt()
     if (w <= 1 || h <= 1) return null
-    val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    val bitmap = runCatching { Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) }.getOrNull() ?: return null
     val src = android.graphics.Rect(left, top, left + w, top + h)
     val ok = withTimeoutOrNull(BridgeCopyTimeoutMs) {
         suspendCancellableCoroutine { c ->
@@ -261,6 +261,7 @@ private suspend fun copyPicture(window: Window, rect: Rect): ImageBitmap? {
             }.onFailure { if (c.isActive) c.resume(false) }
         }
     } == true
+    if (!ok) bitmap.recycle()
     return if (ok) bitmap.asImageBitmap() else null
 }
 

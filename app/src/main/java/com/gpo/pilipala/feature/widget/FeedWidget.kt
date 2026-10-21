@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.widget
 
+import com.gpo.pilipala.core.util.ScopeErrors
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
@@ -162,7 +163,7 @@ class FeedWidget : GlanceAppWidget() {
         private const val CoverH = 126
 
         private val version = MutableStateFlow(0L)
-        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + ScopeErrors)
         private var pending: Job? = null
         private const val DebounceMs = 600L
 

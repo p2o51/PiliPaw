@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.widget
 
+import com.gpo.pilipala.core.util.ScopeErrors
 import android.content.Context
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.BiliJson
@@ -54,7 +55,7 @@ internal object FeedWidgetStore {
     private const val FetchTimeoutMs = 12_000L
 
     private val lock = Any()
-    private val fetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val fetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + ScopeErrors)
     private val inflight = HashMap<String, Deferred<FeedWidgetCache?>>()
 
     private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(Prefs, Context.MODE_PRIVATE)

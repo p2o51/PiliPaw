@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.player
 
+import com.gpo.pilipala.core.util.ScopeErrors
 import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
@@ -51,7 +52,7 @@ internal sealed interface PlayerPhase {
 }
 
 /** Process-wide scope for fire-and-forget calls that must outlive a player (final heartbeat). */
-private val playerIoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+private val playerIoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + ScopeErrors)
 
 /** Last positions per cid so coming back to a page resumes where it left off. */
 private object ResumeMemory {
@@ -100,7 +101,7 @@ internal class PiliPlayerController(
     var handedOver by mutableStateOf(false)
         private set
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + ScopeErrors)
     private var exo: ExoPlayer? = null
     private var session: MediaSession? = null
     private var sessionPlayer: SessionPlayer? = null
@@ -1102,10 +1103,12 @@ internal class PiliPlayerController(
             currentCodec = v.codecId
             if (v.width > 0 && v.height > 0 && !firstFrameRendered) videoAspect = v.width.toFloat() / v.height
             val vUrls = com.gpo.pilipala.feature.player.cdn.CdnRouter.orderUrls(v.urls)
+            // No address at all (a malformed answer): a load error, not `x % 0`.
+            if (vUrls.isEmpty()) return null
             val vUrl = vUrls[urlAttempt % vUrls.size]
             val videoSource = progressiveFactory.createMediaSource(metadataItem(vUrl))
-            val a = StreamPicker.playableAudios(pi).firstOrNull { it.id == currentAudio }
-                ?: StreamPicker.audio(pi, AppSettings.defaultAudioQuality.value)
+            val a = (StreamPicker.playableAudios(pi).firstOrNull { it.id == currentAudio }
+                ?: StreamPicker.audio(pi, AppSettings.defaultAudioQuality.value))?.takeIf { it.urls.isNotEmpty() }
             com.gpo.pilipala.feature.player.cdn.CdnRouter.beginSession(
                 videoUrls = if (audioOnly) a?.urls.orEmpty() else v.urls,
                 audioUrls = if (audioOnly) emptyList() else a?.urls.orEmpty(),
@@ -1122,7 +1125,7 @@ internal class PiliPlayerController(
             val audioSource = progressiveFactory.createMediaSource(MediaItem.fromUri(aUrl))
             return MergingMediaSource(false, true, videoSource, audioSource)
         }
-        if (pi.durl.isEmpty()) return null
+        if (pi.durl.isEmpty() || pi.durl.any { it.urls.isEmpty() }) return null
         if (pi.durl.size == 1) {
             val seg = pi.durl.first()
             return progressiveFactory.createMediaSource(metadataItem(seg.urls[urlAttempt % seg.urls.size]))

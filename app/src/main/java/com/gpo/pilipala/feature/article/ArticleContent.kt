@@ -244,8 +244,8 @@ internal fun decodeEntities(s: String): String {
     return Regex("""&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);""").replace(s) { m ->
         val e = m.groupValues[1]
         when {
-            e.startsWith("#x") -> e.drop(2).toIntOrNull(16)?.let { String(Character.toChars(it)) } ?: m.value
-            e.startsWith("#") -> e.drop(1).toIntOrNull()?.let { String(Character.toChars(it)) } ?: m.value
+            e.startsWith("#x") -> e.drop(2).toIntOrNull(16)?.takeIf(Character::isValidCodePoint)?.let { String(Character.toChars(it)) } ?: m.value
+            e.startsWith("#") -> e.drop(1).toIntOrNull()?.takeIf(Character::isValidCodePoint)?.let { String(Character.toChars(it)) } ?: m.value
             else -> when (e) {
                 "nbsp" -> " "
                 "amp" -> "&"

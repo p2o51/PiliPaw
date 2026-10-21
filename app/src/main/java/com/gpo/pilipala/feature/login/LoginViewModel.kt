@@ -82,7 +82,12 @@ internal class LoginViewModel : ViewModel() {
                 return@launch
             }
             qrUrl = url
-            qr = withContext(Dispatchers.Default) { renderQr(url, 720) }
+            // A url too long for a QR code (WriterException) is a failed fetch, not a crash.
+            qr = runCatching { withContext(Dispatchers.Default) { renderQr(url, 720) } }.getOrElse {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                state = QrState.Error("二维码获取失败")
+                return@launch
+            }
             state = QrState.Waiting
             secondsLeft = 180
             poll()

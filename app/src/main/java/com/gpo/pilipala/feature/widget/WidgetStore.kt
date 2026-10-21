@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.widget
 
+import com.gpo.pilipala.core.util.ScopeErrors
 import android.content.Context
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.net.BiliJson
@@ -106,7 +107,7 @@ internal object WidgetStore {
      * ignores cancellation, so a timeout around it would still wait for the socket. The
      * update stops waiting after [FetchTimeoutMs]; a late answer still lands in the cache.
      */
-    private val fetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val fetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + ScopeErrors)
     private var inflight: Pair<Long, Deferred<LaterCache?>>? = null
 
     /** The signed-in account's mid, 0 when logged out. */

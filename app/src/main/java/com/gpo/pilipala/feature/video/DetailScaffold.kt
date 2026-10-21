@@ -431,5 +431,7 @@ internal fun shareText(context: Context, title: String, url: String) {
         putExtra(Intent.EXTRA_TITLE, title)
         putExtra(Intent.EXTRA_TEXT, if (title.isNotEmpty()) "$title $url" else url)
     }
-    context.startActivity(Intent.createChooser(send, title.ifEmpty { null }).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    runCatching {
+        context.startActivity(Intent.createChooser(send, title.ifEmpty { null }).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
 }

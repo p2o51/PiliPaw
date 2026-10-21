@@ -841,10 +841,16 @@ private fun ColumnScope.ExtraBody() {
                 enabled = cacheSize != 0L,
                 onClick = {
                     scope.launch {
-                        withContext(Dispatchers.IO) {
-                            val loader = SingletonImageLoader.get(context)
-                            loader.memoryCache?.clear()
-                            loader.diskCache?.clear()
+                        val cleared = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val loader = SingletonImageLoader.get(context)
+                                loader.memoryCache?.clear()
+                                loader.diskCache?.clear()
+                            }
+                        }
+                        if (cleared.isFailure) {
+                            toast("清除失败")
+                            return@launch
                         }
                         cacheSize = 0L
                         toast("已清除")

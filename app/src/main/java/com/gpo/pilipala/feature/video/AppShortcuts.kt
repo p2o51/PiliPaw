@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.video
 
+import com.gpo.pilipala.core.util.ScopeErrors
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -82,7 +83,7 @@ object AppShortcuts {
     /** This close to the end counts as finished. */
     private const val FinishedTailMs = 15_000L
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + ScopeErrors)
 
     /** The widget's copy of 继续看 is written off the main thread, one write at a time, in order. */
     private val widgetWrites = Dispatchers.IO.limitedParallelism(1)

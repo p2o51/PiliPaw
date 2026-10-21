@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.widget
 
+import com.gpo.pilipala.core.util.ScopeErrors
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -119,7 +120,7 @@ class WatchWidget : GlanceAppWidget() {
         internal val Large = DpSize(250.dp, 240.dp)
         internal val Tall = DpSize(250.dp, 340.dp)
 
-        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + ScopeErrors)
         private var pending: Job? = null
 
         /** A page pausing and then closing publishes twice in a row; one update covers both. */

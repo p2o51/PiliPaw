@@ -463,6 +463,9 @@ class PageTransitions internal constructor(
             return
         }
         val owner = ++generation
+        // The page this commit closes. A push or replace during the ride must not make the
+        // landing remove the page that arrived instead (or index past a shrunken stack).
+        val closingEntry = backStack.last()
         val fromRest = phase != BackPhase.Gesture
         pendingEnter = null
         // Synchronously, so a second pop in the same frame queues behind this one.
@@ -498,8 +501,23 @@ class PageTransitions internal constructor(
             // comes up hidden and fades over its own snapshot once drawn.
             reveal.snapTo(0f)
             phase = BackPhase.Revealing
-            val revealedKey = backStack[backStack.lastIndex - 1].toString()
-            backStack.removeAt(backStack.lastIndex)
+            val closingIndex = backStack.indexOfLast { it === closingEntry }
+            if (closingIndex < 1) {
+                // Already gone (replaced, or dropped by popToMain): nothing left to remove.
+                reveal.snapTo(1f)
+                closing.snapTo(0f)
+                exit.snapTo(0f)
+                touchYDelta = 0f
+                beneath = null
+                hero = null
+                heroProgress.snapTo(0f)
+                behind.snapTo(1f)
+                phase = BackPhase.Idle
+                pendingPops = 0
+                return@launch
+            }
+            val revealedKey = backStack[closingIndex - 1].toString()
+            backStack.removeAt(closingIndex)
             closing.snapTo(0f)
             exit.snapTo(0f)
             touchYDelta = 0f

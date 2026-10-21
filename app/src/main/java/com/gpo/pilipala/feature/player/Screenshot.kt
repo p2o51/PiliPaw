@@ -78,11 +78,12 @@ internal suspend fun captureVideoFrame(view: View, width: Int, height: Int): Bit
     val h = height.takeIf { it > 0 } ?: view.height
     if (w <= 0 || h <= 0) return null
     return when (view) {
-        is TextureView -> if (view.isAvailable) view.getBitmap(w, h) else null
+        // A 4K frame is a 33 MB bitmap: out of memory means no frame, not a crash.
+        is TextureView -> if (view.isAvailable) runCatching { view.getBitmap(w, h) }.getOrNull() else null
         is SurfaceView -> {
             val holder = view.holder
             if (holder.surface == null || !holder.surface.isValid) return null
-            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val bitmap = runCatching { Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) }.getOrNull() ?: return null
             val ok = suspendCancellableCoroutine { cont ->
                 runCatching {
                     PixelCopy.request(view, bitmap, { result -> cont.resume(result == PixelCopy.SUCCESS) }, Handler(Looper.getMainLooper()))

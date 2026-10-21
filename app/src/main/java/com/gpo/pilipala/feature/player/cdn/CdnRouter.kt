@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.player.cdn
 
+import com.gpo.pilipala.core.util.ScopeErrors
 import android.content.Context
 import android.content.SharedPreferences
 import com.gpo.pilipala.core.net.BiliClient
@@ -54,7 +55,7 @@ object CdnRouter {
     private val _status = MutableStateFlow(Status())
     val status: StateFlow<Status> = _status.asStateFlow()
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + ScopeErrors)
     private lateinit var prefs: SharedPreferences
     private val raceClient: OkHttpClient by lazy {
         BiliClient.http.newBuilder()

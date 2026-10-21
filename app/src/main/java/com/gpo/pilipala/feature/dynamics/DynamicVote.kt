@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.dynamics
 
+import com.gpo.pilipala.core.util.ScopeErrors
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
@@ -303,7 +304,7 @@ internal object VoteStore {
         private set
 
     /** Sends outlive the page that started them, so leaving it still lands the result and frees [pending]. */
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + ScopeErrors)
 
     private var account = Long.MIN_VALUE
 

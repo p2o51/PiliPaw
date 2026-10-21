@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.download
 
+import com.gpo.pilipala.core.util.ScopeErrors
 import android.content.Context
 import android.os.Environment
 import androidx.work.BackoffPolicy
@@ -91,7 +92,7 @@ internal object DownloadStore {
     const val TAG = "pilipaw-download"
 
     /** Queue operations outlive the sheet / row that asked for them. */
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + ScopeErrors)
 
     private val mutex = Mutex()
     private var appContext: Context? = null

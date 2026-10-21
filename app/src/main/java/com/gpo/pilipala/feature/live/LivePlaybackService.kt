@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.live
 
+import com.gpo.pilipala.core.util.ScopeErrors
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -38,6 +39,13 @@ class LivePlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // Media3 already catches a foreground start the system refuses (Android 12+, app in the
+        // background); a listener makes that explicit and keeps it to a log line.
+        setListener(object : Listener {
+            override fun onForegroundServiceStartNotAllowedException() {
+                android.util.Log.w("PiliPaw", "media notification: foreground start not allowed")
+            }
+        })
         hosted?.let { if (!isSessionAdded(it)) addSession(it) }
     }
 
@@ -138,7 +146,7 @@ internal class LiveSessionPlayer(
 
 /** Notification / lock-screen artwork through Coil (and so through BiliClient.http). */
 internal class LiveBitmapLoader(private val context: Context) : BitmapLoader {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + ScopeErrors)
 
     override fun supportsMimeType(mimeType: String): Boolean = Util.isBitmapFactorySupportedMimeType(mimeType)
 

@@ -123,7 +123,15 @@ fun DownloadsScreen() {
     val context = LocalContext.current
     val nav = LocalNavigator.current
     val haptics = LocalHapticFeedback.current
-    LaunchedEffect(Unit) { DownloadStore.reconcile(context.applicationContext) }
+    LaunchedEffect(Unit) {
+        // Writes the index: a full disk is no reason to crash the page.
+        try {
+            DownloadStore.reconcile(context.applicationContext)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
+    }
     val items by DownloadStore.items.collectAsState()
     val progress by DownloadStore.progress.collectAsState()
     var sheet by remember { mutableStateOf<DownloadItem?>(null) }
