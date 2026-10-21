@@ -747,6 +747,7 @@ fun BiliVideoPlayer(
                                         fullscreen = fullscreen,
                                         minimal = !full,
                                         onDoubleTap = onDoubleTap,
+                                        onSwipeExit = actions.onBack,
                                     )
                                 },
                             ),
