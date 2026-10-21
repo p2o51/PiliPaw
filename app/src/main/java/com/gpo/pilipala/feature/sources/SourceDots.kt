@@ -317,7 +317,7 @@ private fun SourceRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                if (showing) "${source.label} · 正在看" else source.label,
+                if (showing) "${source.label} · 当前页面" else source.label,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
