@@ -188,7 +188,8 @@ private class YtListenSource(val url: String, val key: String) : ListenSource {
     override val title: String get() = session?.title.orEmpty()
     override val subtitle: String get() = session?.channelName.orEmpty()
     override val cover: String get() = session?.thumbnail.orEmpty()
-    override val header: String get() = "仅听声音"
+    override val header: String get() = com.gpo.pilipala.feature.video.mixHeader(url) ?: "仅听声音"
+    override val hasQueue: Boolean get() = com.gpo.pilipala.feature.sources.MixPlayback.runs(url)
     override val playback: ListenPlayback = YtListenPlayback
     override val noLyricsLabel: String get() = if (Player.subtitleTracks.isEmpty()) "这个视频没有字幕" else "字幕加载中"
 
@@ -251,6 +252,17 @@ private class YtListenSource(val url: String, val key: String) : ListenSource {
         if (listSheet && video != null) SaveToListSheet(Library.itemOf(video), onDismiss = { listSheet = false })
     }
 
+    /** A Mix playing through: its list, B站 and YouTube alike. */
+    @Composable
+    override fun QueueSheet(onDismiss: () -> Unit) {
+        if (com.gpo.pilipala.feature.sources.MixPlayback.runs(url)) com.gpo.pilipala.feature.video.MixQueueSheet(Player.isPlaying, onDismiss)
+    }
+
+    @Composable
+    override fun QueuePane(modifier: Modifier) {
+        if (com.gpo.pilipala.feature.sources.MixPlayback.runs(url)) com.gpo.pilipala.feature.video.MixQueueList(Player.isPlaying, modifier)
+    }
+
     @Composable
     override fun CommentsSheet(onDismiss: () -> Unit) {
         val state = rememberCommentsState(url)
@@ -267,23 +279,32 @@ private class YtListenSource(val url: String, val key: String) : ListenSource {
     }
 }
 
-/** The YouTube player behind the listen transport: 下一个 is YouTube's up next, 上一个 回到开头. */
+/**
+ * The YouTube player behind the listen transport: 下一个 is YouTube's up next (a Mix playing
+ * through: the Mix's next), 上一个 回到开头.
+ */
 private object YtListenPlayback : ListenPlayback {
+    private val mix get() = com.gpo.pilipala.feature.sources.MixPlayback
+    private val inMix: Boolean get() = mix.runs(Player.session?.url)
     override val playing: Boolean get() = Player.isPlaying
-    override val hasNext: Boolean get() = Player.hasNext
+    override val hasNext: Boolean get() = inMix || Player.hasNext
     override val durationMs: Long get() = Player.durationMs
     override fun positionMs(): Long = Player.exo.currentPosition
     override fun togglePlay() = Player.toggle()
-    override fun skipNext() = Player.playNext()
+    override fun skipNext() = if (inMix) mix.next() else Player.playNext()
     override fun skipPrevious() = Player.exo.seekTo(0)
     override fun seekTo(ms: Long) = Player.exo.seekTo(ms)
     override val previousLabel: String get() = "回到开头"
 
     @Composable
     override fun mode(): ListenMode {
+        if (inMix) {
+            val mode = mix.mode
+            return ListenMode(mode.symbol, mode.label, lit = mode != com.gpo.pilipala.feature.player.PlayMode.ListLoop)
+        }
         val loop = Player.loop
         return ListenMode(if (loop) SymbolPlayMode.RepeatOne else SymbolPlayMode.RepeatAll, if (loop) "单曲循环" else "不循环", lit = loop)
     }
 
-    override fun stepMode() = Player.changeLoop(!Player.loop)
+    override fun stepMode() = if (inMix) mix.changeMode(mix.mode.next()) else Player.changeLoop(!Player.loop)
 }

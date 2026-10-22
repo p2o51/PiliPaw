@@ -247,12 +247,14 @@ private val ListenRowGap = 4.dp
 @Stable
 internal class BiliListenPlayback(private val ctrl: PiliPlayerController) : ListenPlayback {
     override val playing: Boolean get() = ctrl.isPlaying || (ctrl.playWhenReady && !ctrl.ended)
-    override val hasNext: Boolean get() = ctrl.hasNext
+    /** A Mix playing through (no 收藏夹 queue on the page): 下一个 and the mode are the Mix's. */
+    private val mix: Boolean get() = ctrl.queue == null && com.gpo.pilipala.feature.sources.MixPlayback.runs(ctrl.target?.bvid?.let { "bili:$it" })
+    override val hasNext: Boolean get() = mix || ctrl.hasNext
     override val durationMs: Long get() = ctrl.durationMs
     override val bufferedMs: Long get() = ctrl.bufferedMs
     override fun positionMs(): Long = ctrl.exactPositionMs()
     override fun togglePlay() = ctrl.togglePlay()
-    override fun skipNext() = ctrl.skipNext()
+    override fun skipNext() = if (mix) com.gpo.pilipala.feature.sources.MixPlayback.next() else ctrl.skipNext()
     override fun skipPrevious() = ctrl.skipPrevious()
     override fun seekTo(ms: Long) = ctrl.seekTo(ms)
 
@@ -263,13 +265,22 @@ internal class BiliListenPlayback(private val ctrl: PiliPlayerController) : List
             val mode by queue.mode.collectAsState()
             return ListenMode(mode.symbol, mode.label, lit = mode != PlayMode.ListLoop)
         }
+        if (mix) {
+            val mode = com.gpo.pilipala.feature.sources.MixPlayback.mode
+            return ListenMode(mode.symbol, mode.label, lit = mode != PlayMode.ListLoop)
+        }
         val loop = ctrl.loop
         return ListenMode(if (loop) SymbolPlayMode.RepeatOne else SymbolPlayMode.RepeatAll, if (loop) "单曲循环" else "不循环", lit = loop)
     }
 
     override fun stepMode() {
         val queue = ctrl.queue
-        if (queue != null) queue.cycleMode() else ctrl.changeLoop(!ctrl.loop)
+        val mixes = com.gpo.pilipala.feature.sources.MixPlayback
+        when {
+            queue != null -> queue.cycleMode()
+            mix -> mixes.changeMode(mixes.mode.next())
+            else -> ctrl.changeLoop(!ctrl.loop)
+        }
     }
 }
 

@@ -51,6 +51,9 @@ import com.gpo.pilipala.feature.player.BiliListenPlayback
 import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.feature.player.PlayMode
 import com.gpo.pilipala.feature.player.PlayQueue
+import com.gpo.pilipala.feature.player.QueueItem
+import com.gpo.pilipala.feature.sources.MixItems
+import com.gpo.pilipala.feature.sources.MixPlayback
 import com.gpo.pilipala.feature.player.SubtitleLine
 import com.gpo.pilipala.feature.player.lyricLines
 import com.gpo.pilipala.feature.player.lyrics.LyricsStore
@@ -109,9 +112,10 @@ private class BiliListenSource(
             return listOfNotNull(d?.ownerName?.takeIf { it.isNotEmpty() }, part).joinToString("  ")
         }
     override val cover: String get() = vm.detail?.pic ?: vm.cover
-    override val header: String get() = if (queue != null) "${queue.title}  ${index + 1} / ${queue.size}" else "仅听声音"
+    override val header: String get() = if (queue != null) "${queue.title}  ${index + 1} / ${queue.size}" else mixHeader(mixKey) ?: "仅听声音"
     override val playback: ListenPlayback = BiliListenPlayback(ctrl)
-    override val hasQueue: Boolean get() = queue != null
+    private val mixKey: String? get() = ctrl.target?.bvid?.let { "bili:$it" }
+    override val hasQueue: Boolean get() = queue != null || MixPlayback.runs(mixKey)
     override val commentsLabel: String get() = vm.detail?.reply?.takeIf { it > 0 }?.let { "评论 ${Fmt.count(it)}" } ?: "评论"
     override val hasComments: Boolean get() = (vm.detail?.aid ?: 0L) > 0
 
@@ -142,11 +146,13 @@ private class BiliListenSource(
     @Composable
     override fun QueueSheet(onDismiss: () -> Unit) {
         if (queue != null) ListenQueueSheet(queue, ctrl, onDismiss)
+        else if (MixPlayback.runs(mixKey)) MixQueueSheet(ctrl.isPlaying, onDismiss)
     }
 
     @Composable
     override fun QueuePane(modifier: Modifier) {
         if (queue != null) QueueList(queue, ctrl, modifier)
+        else if (MixPlayback.runs(mixKey)) MixQueueList(ctrl.isPlaying, modifier)
     }
 
     @Composable
@@ -171,39 +177,7 @@ private fun QueueList(queue: PlayQueue, ctrl: PiliPlayerController, modifier: Mo
     val listState = rememberLazyListState()
     LaunchedEffect(Unit) { if (index > 2) listState.scrollToItem(index - 2) }
     Column(modifier) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            PlayMode.entries.forEach { m ->
-                val on = m == mode
-                val scheme = MaterialTheme.colorScheme
-                val container by animateColorAsState(if (on) scheme.primary else Color.Transparent, YoinMotion.defaultEffectsSpec(), label = "modeSeg")
-                val content by animateColorAsState(if (on) scheme.onPrimary else scheme.onSurfaceVariant, YoinMotion.defaultEffectsSpec(), label = "modeSegContent")
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .height(44.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(container)
-                        .clickable {
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            queue.setMode(m)
-                        },
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(rememberPlayModeSymbolPainter(m.symbol), null, tint = content, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(m.label, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
-                }
-            }
-        }
+        PlayModeSegments(mode) { queue.setMode(it) }
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
@@ -252,3 +226,99 @@ private fun BiliCommentsSheet(aid: Long, onSeek: (Long) -> Unit, onDismiss: () -
         )
     }
 }
+
+/** The play mode as three segments (Yoin's modes, spelled out). */
+@Composable
+internal fun PlayModeSegments(mode: PlayMode, onPick: (PlayMode) -> Unit) {
+    val haptics = LocalHapticFeedback.current
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            PlayMode.entries.forEach { m ->
+                val on = m == mode
+                val scheme = MaterialTheme.colorScheme
+                val container by animateColorAsState(if (on) scheme.primary else Color.Transparent, YoinMotion.defaultEffectsSpec(), label = "modeSeg")
+                val content by animateColorAsState(if (on) scheme.onPrimary else scheme.onSurfaceVariant, YoinMotion.defaultEffectsSpec(), label = "modeSegContent")
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(container)
+                        .clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            onPick(m)
+                        },
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(rememberPlayModeSymbolPainter(m.symbol), null, tint = content, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(m.label, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
+                }
+            }
+        }
+}
+
+/**
+ * A Mix playing through (MixPlayback): its videos, B站 and YouTube alike, with the play mode
+ * on top; a tap plays that one in its own source's player.
+ */
+@Composable
+internal fun MixQueueList(playing: Boolean, modifier: Modifier = Modifier, bottom: Dp = 16.dp) {
+    val haptics = LocalHapticFeedback.current
+    val items = MixPlayback.items
+    val index = MixPlayback.index
+    val listState = rememberLazyListState()
+    LaunchedEffect(Unit) { if (index > 2) listState.scrollToItem(index - 2) }
+    Column(modifier) {
+        PlayModeSegments(MixPlayback.mode, MixPlayback::changeMode)
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = bottom),
+        ) {
+            itemsIndexed(items, key = { i, it -> "mq_${i}_${it.key}" }) { i, item ->
+                QueueRow(
+                    item = QueueItem(
+                        bvid = item.key,
+                        title = item.title,
+                        cover = MixItems.secure(item.thumbnail),
+                        owner = listOf(MixItems.source(item).label, item.channelName).filter { it.isNotEmpty() }.joinToString(" · "),
+                        duration = item.durationSec,
+                    ),
+                    position = i,
+                    current = i == index,
+                    playing = playing,
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        MixPlayback.playAt(i)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun MixQueueSheet(playing: Boolean, onDismiss: () -> Unit) {
+    val navBottom = sheetNavBottom()
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.72f).dp
+    ModalBottomSheet(onDismissRequest = onDismiss, contentWindowInsets = SheetInsets, properties = rememberSheetProperties()) {
+        Column(Modifier.padding(horizontal = 24.dp)) {
+            Text(MixPlayback.title.ifEmpty { "Mix" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("${MixPlayback.items.size} 个视频", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        MixQueueList(playing, Modifier.fillMaxWidth().heightIn(max = maxHeight + navBottom), bottom = 24.dp + navBottom)
+    }
+}
+
+/** The listen page's header while a Mix plays through: its name and where in it. */
+internal fun mixHeader(key: String?): String? =
+    MixPlayback.listId?.takeIf { MixPlayback.runs(key) }?.let { "${MixPlayback.title.ifEmpty { "Mix" }}  ${MixPlayback.index + 1} / ${MixPlayback.items.size}" }

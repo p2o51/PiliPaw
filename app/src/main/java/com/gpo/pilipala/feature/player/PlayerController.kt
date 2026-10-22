@@ -291,7 +291,7 @@ internal class PiliPlayerController(
                     heartbeat(-1)
                     val q = queue
                     // A Mix playing through (feature/sources/MixPlayback): it takes over what comes next.
-                    if (q == null && target?.bvid?.let { completionHook?.invoke(it) } == true) return
+                    if (q == null && target?.bvid?.let { completionHook?.invoke(this@PiliPlayerController, it) } == true) return
                     if (q != null) {
                         // The queue decides what comes next (also in the background, where the page cannot).
                         endJob?.cancel()
@@ -929,7 +929,7 @@ internal class PiliPlayerController(
 
     companion object {
         /** Called with the bvid when a video plays to its end; true: handled (nothing else follows). */
-        var completionHook: ((String) -> Boolean)? = null
+        var completionHook: ((PiliPlayerController, String) -> Boolean)? = null
     }
 
     /** A page's player (not a feed preview) with a video it was playing: worth keeping when its page goes. */
