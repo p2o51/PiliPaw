@@ -9,7 +9,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.gpo.pilipala.R
 
+// Each weight first as Google Sans Flex + Noto Sans SC (CjkFonts, async), then the plain file,
+// which stands in until that has loaded or when it can't.
 val GoogleSansFlex = FontFamily(
+    CjkFonts.Font(R.font.google_sans_flex_400, FontWeight.Normal),
+    CjkFonts.Font(R.font.google_sans_flex_500, FontWeight.Medium),
+    CjkFonts.Font(R.font.google_sans_flex_600, FontWeight.SemiBold),
+    CjkFonts.Font(R.font.google_sans_flex_700, FontWeight.Bold),
     Font(R.font.google_sans_flex_400, FontWeight.Normal),
     Font(R.font.google_sans_flex_500, FontWeight.Medium),
     Font(R.font.google_sans_flex_600, FontWeight.SemiBold),
@@ -25,6 +31,8 @@ val GoogleSansFlex = FontFamily(
  */
 @OptIn(ExperimentalTextApi::class)
 val GoogleSansFlexRounded = FontFamily(
+    CjkFonts.Font(R.font.google_sans_flex_variable, FontWeight.Medium, "'wght' 500, 'ROND' 100"),
+    CjkFonts.Font(R.font.google_sans_flex_variable, FontWeight.SemiBold, "'wght' 600, 'ROND' 100"),
     Font(
         R.font.google_sans_flex_variable,
         weight = FontWeight.Medium,

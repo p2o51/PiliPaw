@@ -22,6 +22,8 @@ class PiliApp : Application(), SingletonImageLoader.Factory {
         com.gpo.pilipala.feature.player.lyrics.LyricsStore.init(this)
         com.gpo.pilipala.yt.feature.listen.LyricsStore.init(this)
         AppSettings.init(this)
+        // Chinese in Google Sans Flex's weights: start fetching Noto Sans SC now.
+        com.gpo.pilipala.ui.theme.CjkFonts.preload(this)
         com.gpo.pilipala.feature.player.cdn.CdnRouter.init(this)
         Account.init(this)
         com.gpo.pilipala.feature.widget.WidgetStore.appContext = this
