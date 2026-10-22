@@ -233,7 +233,9 @@ fun BiliVideoPlayer(
     val latestTarget by rememberUpdatedState(target)
 
     // ── Lifecycle: pause on leave (unless background play), drop video in background.
-    val lifecycleOwner = LocalLifecycleOwner.current
+    // Navigation leaving the detail page is not the app entering the background.
+    // Disabling/re-enabling the video track here recreates the decoder during docking.
+    val lifecycleOwner = activity ?: LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, ctrl) {
         var resumeOnReturn = false
         val observer = LifecycleEventObserver { _, event ->

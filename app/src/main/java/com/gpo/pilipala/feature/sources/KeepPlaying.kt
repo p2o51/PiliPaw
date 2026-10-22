@@ -144,6 +144,8 @@ object KeepPlaying {
         windowCorner = form.corner
         windowCenter = form.center
         landing = form.rect
+        mergeRaw = if (form.rest == MiniRest.Merged) 1f else 0f
+        resetPending = false
     }
 
     /** The corner a resting window keeps through resizes (0 top left … 3 bottom right); null: none yet. */
@@ -198,6 +200,7 @@ object KeepPlaying {
     }
 
     internal val arriving: Boolean get() = arrival != null
+    internal val arrivalFrame: androidx.compose.ui.graphics.ImageBitmap? get() = arrival?.frame
 
     private const val ArrivalMs = 2_000L
 
@@ -278,7 +281,7 @@ object KeepPlaying {
 }
 
 /** The docked picture's form when it was tapped open: its rest, its corner and centre, its rect. */
-internal class DockForm(val rest: MiniRest, val corner: Int?, val center: Offset, val rect: Rect)
+internal class DockForm(val rest: MiniRest, val corner: Int?, val center: Offset, val rect: Rect, val tileCorner: Float)
 
 /**
  * Where the shell's nav bar sits on screen (window px), reported by the shell on screen; null
@@ -705,8 +708,18 @@ fun MiniBarHost() {
         val maxAxis = MiniAxis.maxAxis(widthCap, (h - statusTop) * 0.6f, aspect).coerceAtLeast(dims.detach)
         val margin = with(density) { 12.dp.toPx() }
         // Back on screen (rotation, a new window): straight to where it rests, no flight.
-        val frame = remember {
-            MiniFrame(restAxisOf(KeepPlaying.rest, dims, nav != null, maxAxis, density.density), barTarget)
+        // A newly docked player takes over at the flight's destination. Reusing the hidden
+        // frame would spring its old row axis into the restored circle/window a second time.
+        val retainedFrame = remember { arrayOfNulls<MiniFrame>(1) }
+        val frame = remember(p.player, up) {
+            if (!up && retainedFrame[0] != null) retainedFrame[0]!!
+            else MiniFrame(restAxisOf(KeepPlaying.rest, dims, nav != null, maxAxis, density.density), barTarget)
+                .also {
+                    // Available in the first composition, before the arrival effect consumes it.
+                    // Otherwise the bar paints its cover for one frame over the landing image.
+                    it.arrived = KeepPlaying.arrivalFrame
+                    retainedFrame[0] = it
+                }
         }
         frame.dims = dims
         frame.view = androidx.compose.ui.platform.LocalView.current
@@ -812,7 +825,7 @@ fun MiniBarHost() {
                 .offset { frame.geo.hit.let { IntOffset(it.left.roundToInt(), it.top.roundToInt()) } }
                 // The system's back gesture must not take a swipe that starts on the bar near an edge.
                 .systemGestureExclusion()
-                .pointerInput(Unit) { miniGestures(frame, scope, density.density) { latest } }
+                .pointerInput(frame) { miniGestures(frame, scope, density.density) { latest } }
                 .graphicsLayer {
                     translationX = frame.swipeNow
                     alpha = shown * (1f - (abs(frame.swipeNow) / (frame.anchor.value.width * 0.6f).coerceAtLeast(1f))).coerceIn(0f, 1f)
@@ -1060,17 +1073,22 @@ private fun tapAt(frame: MiniFrame, at: Offset, p: Playing) {
     val sides = g.sideAlpha > 0.5f && !g.windowed
     when {
         g.tile.contains(at) -> {
-            // Its page goes back to this form (the window at its size and corner, the circle, the bar).
-            PlayerHost.openingFromDock(DockForm(KeepPlaying.rest, KeepPlaying.windowCorner, KeepPlaying.windowCenter, g.tile))
-            if (p.source == VideoSource.YouTube) KeepPlaying.openFrom = g.tile
-            KeepPlaying.openingFromDock = true
-            MiniLog.event("open from dock", "${KeepPlaying.rest} at ${g.tile}")
-            p.open()
+            openDock(frame, p)
         }
         sides && g.left.contains(at) -> p.seekBy(-15_000)
         sides && g.pause.contains(at) -> p.toggle()
         sides && g.right.contains(at) -> p.seekBy(15_000)
     }
+}
+
+/** Touch and accessibility opens must remember the same return geometry. */
+private fun openDock(frame: MiniFrame, p: Playing) {
+    val tile = frame.geo.tile
+    PlayerHost.openingFromDock(DockForm(KeepPlaying.rest, KeepPlaying.windowCorner, KeepPlaying.windowCenter, tile, frame.geo.tileCorner))
+    if (p.source == VideoSource.YouTube) KeepPlaying.openFrom = tile
+    KeepPlaying.openingFromDock = true
+    MiniLog.event("open from dock", "${KeepPlaying.rest} at $tile")
+    p.open()
 }
 
 /** Springs the window into [corner] (or the nearest one to where it is) at the long side [axis]. */
@@ -1323,7 +1341,7 @@ private fun Tile(p: Playing, frame: MiniFrame) {
             }
             .background(track)
             .then(p.route?.let { Modifier.pageSharedSource(it) } ?: Modifier)
-            .a11yClick(p.title.ifEmpty { "打开视频" }, p.open)
+            .a11yClick(p.title.ifEmpty { "打开视频" }) { openDock(frame, p) }
             .drawWithContent {
                 drawContent()
                 val stroke = ProgressStroke.toPx()
@@ -1335,20 +1353,16 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                 drawPath(seg, primary, style = Stroke(stroke, cap = StrokeCap.Round))
             },
     ) {
-        // The video itself. Attached a beat after the bar appears: the page that let the player go
-        // detaches its own video view as it leaves, and that must not land after ours.
-        var ready by remember(p.player) { mutableStateOf(p.source == VideoSource.YouTube) }
-        LaunchedEffect(p.player) {
-            kotlinx.coroutines.delay(400)
-            ready = true
-        }
+        // The page has left composition before its controller is offered to the dock.
+        // Media3 clears a surface by identity, so there is no need to freeze the landing
+        // frame for another 400 ms before attaching this view.
         // Until the video has drawn a frame into this tile, what stood for it stays on top: the
         // frame the page's flight landed with, else the cover. Swapped in one frame once the
         // picture is really there (a fixed delay showed the cover, or an empty view, first).
-        var drawn by remember(p.player) { mutableStateOf(false) }
-        val player = p.player?.takeIf { ready }
+        var drawn by remember(p.player, frame) { mutableStateOf(false) }
+        val player = p.player
         if (player != null) {
-            androidx.compose.runtime.DisposableEffect(player) {
+            androidx.compose.runtime.DisposableEffect(player, frame) {
                 val l = object : androidx.media3.common.Player.Listener {
                     override fun onRenderedFirstFrame() {
                         drawn = true
@@ -1359,7 +1373,16 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                 onDispose { player.removeListener(l) }
             }
         }
-        LaunchedEffect(drawn) { if (drawn) frame.arrived = null }
+        val stillAlpha = remember(p.player, frame) { Animatable(1f) }
+        LaunchedEffect(drawn, frame) {
+            if (drawn) {
+                // Media3's renderer callback can precede the TextureView's composited frame.
+                // Keep the landing image until that frame has had a chance to reach the display.
+                repeat(2) { androidx.compose.runtime.withFrameNanos { } }
+                stillAlpha.animateTo(0f, androidx.compose.animation.core.tween(120))
+                frame.arrived = null
+            }
+        }
         player?.let { player ->
             // Cropped only while the bar's 16:9 tile turns into the video's own shape; in the
             // window the shapes match and nothing is cut or stretched.
@@ -1371,12 +1394,13 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                 shutter = {},
             )
         }
-        if (!drawn) {
+        if (stillAlpha.value > 0f) {
+            val stillModifier = Modifier.fillMaxSize().graphicsLayer { alpha = stillAlpha.value }
             val still = frame.arrived
             if (still != null) {
-                androidx.compose.foundation.Image(still, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                androidx.compose.foundation.Image(still, null, stillModifier, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
             } else {
-                NetImage(p.cover, Modifier.fillMaxSize(), contentDescription = p.title, shape = androidx.compose.ui.graphics.RectangleShape, thumbWidth = 640.dp)
+                NetImage(p.cover, stillModifier, contentDescription = p.title, shape = androidx.compose.ui.graphics.RectangleShape, thumbWidth = 640.dp)
             }
         }
     }

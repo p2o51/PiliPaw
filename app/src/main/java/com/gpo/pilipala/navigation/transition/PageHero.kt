@@ -43,7 +43,7 @@ typealias PageHeroCapture = suspend () -> Pair<ImageBitmap, Rect>?
 
 /** One flight: [image] from [from] (window px, untransformed page) into [to] (the cover, page beneath). */
 /** [page]: the shared key of the page whose picture flies (it hides its own while this is up). */
-internal class HeroFlight(val image: ImageBitmap, val from: Rect, val to: Rect, val page: String)
+internal class HeroFlight(val image: ImageBitmap, val from: Rect, val to: Rect, val page: String, val targetCorner: Float? = null)
 
 /** Registers the page's hero for [route] while composed. */
 @Composable
@@ -132,7 +132,7 @@ internal fun HeroOverlay(t: PageTransitions) {
                     lerp(from.bottom, to.bottom, s),
                 )
                 if (rect.width <= 1f || rect.height <= 1f) return@drawBehind
-                val radius = lerp(0f, HeroCoverCorner.toPx(), s)
+                val radius = lerp(0f, flight.targetCorner ?: HeroCoverCorner.toPx(), s.coerceIn(0f, 1f))
                 val clip = Path().apply {
                     addRoundRect(androidx.compose.ui.geometry.RoundRect(rect, CornerRadius(radius)))
                 }

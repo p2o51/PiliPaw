@@ -60,6 +60,10 @@ internal fun rememberVideoSwipeDown(): PictureSwipeDown? {
                     val form = PlayerHost.front?.let(PlayerHost::remembered) as? com.gpo.pilipala.feature.sources.DockForm
                     form?.rect ?: metrics.let { m -> KeepPlaying.dockTile(shell, m.w, m.h, m.tablet, density) }
                 },
+                corner = {
+                    val form = PlayerHost.front?.let(PlayerHost::remembered) as? com.gpo.pilipala.feature.sources.DockForm
+                    form?.tileCorner ?: with(density) { 6.dp.toPx() }
+                },
                 landing = { KeepPlaying.arrive(it, shellBeneath()) },
             )
             transitions.registerHeroDock(dock)

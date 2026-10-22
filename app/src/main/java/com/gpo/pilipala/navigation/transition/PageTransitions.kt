@@ -624,7 +624,7 @@ class PageTransitions internal constructor(
             if (shot.second.isEmpty) return
             dock.landing(shot.first)
             com.gpo.pilipala.feature.sources.MiniLog.event("hero flies to bar", top.toString())
-            hero = HeroFlight(shot.first, shot.second, to, top.sharedKey().orEmpty())
+            hero = HeroFlight(shot.first, shot.second, to, top.sharedKey().orEmpty(), dock.corner())
             return
         }
         val cover = pushedCovers[top.toString()] ?: return
@@ -709,7 +709,7 @@ fun Route.sharedKey(): String? = when (this) {
  * Where a docking hero lands (host px) when [enabled] at the commit, and the frame it carries
  * there, for whoever takes over.
  */
-internal class HeroDock(val key: String, val enabled: () -> Boolean, val target: () -> Rect?, val landing: (ImageBitmap) -> Unit)
+internal class HeroDock(val key: String, val enabled: () -> Boolean, val target: () -> Rect?, val corner: () -> Float, val landing: (ImageBitmap) -> Unit)
 
 /** The app's page transitions, for what draws outside the page host (the mini bar). */
 object PageTransitionsHost {
