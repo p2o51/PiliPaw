@@ -461,7 +461,7 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
     var maxAxis by mutableFloatStateOf(1f)
     var bounds by mutableStateOf(Rect.Zero)
 
-    /** Where a resting window's corners are: inside the insets, clear of the bar's dock line. */
+    /** Where a resting window's corners are: inside the insets, above the nav bar and the bar. */
     var restArea by mutableStateOf(Rect.Zero)
 
     /** A held window gives a little under the finger. */
@@ -518,7 +518,7 @@ private fun rememberVideoAspect(player: androidx.media3.common.Player?): Float {
  * title and no ×; a sideways swipe closes it. Stacked 8dp above the nav bar on a phone, left of it
  * on a tablet. Scrolling down pours the picture into a 48dp circle at the nav bar's start, with a
  * progress ring; scrolling up brings it out again. Two fingers run one size axis: circle ← bar →
- * a floating window of the video's own shape (drag it, fling it, drop it on the nav bar to dock)
+ * a floating window of the video's own shape (drag or fling it to a corner; pinch it small to dock)
  * (rubber-banding past its largest size). Tapping the picture is what opens the video.
  */
 @OptIn(FlowPreview::class)
@@ -614,7 +614,7 @@ fun MiniBarHost() {
         frame.aspect = aspect
         frame.maxAxis = maxAxis
         frame.bounds = Rect(margin, statusTop + margin, w - margin, h - margin)
-        // A window resting at a bottom corner stays clear of the dock line (or a later nudge would dock it).
+        // A window resting at a bottom corner rests above the nav bar and the bar.
         frame.restArea = Rect(margin, statusTop + margin, w - margin, (nav?.top ?: barTarget.top) - with(density) { 32.dp.toPx() })
         frame.px = with(density) { MiniPx(BlockGap.toPx(), InnerCorner.toPx(), WindowCorner.toPx(), margin, 8.dp.toPx(), 32.dp.toPx(), 8.dp.toPx()) }
 
@@ -644,7 +644,7 @@ fun MiniBarHost() {
                 KeepPlaying.rest = if (want && frame.canMerge) MiniRest.Merged else MiniRest.Row
             }
         }
-        // The nav bar opens room for the circle as the picture pours in; a window dropped back
+        // The nav bar opens room for the circle as the picture pours in; a window pinched back
         // into the bar forgets its place once it lands.
         LaunchedEffect(frame) {
             snapshotFlow { frame.geo.merge }.distinctUntilChanged().collect { KeepPlaying.mergeRaw = it }
@@ -961,19 +961,10 @@ private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, 
         latest().close()
         return
     }
-    val dockLine = frame.nav?.top ?: frame.anchor.value.top
-    val navSpan = frame.nav ?: frame.anchor.value
-    val aimed = projected.x in navSpan.left..navSpan.right
-    if (aimed && MiniAxis.docks(g.tile.bottom, projected.y + h / 2f, v.y, dockLine, 24f * density, 30f * density, 200f * density)) {
-        // Back into the bar: the picture flies from where it was let go (the axis carries it).
-        KeepPlaying.windowCenter = center
-        KeepPlaying.windowCorner = null
-        KeepPlaying.rest = MiniRest.Row
-        scope.launch { frame.axis.animateTo(frame.dims.row, MiniSprings.liq()) }
-        return
-    }
-    // Anywhere else: a corner. A light flick carries far (a long, low-friction projection), and a
-    // flick that clearly goes one way picks that way's corner even if it falls a little short.
+    // A drag or fling only ever moves it between the four corners (the bottom ones rest above the
+    // nav bar; thrown at the nav bar it stays a window): only a pinch takes it back into the bar.
+    // A light flick carries far (a long, low-friction projection), and a flick that clearly goes
+    // one way picks that way's corner even if it falls a little short.
     val far = center + vel * 0.38f
     val w = g.tile.width
     var corner = MiniGestures.nearestCorner(far, w, h, frame.restArea)

@@ -30,6 +30,13 @@ class MiniGesturesTest {
         assertEquals(Offset(350f, 25f), MiniGestures.restingCenter(Offset(900f, -300f), 100f, 50f, area))
     }
 
+    @Test fun flungDownOntoTheNavItRestsInABottomCornerAboveIt() {
+        // The rest area's bottom is above the nav bar: a throw far past it still lands inside.
+        val area = Rect(12f, 40f, 388f, 700f)
+        val c = MiniGestures.restingCenter(Offset(300f, 2000f), 160f, 90f, area)
+        assertEquals(Offset(308f, 655f), c)
+    }
+
     @Test fun aResizedWindowKeepsItsCorner() {
         val area = Rect(0f, 0f, 400f, 800f)
         assertEquals(3, MiniGestures.nearestCorner(Offset(300f, 700f), 100f, 50f, area))

@@ -1,8 +1,6 @@
 package com.gpo.pilipala.feature.sources
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MiniAxisTest {
@@ -62,14 +60,4 @@ class MiniAxisTest {
         assertEquals(376f, MiniAxis.maxAxis(376f, 500f, 16f / 9f), 0.001f)
     }
 
-    @Test fun docking() {
-        val line = 1000f
-        // Dropped with its bottom near the nav bar.
-        assertTrue(MiniAxis.docks(bottom = 980f, projectedBottom = 980f, velocityY = 0f, dockLine = line, near = 24f, past = 30f, upFast = 200f))
-        // Same place but thrown upward fast: it flies off instead.
-        assertFalse(MiniAxis.docks(980f, 900f, -400f, line, 24f, 30f, 200f))
-        // Far above but thrown down past the line.
-        assertTrue(MiniAxis.docks(600f, 1040f, 2000f, line, 24f, 30f, 200f))
-        assertFalse(MiniAxis.docks(600f, 700f, 100f, line, 24f, 30f, 200f))
-    }
 }

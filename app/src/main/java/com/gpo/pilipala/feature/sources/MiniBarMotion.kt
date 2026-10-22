@@ -98,14 +98,6 @@ internal object MiniAxis {
             },
         )
     }
-
-    /**
-     * A floating window let go of: back into the bar when its bottom edge is within [near] of
-     * the [dockLine] (the nav bar's top) and it is not thrown upward faster than [upFast], or
-     * when it is thrown past the line by [past].
-     */
-    fun docks(bottom: Float, projectedBottom: Float, velocityY: Float, dockLine: Float, near: Float, past: Float, upFast: Float): Boolean =
-        (bottom >= dockLine - near && velocityY > -upFast) || projectedBottom > dockLine + past
 }
 
 /** One frame of the bar, in the host's px: its four blocks, the hit area and the goo. */
