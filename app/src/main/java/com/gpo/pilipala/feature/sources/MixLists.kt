@@ -25,6 +25,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import com.gpo.pilipala.ui.components.EmptyState
+import com.gpo.pilipala.ui.components.friendlyMessage
+import com.gpo.pilipala.ui.theme.CoverTheme
+import com.gpo.yoin.symbols.PiliSymbols
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -164,14 +171,6 @@ fun MixPickerSheet(item: LibItem, onDismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text("加到 Mix", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 8.dp))
-            Text(
-                item.title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 8.dp).padding(bottom = 8.dp),
-            )
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
                 items(lists, key = { it.id }) { list ->
                     val on = list.items.any { it.key == item.key }
@@ -191,7 +190,7 @@ fun MixPickerSheet(item: LibItem, onDismiss: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text(list.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
-                                "${list.items.size} 个视频",
+                                "${list.items.size}",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -209,7 +208,7 @@ fun MixPickerSheet(item: LibItem, onDismiss: () -> Unit) {
                         value = name,
                         onValueChange = { name = it },
                         singleLine = true,
-                        placeholder = { Text("Mix 的名字") },
+                        placeholder = { Text("名称") },
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(
@@ -221,7 +220,7 @@ fun MixPickerSheet(item: LibItem, onDismiss: () -> Unit) {
                             toast("已加到「${list.name}」")
                             onDismiss()
                         },
-                    ) { Text("新建并加入") }
+                    ) { Text("新建") }
                 }
             } else {
                 TextButton(onClick = { naming = true }, modifier = Modifier.padding(horizontal = 4.dp)) {
@@ -266,43 +265,28 @@ fun MixListScreen(route: Route.MixList) {
     var linking by remember { mutableStateOf(false) }
     // Opening a Mix that follows something brings it up to date.
     LaunchedEffect(route.id) { if (list?.links?.isNotEmpty() == true) MixSync.sync(route.id) }
+    // The page takes its colours from the first video's cover, as a 收藏夹 does.
+    CoverTheme(list?.items?.firstOrNull()?.thumbnail?.let(MixItems::secure)) {
     LibraryScaffold(
         title = list?.name ?: route.title.ifEmpty { "Mix" },
-        subtitle = list?.let { l ->
-            val bili = l.items.count(MixItems::isBili)
-            "${l.items.size} 个视频 · 哔哩哔哩 $bili · YouTube ${l.items.size - bili}"
-        },
+        subtitle = list?.let { "${it.items.size} 个视频" },
         actions = {
-            if (list != null && list.items.isNotEmpty()) {
-                // Plays the whole Mix, Bilibili and YouTube one after another (MixPlayback).
-                androidx.compose.material3.FilledTonalButton(onClick = { MixPlayback.start(list.id, 0) }) {
-                    Icon(YoinSymbols.PlayFilled, null, Modifier.size(18.dp))
-                    Text(" 全部播放")
+            if (list != null) {
+                IconButton(onClick = { linking = true }, shapes = IconButtonDefaults.shapes()) {
+                    Icon(PiliSymbols.Link, contentDescription = "关联")
+                }
+                IconButton(onClick = { deleting = true }, shapes = IconButtonDefaults.shapes()) {
+                    Icon(YoinSymbols.Delete, contentDescription = "删除这个 Mix")
                 }
             }
-            if (list != null) TextButton(onClick = { linking = true }) { Text("关联") }
-            if (list != null) TextButton(onClick = { deleting = true }) { Text("删除") }
         },
     ) { padding ->
         if (list == null || list.items.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(
-                    "长按视频卡片，选“加到 Mix”",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            EmptyState("还没有视频", Modifier.padding(padding), icon = YoinSymbols.Library)
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp)) {
-                if (list.links.isNotEmpty()) {
-                    item(key = "links") {
-                        Text(
-                            "跟随：" + list.links.joinToString("、") { it.title.ifEmpty { if (it.kind == "bili_fav") "收藏夹" else "播放列表" } } + "。新增的会加到最后，原列表删掉的这里也会删掉。",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        )
-                    }
+                item(key = "head") {
+                    MixHead(list, onLinks = { linking = true })
                 }
                 itemsIndexed(list.items, key = { _, it -> it.key }) { i, item ->
                     MixRow(
@@ -316,6 +300,7 @@ fun MixListScreen(route: Route.MixList) {
                 }
             }
         }
+    }
     }
     if (linking && list != null) MixLinkSheet(list, onDismiss = { linking = false })
     menu?.let { item ->
@@ -368,8 +353,8 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
         }.getOrDefault(emptyList())
     }
     val done: (Result<Int>) -> Unit = { r ->
-        r.onSuccess { n -> toast(if (n > 0) "已加入 $n 个视频" else "已关联，没有新视频") }
-            .onFailure { toast("同步失败：" + (it.message ?: "网络错误")) }
+        r.onSuccess { n -> toast(if (n > 0) "加入 $n 个视频" else "已关联") }
+            .onFailure { toast(it.friendlyMessage()) }
     }
     ModalBottomSheet(onDismissRequest = onDismiss, properties = rememberSheetProperties()) {
         Column(
@@ -382,15 +367,10 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("关联", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 8.dp))
-            Text(
-                "跟着一个收藏夹或播放列表走：新增的视频加到 Mix 最后，删掉的也从 Mix 里拿掉；你自己加的不受影响。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
             list.links.forEach { l ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
+                    Icon(if (l.kind == "bili_fav") YoinSymbols.Folder else YoinSymbols.Playlist, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(Modifier.weight(1f).padding(start = 14.dp)) {
                         Text(l.title.ifEmpty { l.ref }, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(if (l.kind == "bili_fav") "哔哩哔哩收藏夹" else "YouTube 播放列表", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -400,8 +380,8 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
             Text("哔哩哔哩收藏夹", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp, top = 8.dp))
             val fs = folders
             when {
-                fs == null -> Text("加载中…", modifier = Modifier.padding(8.dp))
-                fs.isEmpty() -> Text("登录哔哩哔哩后可以关联自己的收藏夹", modifier = Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                fs == null -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { androidx.compose.material3.LoadingIndicator() }
+                fs.isEmpty() -> Text("未登录哔哩哔哩", modifier = Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
                     items(fs, key = { it.id }) { f ->
                         val linked = list.links.any { it.id == "bili_fav:${f.id}" }
@@ -422,7 +402,7 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
                                 Text(f.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text("${f.mediaCount} 个内容", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            if (linked) Text("已关联", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            if (linked) Icon(YoinSymbols.Check, contentDescription = "已关联", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -433,7 +413,7 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
                     value = url,
                     onValueChange = { url = it },
                     singleLine = true,
-                    placeholder = { Text("粘贴播放列表链接") },
+                    placeholder = { Text("播放列表链接") },
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(
@@ -448,6 +428,64 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
     }
 }
 
+/**
+ * Under the title: 播放全部 / 随机播放, how the Mix splits between the two sources (each count
+ * with its own weight, no "·" between them), and the lists it follows as chips.
+ */
+@Composable
+private fun MixHead(list: LocalPlaylist, onLinks: () -> Unit) {
+    val bili = list.items.count(MixItems::isBili)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
+            SourceCount(bili, "哔哩哔哩")
+            SourceCount(list.items.size - bili, "YouTube")
+        }
+        com.gpo.pilipala.feature.library.QueueSplitButton(
+            loading = false,
+            compact = com.gpo.pilipala.ui.components.widthClass() == com.gpo.pilipala.ui.components.WidthClass.Compact,
+            onPlay = { MixPlayback.start(list.id, 0) },
+            onShuffle = { MixPlayback.shuffle(list.id) },
+        )
+        if (list.links.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                list.links.forEach { l ->
+                    Row(
+                        Modifier
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .combinedClickable(onClick = onLinks)
+                            .padding(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            if (l.kind == "bili_fav") YoinSymbols.Folder else YoinSymbols.Playlist,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            l.title.ifEmpty { if (l.kind == "bili_fav") "收藏夹" else "播放列表" },
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceCount(n: Int, label: String) {
+    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("$n", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 2.dp))
+    }
+}
+
+/** A Mix row: cover, title, who made it and the source; the one playing shows a live equalizer. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MixRow(item: LibItem, modifier: Modifier, playing: Boolean = false, onClick: () -> Unit, onLongClick: () -> Unit) {
@@ -460,31 +498,31 @@ private fun MixRow(item: LibItem, modifier: Modifier, playing: Boolean = false, 
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(160.dp).aspectRatio(16f / 10f)) {
-            NetImage(MixItems.secure(item.thumbnail), Modifier.fillMaxSize(), shape = CoverShape, thumbWidth = 320.dp)
-            // Which part it opens in: the source's own colour, as on the account dots.
-            Box(
-                Modifier
-                    .align(Alignment.TopStart)
-                    .padding(6.dp)
-                    .size(10.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(if (source == VideoSource.Bilibili) Color(0xFFFB7299) else Color(0xFFFF0033)),
-            )
-        }
+        NetImage(MixItems.secure(item.thumbnail), Modifier.width(160.dp).aspectRatio(16f / 10f), shape = CoverShape, thumbWidth = 320.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(
-                item.channelName,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                item.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                if (playing) "${source.label} · 正在播放" else source.label,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+            if (item.channelName.isNotEmpty()) {
+                Text(
+                    item.channelName,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(source.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+        }
+        if (playing) {
+            Icon(
+                com.gpo.yoin.symbols.rememberEqualizerSymbolPainter(playing = true),
+                contentDescription = "正在播放",
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
     }

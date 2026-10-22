@@ -521,11 +521,28 @@ private fun FloatingWindow(
                 shutter = {},
             )
         }
-        if (!p.isPlaying) {
+        // Paused: the play key grows in over the picture (the same morphing symbol as the bar's).
+        val pausedK by animateFloatAsState(if (p.isPlaying) 0f else 1f, YoinMotion.defaultSpatialSpec(), label = "windowPaused")
+        if (pausedK > 0.01f) {
             Box(
-                Modifier.align(Alignment.Center).size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+                Modifier
+                    .align(Alignment.Center)
+                    .graphicsLayer {
+                        scaleX = 0.6f + 0.4f * pausedK
+                        scaleY = 0.6f + 0.4f * pausedK
+                        alpha = pausedK.coerceIn(0f, 1f)
+                    }
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center,
-            ) { Icon(YoinSymbols.PlayFilled, "播放", tint = MaterialTheme.colorScheme.onPrimaryContainer) }
+            ) {
+                Icon(
+                    com.gpo.yoin.symbols.rememberPlayPauseSymbolPainter(p.isPlaying),
+                    contentDescription = "播放",
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
         }
         val primary = MaterialTheme.colorScheme.primary
         Box(
@@ -609,7 +626,7 @@ private fun BarContent(p: Playing, modifier: Modifier) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                if (p.isPlaying) YoinSymbols.PauseFilled else YoinSymbols.PlayFilled,
+                com.gpo.yoin.symbols.rememberPlayPauseSymbolPainter(p.isPlaying),
                 contentDescription = if (p.isPlaying) "暂停" else "播放",
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
             )
@@ -671,14 +688,8 @@ private fun CircleContent(p: Playing, modifier: Modifier) {
 private fun KeepAskDialog() {
     AlertDialog(
         onDismissRequest = { KeepPlaying.choose(keep = true) },
-        title = { Text("回到首页时，要停止播放吗？") },
-        text = {
-            Text(
-                "不停的话，视频会收在底部的迷你条里接着放，像 YouTube 那样。可以随时在 设置 › 播放 里更改。",
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
+        title = { Text("回到首页时停止播放？") },
+        text = { Text("继续播放时，视频收进底部的迷你条。可在 设置 › 播放 中更改。") },
         confirmButton = { TextButton(onClick = { KeepPlaying.choose(keep = true) }) { Text("继续播放") } },
         dismissButton = { TextButton(onClick = { KeepPlaying.choose(keep = false) }) { Text("停止播放") } },
     )

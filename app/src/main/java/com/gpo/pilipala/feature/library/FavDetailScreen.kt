@@ -328,7 +328,7 @@ private fun ListenToggle(checked: Boolean, onChange: (Boolean) -> Unit) {
 }
 
 @Composable
-private fun QueueSplitButton(loading: Boolean, compact: Boolean, onPlay: () -> Unit, onShuffle: () -> Unit) {
+internal fun QueueSplitButton(loading: Boolean, compact: Boolean, onPlay: () -> Unit, onShuffle: () -> Unit) {
     val haptics = LocalHapticFeedback.current
     SplitButtonLayout(
         leadingButton = {

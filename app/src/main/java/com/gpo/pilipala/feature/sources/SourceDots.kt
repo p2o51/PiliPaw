@@ -266,11 +266,6 @@ private fun SourcesPanel(origin: Offset, onAccount: (VideoSource) -> Unit, onSet
             ) {
                 Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 8.dp)) {
                     Text("账号", style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        "勾选的会出现在首页；按住头像可以直接滑到账号主页",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
                 VideoSource.entries.forEach { source ->
                     val on = source in ticks
@@ -364,7 +359,7 @@ private fun AccountStats(source: VideoSource) {
             val user by Account.user.collectAsState()
             val u = user
             if (u == null) {
-                StatCaption("登录后看关注、收藏和稍后再看")
+                StatCaption("哔哩哔哩")
                 return
             }
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Bottom) {
@@ -377,7 +372,7 @@ private fun AccountStats(source: VideoSource) {
         VideoSource.YouTube -> {
             val profile by Accounts.youtube.collectAsState()
             val p = profile as? Profile.SignedIn
-            StatCaption(if (p != null) p.handle.ifEmpty { "已登录" } else "登录后首页有你的订阅和推荐")
+            StatCaption(p?.handle?.ifEmpty { null } ?: "YouTube")
         }
     }
 }

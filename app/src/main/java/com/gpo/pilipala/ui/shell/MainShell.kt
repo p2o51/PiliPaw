@@ -233,7 +233,7 @@ private fun FourTabsForMiniBar(sections: List<ShellSection>) {
         val drop = listOf(ShellSection.Rank, ShellSection.Dynamics, ShellSection.Fav).firstOrNull { it in sections } ?: return@LaunchedEffect
         ShellSections.setShown(drop, false)
         com.gpo.pilipala.core.settings.AppSettings.set(FourTabsDone, true)
-        toast("底栏要给迷你播放器留位置，「${drop.tab.label}」先收起来了，可以在 设置 › 外观 › 底栏 里换")
+        toast("「${drop.tab.label}」已收起，可在 设置 › 外观 › 底栏 中打开")
     }
 }
 
@@ -249,7 +249,7 @@ private fun MineMovedToAvatar() {
         if (done) return@LaunchedEffect
         ShellSections.setShown(ShellSection.Mine, false)
         com.gpo.pilipala.core.settings.AppSettings.set(MineMovedDone, true)
-        toast("「我的」搬到左上角头像里了：轻点或按住头像")
+        toast("「我的」在左上角头像里")
     }
 }
 

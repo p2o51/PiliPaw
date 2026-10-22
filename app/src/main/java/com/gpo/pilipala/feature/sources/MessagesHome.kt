@@ -55,24 +55,13 @@ fun MessagesHome() {
     }
     var tab by rememberSaveable { mutableStateOf(0) }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            listOf("哔哩哔哩", "YouTube").forEachIndexed { i, label ->
-                val on = i == tab
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (on) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(if (on) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .clickable { tab = i }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                )
-            }
-        }
+        // The app's own segment row (Home's), so the two inboxes switch like Home's tabs do.
+        com.gpo.pilipala.feature.home.SegmentTabs(
+            labels = listOf("哔哩哔哩", "YouTube"),
+            selected = tab,
+            onSelect = { tab = it },
+            modifier = Modifier.statusBarsPadding().padding(vertical = 8.dp),
+        )
         Box(Modifier.weight(1f)) {
             if (tab == 0) MessagesScreen() else YouTubeNotifications()
         }
@@ -91,12 +80,10 @@ private fun YouTubeNotifications() {
     val list = items
     when {
         error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("暂时拿不到 YouTube 通知：$error", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp))
+            com.gpo.pilipala.ui.components.ErrorState(error.orEmpty(), onRetry = null)
         }
-        list == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("加载中…") }
-        list.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("没有新通知", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        list == null -> com.gpo.pilipala.ui.components.LoadingState()
+        list.isEmpty() -> com.gpo.pilipala.ui.components.EmptyState("没有通知", icon = com.gpo.yoin.symbols.PiliSymbols.Mail)
         else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             items(list) { n ->
                 Row(

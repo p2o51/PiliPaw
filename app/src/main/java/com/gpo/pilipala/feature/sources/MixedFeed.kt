@@ -230,11 +230,19 @@ internal fun MixedFollowTab(
                         androidx.compose.ui.Modifier.padding(bottom = 8.dp),
                         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
                     ) {
-                        androidx.compose.material3.FilledTonalButton(onClick = { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Search()) }) {
-                            androidx.compose.material3.Text("搜索 YouTube")
+                        androidx.compose.material3.FilledTonalButton(
+                            onClick = { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Search()) },
+                            shapes = androidx.compose.material3.ButtonDefaults.shapes(),
+                        ) {
+                            androidx.compose.material3.Icon(com.gpo.yoin.symbols.YoinSymbols.Search, null, androidx.compose.ui.Modifier.padding(end = 6.dp))
+                            androidx.compose.material3.Text("搜索")
                         }
-                        androidx.compose.material3.FilledTonalButton(onClick = { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Settings) }) {
-                            androidx.compose.material3.Text("订阅和 Mix")
+                        androidx.compose.material3.FilledTonalButton(
+                            onClick = { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Settings) },
+                            shapes = androidx.compose.material3.ButtonDefaults.shapes(),
+                        ) {
+                            androidx.compose.material3.Icon(com.gpo.yoin.symbols.YoinSymbols.Library, null, androidx.compose.ui.Modifier.padding(end = 6.dp))
+                            androidx.compose.material3.Text("订阅")
                         }
                     }
                 }

@@ -919,10 +919,10 @@ private fun ColumnScope.CloudSyncGroup() {
     }
     val summary = when (state) {
         com.gpo.pilipala.feature.sources.PawCloud.State.Syncing -> "正在同步…"
-        is com.gpo.pilipala.feature.sources.PawCloud.State.Done -> "刚刚同步完"
+        is com.gpo.pilipala.feature.sources.PawCloud.State.Done -> "已同步"
         is com.gpo.pilipala.feature.sources.PawCloud.State.Failed -> "同步失败：" + state.message
-        is com.gpo.pilipala.feature.sources.PawCloud.State.Misconfigured -> "这个版本还不能用云同步：需要在 Google Cloud 里登记 ${state.packageName}（SHA-1 ${state.sha1 ?: "未知"}）"
-        else -> if (on) "Mix、订阅、稍后再看、选过的歌词和设置，存在你自己的 Google Drive 里" else "存在你自己的 Google Drive 隐藏文件夹里，登录信息不会上传"
+        is com.gpo.pilipala.feature.sources.PawCloud.State.Misconfigured -> "Google Cloud 未登记 ${state.packageName}（SHA-1 ${state.sha1 ?: "未知"}）"
+        else -> "Mix、订阅、稍后再看、歌词和设置；不含登录信息"
     }
     SettingsGroup("云同步") {
         item {

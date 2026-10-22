@@ -27,6 +27,9 @@ object MixPlayback {
     private val items: List<LibItem>
         get() = Library.playlists.value.firstOrNull { it.id == listId }?.items.orEmpty()
 
+    /** The play order over [items] (shuffled for 随机播放); [index] is a position in the list itself. */
+    private var order: List<Int> = emptyList()
+
     val current: LibItem? get() = items.getOrNull(index)
 
     private var hooked = false
@@ -35,17 +38,28 @@ object MixPlayback {
     fun start(id: String, start: Int = 0) {
         hook()
         listId = id
+        order = items.indices.toList()
         play(start)
+    }
+
+    /** Plays Mix [id] in a random order. */
+    fun shuffle(id: String) {
+        hook()
+        listId = id
+        order = items.indices.shuffled()
+        order.firstOrNull()?.let(::play) ?: stop()
     }
 
     fun stop() {
         listId = null
         index = -1
+        order = emptyList()
     }
 
     fun next() {
         if (listId == null) return
-        if (index + 1 < items.size) play(index + 1) else stop()
+        val at = order.indexOf(index)
+        order.getOrNull(at + 1)?.let(::play) ?: stop()
     }
 
     private fun play(i: Int) {
