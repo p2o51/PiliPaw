@@ -257,9 +257,3 @@ internal fun FilledNameField(value: String, onValueChange: (String) -> Unit, mod
         ),
     )
 }
-
-/** An empty playlist's cover: a blank thumbnail. */
-internal val emptyCover = com.gpo.pilipala.yt.core.extractor.VideoItem(
-    url = "", title = "", thumbnail = "", channelName = "", channelUrl = "", channelAvatar = "",
-    durationSec = 0, views = -1, uploaded = "", uploadedAt = 0, isLive = false, isShort = false, channelVerified = false,
-)

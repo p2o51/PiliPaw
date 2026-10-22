@@ -73,9 +73,7 @@ import com.gpo.pilipala.yt.ui.components.LocalBottomBarInset
 import com.gpo.pilipala.yt.ui.components.Page
 import com.gpo.pilipala.yt.ui.components.Pager
 import com.gpo.pilipala.yt.ui.components.RefreshBox
-import com.gpo.pilipala.yt.ui.components.VideoCard
 import com.gpo.pilipala.ui.components.seam.seamViewport
-import com.gpo.pilipala.yt.ui.components.videoGridMinWidth
 import com.gpo.pilipala.yt.ui.shell.LocalTabReselect
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.yoin.symbols.YoinSymbols

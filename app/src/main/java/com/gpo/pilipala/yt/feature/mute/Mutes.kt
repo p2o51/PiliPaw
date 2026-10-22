@@ -30,7 +30,6 @@ import com.gpo.pilipala.yt.core.settings.AppSettings
 import com.gpo.pilipala.yt.feature.player.miniPlayerInset
 import com.gpo.pilipala.yt.navigation.LocalNavigator
 import com.gpo.pilipala.ui.components.Avatar
-import com.gpo.pilipala.yt.ui.components.PawTopBar
 import com.gpo.pilipala.yt.ui.components.readingWidth
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.serialization.Serializable
