@@ -1,5 +1,8 @@
 package com.gpo.pilipala.feature.home
 
+import androidx.compose.animation.core.Animatable
+import com.gpo.pilipala.ui.theme.YoinMotionRole
+import kotlin.math.abs
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandHorizontally
@@ -141,14 +144,25 @@ internal fun SegmentTabs(
     val bounds = remember { mutableStateMapOf<Int, Pair<Int, Int>>() }
     var viewport by remember { mutableIntStateOf(0) }
     val haptics = LocalHapticFeedback.current
-    val spec = YoinMotion.defaultSpatialSpec<Float>()
+    // No bounce: the row's own width changes (a tail growing after 推荐 / 关注) ride the same
+    // standard spring, so nothing overshoots and the chips beside it never wobble.
+    val spec = YoinMotion.defaultSpatialSpec<Float>(YoinMotionRole.Standard)
+    // Centring the selected chip follows it while the row is still changing size around it (each
+    // frame of a growing tail moves it): one animation retargeted with its speed, not a new one
+    // from rest every frame (that stuttered the whole row, the chips on the right most).
+    val centring = remember { Animatable(0f) }
     // Also waits for a chip that is not measured yet (a feed tab created and selected at once).
     LaunchedEffect(selected) {
         snapshotFlow { bounds[selected] to viewport }.collectLatest { (b, vp) ->
             val (x, w) = b ?: return@collectLatest
             if (vp == 0) return@collectLatest
-            val target = (x + w / 2 - vp / 2).coerceIn(0, scroll.maxValue)
-            scroll.animateScrollTo(target, spec)
+            val target = (x + w / 2 - vp / 2).coerceIn(0, scroll.maxValue).toFloat()
+            // A finger moved the row since: carry on from where it is.
+            if (abs(centring.value - scroll.value) > 1f) centring.snapTo(scroll.value.toFloat())
+            if (abs(target - centring.targetValue) < 1f && centring.isRunning) return@collectLatest
+            centring.animateTo(target, spec, initialVelocity = centring.velocity) {
+                scroll.dispatchRawDelta(value - scroll.value)
+            }
         }
     }
     Row(
@@ -200,7 +214,7 @@ private fun SegmentChip(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     // The chevron's room comes out of the end padding, so the chip grows by less than the glyph.
-    val endPad by animateDpAsState(if (showAction && onLongClick != null) 6.dp else 16.dp, YoinMotion.defaultSpatialSpec(), label = "segmentEndPad")
+    val endPad by animateDpAsState(if (showAction && onLongClick != null) 6.dp else 16.dp, YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), label = "segmentEndPad")
     val container by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
         YoinMotion.defaultEffectsSpec(),
@@ -234,10 +248,10 @@ private fun SegmentChip(
             Text(label, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis)
             AnimatedVisibility(
                 visible = showAction && onLongClick != null,
-                enter = expandHorizontally(YoinMotion.defaultSpatialSpec(), expandFrom = Alignment.Start) +
+                enter = expandHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), expandFrom = Alignment.Start) +
                     fadeIn(YoinMotion.defaultEffectsSpec()) +
                     scaleIn(YoinMotion.fastSpatialSpec(), initialScale = 0.4f),
-                exit = shrinkHorizontally(YoinMotion.defaultSpatialSpec(), shrinkTowards = Alignment.Start) +
+                exit = shrinkHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), shrinkTowards = Alignment.Start) +
                     fadeOut(YoinMotion.fastEffectsSpec()) +
                     scaleOut(YoinMotion.fastSpatialSpec(), targetScale = 0.4f),
             ) {
@@ -301,8 +315,8 @@ internal fun SegmentIconChip(
         Icon(icon, contentDescription = if (label == null) contentDescription else null, modifier = Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
         AnimatedVisibility(
             visible = label != null,
-            enter = expandHorizontally(YoinMotion.defaultSpatialSpec(), expandFrom = Alignment.Start) + fadeIn(YoinMotion.defaultEffectsSpec()),
-            exit = shrinkHorizontally(YoinMotion.defaultSpatialSpec(), shrinkTowards = Alignment.Start) + fadeOut(YoinMotion.fastEffectsSpec()),
+            enter = expandHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), expandFrom = Alignment.Start) + fadeIn(YoinMotion.defaultEffectsSpec()),
+            exit = shrinkHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), shrinkTowards = Alignment.Start) + fadeOut(YoinMotion.fastEffectsSpec()),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.width(6.dp))

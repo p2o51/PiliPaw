@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.home
 
+import com.gpo.pilipala.ui.theme.YoinMotionRole
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -223,8 +224,11 @@ fun HomeScreen() {
             visible = mixed && i == pagerState.targetPage && key in splittable,
             // Behind the chip it tucks under, and unclipped so the tuck shows while it grows.
             modifier = Modifier.zIndex(-1f),
-            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + androidx.compose.animation.expandHorizontally(YoinMotion.defaultSpatialSpec(), clip = false),
-            exit = fadeOut(YoinMotion.fastEffectsSpec()) + androidx.compose.animation.shrinkHorizontally(YoinMotion.fastSpatialSpec(), clip = false),
+            // One standard spring both ways: going between 推荐 and 关注 one tail folds exactly as
+            // the other unfolds, so the row's width holds and the chips to the right stay put
+            // (a bouncy grow against a quicker fold made them wobble).
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + androidx.compose.animation.expandHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), clip = false),
+            exit = fadeOut(YoinMotion.fastEffectsSpec()) + androidx.compose.animation.shrinkHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), clip = false),
                 ) { com.gpo.pilipala.feature.sources.InlineSourceChips() }
             },
         )
