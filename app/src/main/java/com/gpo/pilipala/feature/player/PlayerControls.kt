@@ -73,6 +73,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import com.gpo.pilipala.feature.listen.pinchToListen
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -262,6 +263,8 @@ internal fun Modifier.playerGestures(
         ctrl.togglePlay()
     }
     return this
+        // Two fingers pinching the inline picture in: 仅听声音 (the video page's listen flight).
+        .pinchToListen(enabled = { !locked && !latestFullscreen && !minimal })
         .pointerInput(locked, minimal, hasDoubleTap) {
             if (minimal) {
                 detectTapGestures(

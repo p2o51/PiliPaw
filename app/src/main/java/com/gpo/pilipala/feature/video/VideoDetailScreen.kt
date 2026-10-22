@@ -65,6 +65,9 @@ import com.gpo.pilipala.feature.player.attachQueue
 import com.gpo.pilipala.feature.player.listening
 import com.gpo.pilipala.feature.player.setAudioOnly
 import com.gpo.pilipala.feature.listen.ListenFlight
+import com.gpo.pilipala.feature.listen.LocalPicturePinchIn
+import com.gpo.pilipala.feature.listen.PicturePinchIn
+import com.gpo.pilipala.feature.listen.PinchToListenHost
 import com.gpo.pilipala.feature.player.rememberBiliPlayerState
 import com.gpo.pilipala.feature.player.captureVideoFrame
 import com.gpo.pilipala.feature.player.findVideoView
@@ -73,6 +76,7 @@ import com.gpo.pilipala.navigation.transition.PageHeroEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.ImageBitmap
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.platform.LocalView
@@ -219,20 +223,24 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     val latestFullscreenChange by rememberUpdatedState(onFullscreenChange)
     // The one player of the page: it moves between the classic slot, the immersive pager's
     // current page and the flight between them, so playback never reloads.
+    // Pinching the picture in flies it into 仅听声音 (filled in by the listen overlay below).
+    val pinchToListen = remember { PinchToListenHost() }
     val player = remember(vm, playerState) {
         movableContentOf { m: Modifier, chrome: PlayerChrome ->
-            BiliVideoPlayer(
-                target = vm.target,
-                state = playerState,
-                fullscreen = vm.fullscreen,
-                onFullscreenChange = { latestFullscreenChange(it) },
-                onBack = { if (vm.fullscreen) vm.fullscreen = false else nav.pop() },
-                modifier = m,
-                // With a queue the player steps it itself; pages / season only without one.
-                // (The immersive pager loops a video and steps nothing.)
-                onCompleted = { if (AppSettings.autoPlayNext.value && vm.queue == null) vm.playNext() },
-                chrome = chrome,
-            )
+            androidx.compose.runtime.CompositionLocalProvider(LocalPicturePinchIn provides pinchToListen) {
+                BiliVideoPlayer(
+                    target = vm.target,
+                    state = playerState,
+                    fullscreen = vm.fullscreen,
+                    onFullscreenChange = { latestFullscreenChange(it) },
+                    onBack = { if (vm.fullscreen) vm.fullscreen = false else nav.pop() },
+                    modifier = m,
+                    // With a queue the player steps it itself; pages / season only without one.
+                    // (The immersive pager loops a video and steps nothing.)
+                    onCompleted = { if (AppSettings.autoPlayNext.value && vm.queue == null) vm.playNext() },
+                    chrome = chrome,
+                )
+            }
         }
     }
 
@@ -403,6 +411,41 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         LaunchedEffect(flight) {
             snapshotFlow { flight.coverRect }.collect { r ->
                 if (transitions?.backIdle != false) listenRect[0] = r
+            }
+        }
+        // The pinch drives the same flight by hand: the picture shrinks toward the cover with the
+        // fingers; a release past the line goes on in (the spring takes it from there), short of
+        // it the picture springs back home.
+        val pinchScope = androidx.compose.runtime.rememberCoroutineScope()
+        val latestCanPinch by rememberUpdatedState(ctrl != null && !listening && !vm.fullscreen && !showImmersive)
+        pinchToListen.target = remember(listenP) {
+            object : PicturePinchIn {
+                override fun start(): Boolean {
+                    if (!latestCanPinch || listenP.isRunning) return false
+                    pinchScope.launch {
+                        listenShot = handoff.classicRect?.let { r ->
+                            findVideoView(heroView.rootView, r)?.let { v ->
+                                withTimeoutOrNull(80) { captureVideoFrame(v, v.width, v.height) }?.asImageBitmap()
+                            }
+                        }
+                    }
+                    return true
+                }
+
+                override fun update(progress: Float) {
+                    pinchScope.launch { listenP.snapTo(progress) }
+                }
+
+                override fun end(commit: Boolean) {
+                    if (commit && latestCanPinch) {
+                        ctrl?.toggleAudioOnly()
+                    } else {
+                        pinchScope.launch {
+                            listenP.animateTo(0f, listenOut)
+                            listenShot = null
+                        }
+                    }
+                }
             }
         }
         if (ctrl != null && (listening || listenShown)) {
