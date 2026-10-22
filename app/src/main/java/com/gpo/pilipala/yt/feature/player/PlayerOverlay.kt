@@ -186,7 +186,13 @@ fun PlayerOverlayHost() {
     val haptics = LocalHapticFeedback.current
     val seek = rememberSeekState()
     // The portrait controls (PiliPaw's look): a tap on the picture brings them, they fold away.
-    val chrome = remember(session.url) { YtChrome() }
+    // One for the overlay's life: the picture's gesture detector keeps its first onTap, so a
+    // new object per video would leave taps toggling a stale one. A new video starts hidden.
+    val chrome = remember { YtChrome() }
+    LaunchedEffect(session.url) {
+        chrome.visible = false
+        chrome.sheet = false
+    }
     YtChromeAutoHide(chrome, seek, session)
     val reveal = rememberChromeReveal(chrome)
     var pictureRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }

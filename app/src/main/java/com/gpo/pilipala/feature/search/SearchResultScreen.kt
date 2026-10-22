@@ -366,6 +366,7 @@ fun SearchResultScreen(route: Route.SearchResult) {
         }
     }
     val countsVm = viewModel { SearchCountsViewModel(keyword) }
+    val biliSearched = remember(scopeOnly) { com.gpo.pilipala.feature.sources.SearchScope.wants(com.gpo.pilipala.core.source.VideoSource.Bilibili) }
     val vms = tabs.map { t ->
         viewModel(key = "search_tab_${t.type}") {
             // The video tab starts on the sort the search was submitted with.
@@ -455,7 +456,8 @@ fun SearchResultScreen(route: Route.SearchResult) {
                     },
                     selectedContentColor = scheme.primary,
                     unselectedContentColor = scheme.onSurfaceVariant,
-                    text = { TabLabel(t.label, countsVm.counts[t.type]) },
+                    // The counts are Bilibili's: shown only while Bilibili is searched.
+                    text = { TabLabel(t.label, if (biliSearched) countsVm.counts[t.type] else null) },
                 )
             }
         }
@@ -545,7 +547,8 @@ private fun SearchTabPage(vm: SearchTabViewModel) {
     }
     Column(Modifier.fillMaxSize()) {
         when (vm.tab) {
-            SearchTab.Video -> VideoFilterBar(vm)
+            // Bilibili's sorts and filters; YouTube alone has none of them.
+            SearchTab.Video -> if (com.gpo.pilipala.feature.sources.SearchScope.wants(com.gpo.pilipala.core.source.VideoSource.Bilibili)) VideoFilterBar(vm)
             SearchTab.Article -> ConnectedChoiceRow(
                 choices = ArticleOrders,
                 selected = vm.order,
