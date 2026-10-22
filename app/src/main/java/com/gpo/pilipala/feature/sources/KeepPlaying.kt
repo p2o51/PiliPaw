@@ -132,6 +132,10 @@ object KeepPlaying {
      */
     internal var openFrom by mutableStateOf<Rect?>(null)
 
+    /** A dragged window is over the nav bar: letting go docks it (the nav bar swells a little). */
+    var navHint by mutableStateOf(false)
+        internal set
+
     /** Where a video's page that was opened from the bar's picture lands back (window px). */
     internal var landing by mutableStateOf<Rect?>(null)
 
@@ -769,6 +773,8 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
         var pinching = false
         var dragging = false
         var giveUp = false
+        // Dragged up off the bar's picture: a window under the finger from here on.
+        var popped = false
         var maxPointers = 1
         var startSpan = 0f
         var startAxis = 0f
@@ -839,17 +845,29 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             travel += delta
             finger += delta
             if (!dragging && !giveUp && travel.getDistance() > viewConfiguration.touchSlop) {
-                when {
-                    windowAtDown -> dragging = true
-                    !mergedAtDown && abs(travel.x) > abs(travel.y) -> dragging = true
-                    else -> giveUp = true
+                when (MiniGestures.dragIntent(travel, windowAtDown, mergedAtDown, g0.tile.contains(downAt))) {
+                    MiniDragIntent.MoveWindow, MiniDragIntent.SwipeAway -> dragging = true
+                    MiniDragIntent.PopOut -> {
+                        dragging = true
+                        popped = true
+                        // The tile lifts off as the smallest window: the side blocks fold into it on the
+                        // liquid spring while its place follows the finger 1:1.
+                        val start = frame.geo.tile.center + travel
+                        frame.dragCenter = start
+                        KeepPlaying.windowCenter = start
+                        KeepPlaying.windowCorner = null
+                        KeepPlaying.rest = MiniRest.Window(frame.dims.detach / density)
+                        scope.launch { frame.axis.animateTo(frame.dims.detach, MiniSprings.liq()) }
+                    }
+                    MiniDragIntent.None -> giveUp = true
                 }
                 if (dragging) frame.gesturing = true
             }
             if (dragging) {
                 velocity.addPosition(c.uptimeMillis, finger)
-                if (windowAtDown) {
+                if (windowAtDown || popped) {
                     frame.dragCenter = (frame.dragCenter ?: frame.geo.tile.center) + delta
+                    KeepPlaying.navHint = frame.nav?.contains(downAt + finger) == true
                 } else {
                     frame.swipeDrag = (frame.swipeDrag ?: frame.swipe.value) + delta.x
                 }
@@ -857,6 +875,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             }
         }
         if (windowAtDown) scope.launch { frame.press.animateTo(1f, MiniSprings.liq()) }
+        KeepPlaying.navHint = false
         val kind = MiniGestures.classify(
             maxPointers = maxPointers,
             travel = travel.getDistance(),
@@ -867,7 +886,10 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
         )
         when {
             pinching -> releasePinch(frame, scope, raw, axisVelocity.calculateVelocity().takeIf { it.isFinite() } ?: 0f, density, latest)
-            kind == MiniGestureKind.Drag && windowAtDown -> releaseWindow(frame, scope, velocity.calculateVelocity(), density, latest)
+            kind == MiniGestureKind.Drag && (windowAtDown || popped) -> {
+                KeepPlaying.navHint = false
+                releaseWindow(frame, scope, velocity.calculateVelocity(), downAt + finger, density, latest)
+            }
             kind == MiniGestureKind.Drag -> releaseSwipe(frame, scope, velocity.calculateVelocity().x, density, latest)
             else -> {
                 frame.gesturing = false
@@ -946,7 +968,7 @@ private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v:
     }
 }
 
-private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, density: Float, latest: () -> Playing) {
+private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, finger: Offset, density: Float, latest: () -> Playing) {
     val g = frame.geo
     val center = g.tile.center
     frame.dragCenter = null
@@ -961,8 +983,16 @@ private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, 
         latest().close()
         return
     }
-    // A drag or fling only ever moves it between the four corners (the bottom ones rest above the
-    // nav bar; thrown at the nav bar it stays a window): only a pinch takes it back into the bar.
+    // Put on the nav bar (lifted over it, or thrown down so it would land in it): back into the
+    // bar, flying from where it was let go (the axis carries it).
+    if (MiniGestures.docksOnNav(finger, center + vel * 0.2f, vel, frame.nav)) {
+        KeepPlaying.windowCenter = center
+        KeepPlaying.windowCorner = null
+        KeepPlaying.rest = MiniRest.Row
+        scope.launch { frame.axis.animateTo(frame.dims.row, MiniSprings.liq()) }
+        return
+    }
+    // Otherwise only a corner (the bottom ones rest above the nav bar), however it is flung.
     // A light flick carries far (a long, low-friction projection), and a flick that clearly goes
     // one way picks that way's corner even if it falls a little short.
     val far = center + vel * 0.38f
@@ -971,7 +1001,8 @@ private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, 
     val bias = 250f * density
     if (abs(v.y) > bias) corner = (corner and 1) or (if (v.y > 0f) 2 else 0)
     if (abs(v.x) > bias) corner = (corner and 2) or (if (v.x > 0f) 1 else 0)
-    snapWindow(frame, scope, frame.axisNow, corner, center, vel)
+    // At the size it rests at (a popped-out window may still be growing into its smallest).
+    snapWindow(frame, scope, frame.restAxis(KeepPlaying.rest, density), corner, center, vel)
 }
 
 private fun releaseSwipe(frame: MiniFrame, scope: CoroutineScope, vx: Float, density: Float, latest: () -> Playing) {

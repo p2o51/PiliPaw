@@ -30,6 +30,33 @@ class MiniGesturesTest {
         assertEquals(Offset(350f, 25f), MiniGestures.restingCenter(Offset(900f, -300f), 100f, 50f, area))
     }
 
+    @Test fun aDragUpOffThePicturePopsItOut() {
+        fun intent(x: Float, y: Float, windowed: Boolean = false, merged: Boolean = false, onPicture: Boolean = true) =
+            MiniGestures.dragIntent(Offset(x, y), windowed, merged, onPicture)
+        assertEquals(MiniDragIntent.PopOut, intent(2f, -12f))
+        assertEquals(MiniDragIntent.SwipeAway, intent(12f, -2f))
+        assertEquals(MiniDragIntent.SwipeAway, intent(-12f, 3f))
+        // Up from a side block, or down: nothing.
+        assertEquals(MiniDragIntent.None, intent(2f, -12f, onPicture = false))
+        assertEquals(MiniDragIntent.None, intent(2f, 12f))
+        assertEquals(MiniDragIntent.MoveWindow, intent(0f, 12f, windowed = true))
+        assertEquals(MiniDragIntent.None, intent(12f, 0f, merged = true))
+    }
+
+    @Test fun itDocksOnlyWhenPutOnTheNavBar() {
+        val nav = Rect(16f, 760f, 376f, 828f)
+        // Lifted over the nav bar.
+        assertEquals(true, MiniGestures.docksOnNav(Offset(200f, 790f), Offset(200f, 700f), Offset(0f, 0f), nav))
+        // Thrown down so its centre lands in the nav bar.
+        assertEquals(true, MiniGestures.docksOnNav(Offset(200f, 500f), Offset(190f, 800f), Offset(100f, 1500f), nav))
+        // A downward flick to the bottom corner area above the nav bar: a corner, not the bar.
+        assertEquals(false, MiniGestures.docksOnNav(Offset(300f, 500f), Offset(320f, 720f), Offset(200f, 900f), nav))
+        // Landing in the nav bar's rect but thrown mostly sideways: no.
+        assertEquals(false, MiniGestures.docksOnNav(Offset(100f, 700f), Offset(300f, 790f), Offset(2000f, 300f), nav))
+        // No nav bar on this page: never.
+        assertEquals(false, MiniGestures.docksOnNav(Offset(200f, 790f), Offset(200f, 790f), Offset(0f, 0f), null))
+    }
+
     @Test fun flungDownOntoTheNavItRestsInABottomCornerAboveIt() {
         // The rest area's bottom is above the nav bar: a throw far past it still lands inside.
         val area = Rect(12f, 40f, 388f, 700f)

@@ -41,6 +41,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.offset
 import kotlin.math.roundToInt
@@ -91,8 +92,19 @@ fun FloatingNavBar(
         // Opaque and shadowless: the content runs on under it as the seams' halftone
         // field (ui/components/seam), which is what separates bar and content.
         val barColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        // 继续播放: a floating window dragged over the bar swells it a little (letting go docks it).
+        val hint by animateFloatAsState(
+            if (com.gpo.pilipala.feature.sources.KeepPlaying.navHint) 1.04f else 1f,
+            YoinMotion.fastSpatialSpec(),
+            label = "navDockHint",
+        )
         Surface(
-            modifier = Modifier.seamBarSource(MaterialTheme.shapes.extraLarge, barColor),
+            modifier = Modifier
+                .graphicsLayer {
+                    scaleX = hint
+                    scaleY = hint
+                }
+                .seamBarSource(MaterialTheme.shapes.extraLarge, barColor),
             shape = MaterialTheme.shapes.extraLarge,
             color = barColor,
             shadowElevation = 0.dp,

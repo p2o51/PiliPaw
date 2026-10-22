@@ -237,6 +237,9 @@ internal fun miniGeo(
 
 internal fun Rect.union(o: Rect) = Rect(minOf(left, o.left), minOf(top, o.top), maxOf(right, o.right), maxOf(bottom, o.bottom))
 
+/** What one finger's drag does, decided once it passes touch slop. */
+internal enum class MiniDragIntent { MoveWindow, SwipeAway, PopOut, None }
+
 /** What one gesture on the bar or the window was, once every finger is up. */
 internal enum class MiniGestureKind { Tap, Pinch, Drag, None }
 
@@ -280,6 +283,31 @@ internal object MiniGestures {
         val x = if (right < left) area.center.x else if (corner and 1 == 0) left else right
         val y = if (bottom < top) area.center.y else if (corner and 2 == 0) top else bottom
         return Offset(x, y)
+    }
+
+    /**
+     * One finger past slop, [travel] from where it went down: the window moves; on the bar a
+     * sideways drag swipes it away and an upward one that started on the picture pops it out as a
+     * window under the finger; the merged circle does nothing (scrolling owns it).
+     */
+    fun dragIntent(travel: Offset, windowed: Boolean, merged: Boolean, onPicture: Boolean): MiniDragIntent = when {
+        windowed -> MiniDragIntent.MoveWindow
+        merged -> MiniDragIntent.None
+        kotlin.math.abs(travel.x) > kotlin.math.abs(travel.y) -> MiniDragIntent.SwipeAway
+        travel.y < 0f && onPicture -> MiniDragIntent.PopOut
+        else -> MiniDragIntent.None
+    }
+
+    /**
+     * A window let go of docks into the bar only when it is put on the nav bar: the finger lifts
+     * over it, or a throw that is mostly downward would land the window's centre inside it. A
+     * flick toward a bottom corner (beside or above the nav bar) does not.
+     */
+    fun docksOnNav(finger: Offset, projectedCenter: Offset, velocity: Offset, nav: Rect?): Boolean {
+        if (nav == null) return false
+        if (nav.contains(finger)) return true
+        val downward = velocity.y > 0f && kotlin.math.abs(velocity.y) > kotlin.math.abs(velocity.x)
+        return downward && nav.contains(projectedCenter)
     }
 
     /** Scaling a window by [k] about [centroid] (the fingers' middle) moves its centre with them. */
