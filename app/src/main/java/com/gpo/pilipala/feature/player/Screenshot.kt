@@ -40,13 +40,16 @@ internal class ShotFeedback {
  * overlaps [picture] (window px) the most. Other players on the page (a feed preview) lose
  * to the one actually showing; with no bounds the largest one wins.
  */
-internal fun findVideoView(root: View, picture: Rect?): View? {
+internal fun findVideoView(root: View, picture: Rect?, player: androidx.media3.common.Player? = null): View? {
     var best: View? = null
     var bestScore = -1f
     val loc = IntArray(2)
     fun visit(v: View) {
         if (v.visibility != View.VISIBLE) return
         if (v is TextureView || v is SurfaceView) {
+            // Media3 1.10 PlayerSurface tags the view with its attached player. A feed
+            // preview can overlap the page, but must never supply its return frame.
+            if (player != null && v.tag !== player) return
             if (v.width > 0 && v.height > 0) {
                 v.getLocationInWindow(loc)
                 val r = Rect(loc[0].toFloat(), loc[1].toFloat(), (loc[0] + v.width).toFloat(), (loc[1] + v.height).toFloat())

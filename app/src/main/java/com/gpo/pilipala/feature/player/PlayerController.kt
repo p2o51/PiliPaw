@@ -140,6 +140,9 @@ internal class PiliPlayerController(
     var playWhenReady by mutableStateOf(false)
         private set
 
+    /** The detail layout kept with this player while it is docked; a new player starts undecided. */
+    internal var detailImmersive: Boolean? = null
+
     /** width / height of the picture. */
     var videoAspect by mutableFloatStateOf(16f / 9f)
         private set

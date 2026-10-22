@@ -180,6 +180,12 @@ private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
     val ctrl = playerState as? PiliPlayerController
     // The picture's trip between the classic page and the immersive pager (PlayerHandoff.kt).
     val handoff = remember { PlayerHandoff() }
+    // Reopening the docked player already knows its layout. Do not show the classic page
+    // for one flight and then launch another flight when the detail request returns.
+    remember(ctrl, vm) { ctrl?.detailImmersive?.let(vm::showImmersive) }
+    androidx.compose.runtime.SideEffect {
+        vm.immersive?.let { ctrl?.detailImmersive = it }
+    }
     val immersiveOn = vm.immersive == true
     // A route that does not know the picture's shape opens classic; when the detail then
     // says portrait, the picture flies from the classic slot into the pager like 全屏 does,
@@ -311,7 +317,7 @@ private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
         }
         if (vm.fullscreen || handoff.flight != null) return@PageHeroEffect null
         val rect = (if (showImmersive) heroImmersiveRect[0] else heroRect[0]) ?: return@PageHeroEffect null
-        val view = findVideoView(heroView.rootView, rect) ?: return@PageHeroEffect null
+        val view = findVideoView(heroView.rootView, rect, ctrl?.player) ?: return@PageHeroEffect null
         val frame = captureVideoFrame(view, view.width, view.height) ?: return@PageHeroEffect null
         // The video view sits fitted, centred, in its slot: its rect as laid out at rest.
         // (Its place in the window is not used: a back gesture has already shrunk and moved the
