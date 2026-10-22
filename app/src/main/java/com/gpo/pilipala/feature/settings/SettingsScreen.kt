@@ -244,6 +244,30 @@ private fun YouTubeAccountBlock() {
                 trailing = { Icon(YoinSymbols.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
             )
         }
+        if (p != null) {
+            item {
+                // What each signed-in list gets back from YouTube, copied to send (cookie names only).
+                val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                val toast = com.gpo.pilipala.ui.components.rememberToast()
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
+                var busy by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                SettingsItem(
+                    title = "复制 YouTube 诊断信息",
+                    summary = if (busy) "正在问 YouTube…" else "首页、订阅、赞过的视频各自返回了什么",
+                    onClick = {
+                        if (busy) return@SettingsItem
+                        busy = true
+                        scope.launch {
+                            val text = runCatching { com.gpo.pilipala.yt.core.extractor.YtDiag.report() }.getOrElse { "诊断失败: ${it.message}" }
+                            clipboard.setText(androidx.compose.ui.text.AnnotatedString(text))
+                            busy = false
+                            toast("已复制诊断信息")
+                        }
+                    },
+                    leading = { GlyphTile(YoinSymbols.Info, circle) },
+                )
+            }
+        }
     }
 }
 

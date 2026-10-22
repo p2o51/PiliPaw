@@ -78,7 +78,8 @@ object YtFeeds {
         )
         if (continuation != null) builder.value("continuation", continuation) else builder.value("browseId", browseId)
         val body = JsonWriter.string(builder.done()).toByteArray()
-        return YoutubeParsingHelper.getLoggedJsonPostResponse("browse", body, Localization.DEFAULT)
+        // Through YtDiag: an error body (401, 403...) throws with YouTube's message instead of reading as an empty list.
+        return YtDiag.post("browse", body)
     }
 
     /** Every object under a key anywhere in [json], depth first (renderers nest at varying depths). */

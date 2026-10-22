@@ -167,12 +167,7 @@ object YtAccount {
 
     /** A youtubei POST as the signed-in account. */
     internal fun post(endpoint: String, body: JsonObject): JsonObject {
-        val headers = YoutubeParsingHelper.getYouTubeHeaders()
-        headers["Content-Type"] = listOf("application/json")
-        YoutubeParsingHelper.addLoggedInHeaders(headers)
-        val url = "${YoutubeParsingHelper.YOUTUBEI_V1_URL}$endpoint?${YoutubeParsingHelper.DISABLE_PRETTY_PRINT_PARAMETER}"
-        val response = NewPipe.getDownloader().post(url, headers, JsonWriter.string(body).toByteArray(), Localization.DEFAULT)
-        return JsonParser.`object`().from(response.responseBody())
+        return YtDiag.post(endpoint, JsonWriter.string(body).toByteArray())
     }
 
     /** `{simpleText}` or `{runs: [{text}]}`. */
