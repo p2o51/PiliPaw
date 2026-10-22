@@ -33,6 +33,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.core.source.Sources
+import com.gpo.pilipala.core.source.VideoSource
 import com.gpo.pilipala.feature.dynamics.DynamicsScreen
 import com.gpo.pilipala.feature.home.HomeScreen
 import com.gpo.pilipala.feature.library.FavScreen
@@ -74,13 +76,27 @@ object ShellRequests {
     }
 }
 
-/** The shell's sections; [ShellRequests.select] and the saved selection use the ordinal. */
+/**
+ * The shell's sections; [ShellRequests.select] and the saved selection use the ordinal, so new
+ * ones go at the end. [fits] says which ticked sources a section belongs with.
+ */
 enum class ShellSection(val key: String, val tab: NavTab, val removable: Boolean) {
     Home("home", NavTab("首页", YoinSymbols.Home, YoinSymbols.HomeFilled), removable = false),
     Rank("rank", NavTab("排行", PiliSymbols.Trophy, PiliSymbols.TrophyFilled), removable = true),
     Dynamics("dynamics", NavTab("动态", PiliSymbols.Dynamic, PiliSymbols.DynamicFilled), removable = true),
     Fav("fav", NavTab("收藏", YoinSymbols.Star, YoinSymbols.StarFilled), removable = true),
     Mine("mine", NavTab("我的", YoinSymbols.Person, PiliSymbols.PersonFilled), removable = true),
+
+    /** YouTube's subscriptions, in the bar while YouTube is ticked alone (else 动态 and 关注 cover follows). */
+    Subs("yt_subs", NavTab("订阅", YoinSymbols.Library, YoinSymbols.LibraryFilled), removable = true),
+    ;
+
+    /** 排行 and 动态 are Bilibili's own; 订阅 only stands in for them while YouTube is ticked alone. */
+    fun fits(enabled: Set<VideoSource>): Boolean = when (this) {
+        Rank, Dynamics -> VideoSource.Bilibili in enabled
+        Subs -> VideoSource.Bilibili !in enabled && VideoSource.YouTube in enabled
+        else -> true
+    }
 }
 
 /**
@@ -91,9 +107,10 @@ object ShellSections {
     /** Keys of the hidden sections, comma separated. */
     val hiddenKey: AppSettings.Key<String> = AppSettings.register("shell_hidden_sections", "")
 
-    fun visible(hidden: String): List<ShellSection> {
+    /** [enabled]: the ticked sources, which drop the sections that do not [ShellSection.fits] them; null keeps all. */
+    fun visible(hidden: String, enabled: Set<VideoSource>? = null): List<ShellSection> {
         val off = hidden.split(',').filter { it.isNotBlank() }.toSet()
-        return ShellSection.entries.filter { !it.removable || it.key !in off }
+        return ShellSection.entries.filter { (!it.removable || it.key !in off) && (enabled == null || it.fits(enabled)) }
     }
 
     fun isShown(hidden: String, section: ShellSection): Boolean = section in visible(hidden)
@@ -114,7 +131,9 @@ object ShellSections {
 @Composable
 fun MainShell() {
     val hidden by ShellSections.hiddenKey.state.collectAsState()
-    val sections = remember(hidden) { ShellSections.visible(hidden) }
+    // YouTube ticked alone: the same shell, minus what only Bilibili has (no swap to another shell).
+    val enabled by Sources.enabled.collectAsState()
+    val sections = remember(hidden, enabled) { ShellSections.visible(hidden, enabled) }
     MineMovedToAvatar()
     FourTabsForMiniBar(sections)
     val tabs = remember(sections) { sections.map { it.tab } }
@@ -131,13 +150,14 @@ fun MainShell() {
     val activity = LocalActivity.current
     val toast = rememberToast()
     var armedAt by remember { mutableLongStateOf(0L) }
-    BackHandler {
+    // Never while the YouTube player is up: its own back collapses it.
+    BackHandler(enabled = !com.gpo.pilipala.yt.feature.player.Player.expanded) {
         val now = SystemClock.uptimeMillis()
         if (now - armedAt < ExitWindowMs) {
             activity?.finish()
         } else {
             armedAt = now
-            if (current != ShellSection.Mine) reselects.tryEmit(current.ordinal)
+            if (current != ShellSection.Mine && current != ShellSection.Subs) reselects.tryEmit(current.ordinal)
             toast("再按一次退出")
         }
     }
@@ -190,6 +210,10 @@ fun MainShell() {
                                 ShellSection.Dynamics -> DynamicsScreen()
                                 ShellSection.Fav -> FavScreen(Route.Fav(), asTab = true)
                                 ShellSection.Mine -> MineScreen()
+                                // YouTube's screens read their own inset.
+                                ShellSection.Subs -> CompositionLocalProvider(
+                                    com.gpo.pilipala.yt.ui.components.LocalBottomBarInset provides barInset,
+                                ) { com.gpo.pilipala.yt.feature.subscriptions.SubscriptionsScreen() }
                             }
                         }
                     }

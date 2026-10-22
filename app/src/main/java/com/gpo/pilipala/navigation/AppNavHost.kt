@@ -8,7 +8,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -165,14 +164,11 @@ fun AppNavHost(navigator: Navigator) {
 }
 
 /**
- * The shell under every page: Bilibili's when it is ticked (both ticked: Bilibili's sections, Home
- * holding both sources side by side), YouTube's when it is ticked alone.
+ * The shell under every page, whichever sources are ticked: it hides what only Bilibili has when
+ * YouTube is ticked alone, so ticking a source never swaps the whole screen.
  */
 @androidx.compose.runtime.Composable
-private fun HomeShell() {
-    val enabled by com.gpo.pilipala.core.source.Sources.enabled.collectAsState()
-    if (com.gpo.pilipala.core.source.VideoSource.Bilibili in enabled) MainShell() else com.gpo.pilipala.yt.ui.shell.MainShell()
-}
+private fun HomeShell() = MainShell()
 
 /** The finger travel of a whole back gesture on a wide window (a phone needs its own width). */
 private val GestureSpanMax = 600.dp

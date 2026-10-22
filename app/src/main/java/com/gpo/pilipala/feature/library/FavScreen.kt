@@ -152,7 +152,9 @@ fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
     // Both accounts here: chips narrow 收藏 to one of them (Mix lists stay, they hold both).
     val scope by com.gpo.pilipala.feature.sources.FavScope.only.collectAsState()
     val bothHere = vm.isOwner && ytSignedIn && com.gpo.pilipala.core.source.VideoSource.Bilibili in sources
-    val showBili = !bothHere || scope != com.gpo.pilipala.core.source.VideoSource.YouTube
+    // YouTube ticked alone: Bilibili's folders step out with the rest of Bilibili.
+    val biliOn = com.gpo.pilipala.core.source.VideoSource.Bilibili in sources
+    val showBili = (biliOn || !vm.isOwner) && (!bothHere || scope != com.gpo.pilipala.core.source.VideoSource.YouTube)
     val showYt = vm.isOwner && ytSignedIn && (!bothHere || scope != com.gpo.pilipala.core.source.VideoSource.Bilibili)
     val gridState = rememberLazyGridState()
     LoadMoreEffect(gridState) { vm.created.loadMore() }
@@ -166,7 +168,7 @@ fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
         title = if (vm.isOwner) "我的收藏" else "收藏",
         showBack = !asTab,
         floatingActionButton = {
-            if (vm.isOwner && BiliClient.isLoggedIn) {
+            if (vm.isOwner && biliOn && BiliClient.isLoggedIn) {
                 ExtendedFloatingActionButton(
                     modifier = Modifier.padding(bottom = barInset),
                     onClick = { editor = FolderEditorState(null) },
@@ -177,7 +179,7 @@ fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
             }
         },
     ) { padding ->
-        PagerBody(vm.created, padding, emptyLabel = "暂无收藏夹", emptyIcon = YoinSymbols.Folder) { listPadding ->
+        PagerBody(vm.created, padding, emptyLabel = "暂无收藏夹", emptyIcon = YoinSymbols.Folder, alwaysContent = !showBili) { listPadding ->
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(168.dp),
                 state = gridState,

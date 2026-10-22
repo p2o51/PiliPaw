@@ -141,6 +141,8 @@ private fun ColumnScope.StyleBody() {
     val singleColumn by HomeSingleColumn.state.collectAsState()
     val previewMode by FeedPreviewMode.state.collectAsState()
     val hiddenSections by ShellSections.hiddenKey.state.collectAsState()
+    // 底栏 lists only the sections the ticked sources have (订阅 with YouTube alone, 排行 / 动态 with Bilibili).
+    val barSources by com.gpo.pilipala.core.source.Sources.enabled.collectAsState()
     val seamStyle = currentSeamTopStyle()
     // Wallpaper colours exist from 8.1; the system's own dynamic scheme from 12.
     val dynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1
@@ -251,7 +253,7 @@ private fun ColumnScope.StyleBody() {
         }
     }
     SettingsGroup("底栏") {
-        ShellSection.entries.filter { it.removable }.forEach { section ->
+        ShellSection.entries.filter { it.removable && it.fits(barSources) }.forEach { section ->
             item(key = "shell_${section.key}") {
                 SettingsSwitchItem(
                     title = section.tab.label,

@@ -152,6 +152,8 @@ internal fun <T> PagerBody(
     emptyLabel: String = "空空如也",
     emptyIcon: ImageVector = YoinSymbols.Sparkle,
     requireLogin: Boolean = true,
+    /** The content shows whatever the pager holds (it has other things to show than the pager's items). */
+    alwaysContent: Boolean = false,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val user by Account.user.collectAsState()
@@ -160,6 +162,7 @@ internal fun <T> PagerBody(
         if (requireLogin && loggedIn && pager.error != null && pager.items.isEmpty()) pager.refresh()
     }
     val state = when {
+        alwaysContent -> BodyState.Content
         requireLogin && !loggedIn -> BodyState.NeedLogin
         pager.items.isNotEmpty() -> BodyState.Content
         pager.initialLoading || pager.isRefreshing -> BodyState.Loading

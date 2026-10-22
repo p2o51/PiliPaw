@@ -100,17 +100,24 @@ fun HomeScreen() {
     // Both sources ticked: 关注 comes first, Bilibili's and YouTube's new uploads in one feed.
     val enabled by com.gpo.pilipala.core.source.Sources.enabled.collectAsState()
     val mixed = enabled.size > 1
+    val biliOn = com.gpo.pilipala.core.source.VideoSource.Bilibili in enabled
     // Built-ins, then the user's feeds in their order.
-    val tabs = remember(feeds, mixed) {
-        // Both sources: 关注 (both sides' follows) joins right after 推荐 (both sides' picks).
-        (if (mixed) BuiltinTabs.flatMap { if (it.key == "rcmd") listOf(it, MixedTab) else listOf(it) } else BuiltinTabs) +
-            feeds.map { HomeTab(it.tabKey, it.name, it.id) }
+    val tabs = remember(feeds, mixed, biliOn) {
+        val builtins = when {
+            // YouTube alone: its subscriptions (关注) and its picks (推荐); 直播, 热门 and 番剧 are Bilibili's.
+            !biliOn -> listOf(MixedTab) + BuiltinTabs.filter { it.key == "rcmd" }
+            // Both sources: 关注 (both sides' follows) joins right after 推荐 (both sides' picks).
+            mixed -> BuiltinTabs.flatMap { if (it.key == "rcmd") listOf(it, MixedTab) else listOf(it) }
+            else -> BuiltinTabs
+        }
+        builtins + feeds.map { HomeTab(it.tabKey, it.name, it.id) }
     }
     val labels = remember(tabs) { tabs.map { it.label } }
     val latestTabs by rememberUpdatedState(tabs)
     // The selected tab is kept by key, so it stays put while feeds are added, moved or renamed.
     var selectedKey by rememberSaveable {
-        mutableStateOf(BuiltinTabs[AppSettings.homeDefaultTab.value.coerceIn(0, BuiltinTabs.lastIndex)].key)
+        val default = BuiltinTabs[AppSettings.homeDefaultTab.value.coerceIn(0, BuiltinTabs.lastIndex)].key
+        mutableStateOf(if (tabs.any { it.key == default }) default else tabs.first().key)
     }
     val pagerState = rememberPagerState(initialPage = remember { tabs.indexOfFirst { it.key == selectedKey }.coerceAtLeast(0) }) { tabs.size }
     val scope = rememberCoroutineScope()
@@ -176,14 +183,15 @@ fun HomeScreen() {
         CollapsingHeader(behavior) {
             HomeHeader(
                 user = user,
-                hint = headerVm.searchHint,
+                // Bilibili's suggested word, and its messages, only while Bilibili is ticked.
+                hint = if (biliOn) headerVm.searchHint else "",
                 search = search,
                 onAvatar = {
                     val u = user
                     if (u != null) nav.push(Route.Member(u.mid, u.face, u.name)) else nav.push(Route.Login)
                 },
                 onSearch = { nav.openSearch(it) },
-                onMessages = { nav.push(if (user != null) Route.Messages else Route.Login) },
+                onMessages = if (biliOn) ({ nav.push(if (user != null) Route.Messages else Route.Login) }) else null,
             )
         }
         // Both sources: 推荐 and 关注 hold both; the account chips right after the selected one narrow them.
@@ -283,7 +291,7 @@ private fun HomeHeader(
     search: PiliSearchState,
     onAvatar: () -> Unit,
     onSearch: (SearchRequest) -> Unit,
-    onMessages: () -> Unit,
+    onMessages: (() -> Unit)?,
 ) {
     Row(
         Modifier
@@ -308,12 +316,17 @@ private fun HomeHeader(
             )
         }
         Spacer(Modifier.width(8.dp))
-        IconButton(
-            onClick = onMessages,
-            shapes = IconButtonDefaults.shapes(),
-            modifier = Modifier.size(48.dp).splashReveal(),
-        ) {
-            Icon(PiliSymbols.Mail, contentDescription = "消息")
+        if (onMessages != null) {
+            IconButton(
+                onClick = onMessages,
+                shapes = IconButtonDefaults.shapes(),
+                modifier = Modifier.size(48.dp).splashReveal(),
+            ) {
+                Icon(PiliSymbols.Mail, contentDescription = "消息")
+            }
+        } else {
+            // Holds the search bar centred where the messages button would be.
+            Spacer(Modifier.size(48.dp))
         }
     }
 }
