@@ -163,6 +163,8 @@ internal fun miniGeo(
     bounds: Rect,
     nav: Rect?,
     px: MiniPx,
+    /** Popping out under a finger: the picture's centre is the finger's ([windowCenter]) at once. */
+    pinned: Boolean = false,
 ): MiniGeo {
     val m = if (circle != null) MiniAxis.merge(axis, d) else 0f
     val det = MiniAxis.detach(axis, d)
@@ -190,7 +192,9 @@ internal fun miniGeo(
             // Growing out of the bar: the picture turns from the bar's 16:9 to the video's shape.
             val (w, h) = MiniAxis.pictureSize(axis, lerp(16f / 9f, aspect, det))
             val (dw, dh) = MiniAxis.pictureSize(d.detach, aspect)
-            tile = rectAt(lerpOffset(t0.center, clampCenter(home(dh), dw, dh, bounds), det), w, h)
+            val c = if (pinned && windowCenter.isSpecified) clampCenter(windowCenter, w, h, bounds)
+            else lerpOffset(t0.center, clampCenter(home(dh), dw, dh, bounds), det)
+            tile = rectAt(c, w, h)
             corner = lerp(px.inner, px.windowCorner, det)
         }
         else -> {
@@ -299,15 +303,14 @@ internal object MiniGestures {
     }
 
     /**
-     * A window let go of docks into the bar only when it is put on the nav bar: the finger lifts
-     * over it, or a throw that is mostly downward would land the window's centre inside it. A
-     * flick toward a bottom corner (beside or above the nav bar) does not.
+     * A window let go of docks into the bar only when it is thrown at the nav bar: moving down
+     * faster than [minSpeed], mostly downward, so that its centre would land inside the nav bar.
+     * A slow drag to the bottom (even over the nav bar) stays a window and goes to a corner.
      */
-    fun docksOnNav(finger: Offset, projectedCenter: Offset, velocity: Offset, nav: Rect?): Boolean {
+    fun docksOnNav(projectedCenter: Offset, velocity: Offset, nav: Rect?, minSpeed: Float): Boolean {
         if (nav == null) return false
-        if (nav.contains(finger)) return true
-        val downward = velocity.y > 0f && kotlin.math.abs(velocity.y) > kotlin.math.abs(velocity.x)
-        return downward && nav.contains(projectedCenter)
+        val thrownDown = velocity.y > minSpeed && kotlin.math.abs(velocity.y) > kotlin.math.abs(velocity.x)
+        return thrownDown && nav.contains(projectedCenter)
     }
 
     /** Scaling a window by [k] about [centroid] (the fingers' middle) moves its centre with them. */

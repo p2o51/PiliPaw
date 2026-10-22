@@ -132,10 +132,6 @@ object KeepPlaying {
      */
     internal var openFrom by mutableStateOf<Rect?>(null)
 
-    /** A dragged window is over the nav bar: letting go docks it (the nav bar swells a little). */
-    var navHint by mutableStateOf(false)
-        internal set
-
     /** Where a video's page that was opened from the bar's picture lands back (window px). */
     internal var landing by mutableStateOf<Rect?>(null)
 
@@ -470,6 +466,22 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
 
     /** A held window gives a little under the finger. */
     val press = Animatable(1f)
+
+    /** The bar's picture is popping out under a finger: it sits under the finger as it grows. */
+    var popping by mutableStateOf(false)
+
+    var view: android.view.View? = null
+
+    /** A light tick (into a corner, off the bar) or a firmer confirm (docked), as the system allows. */
+    fun haptic(dock: Boolean) {
+        val v = view ?: return
+        val c = when {
+            dock && android.os.Build.VERSION.SDK_INT >= 30 -> android.view.HapticFeedbackConstants.CONFIRM
+            dock -> android.view.HapticFeedbackConstants.VIRTUAL_KEY
+            else -> android.view.HapticFeedbackConstants.CLOCK_TICK
+        }
+        v.performHapticFeedback(c)
+    }
     var px by mutableStateOf(MiniPx(0f, 0f, 0f, 0f, 0f))
 
     val canMerge: Boolean get() = nav != null
@@ -485,6 +497,7 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
             bounds = bounds,
             nav = nav,
             px = px,
+            pinned = popping,
         )
     }
 
@@ -608,6 +621,7 @@ fun MiniBarHost() {
             MiniFrame(restAxisOf(KeepPlaying.rest, dims, nav != null, maxAxis, density.density), barTarget)
         }
         frame.dims = dims
+        frame.view = androidx.compose.ui.platform.LocalView.current
         frame.sidesIn = sidesIn
         arrived?.let {
             frame.arrived = it
@@ -856,8 +870,13 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                         frame.dragCenter = start
                         KeepPlaying.windowCenter = start
                         KeepPlaying.windowCorner = null
+                        frame.popping = true
+                        frame.haptic(dock = false)
                         KeepPlaying.rest = MiniRest.Window(frame.dims.detach / density)
-                        scope.launch { frame.axis.animateTo(frame.dims.detach, MiniSprings.liq()) }
+                        scope.launch {
+                            frame.axis.animateTo(frame.dims.detach, MiniSprings.liq())
+                            frame.popping = false
+                        }
                     }
                     MiniDragIntent.None -> giveUp = true
                 }
@@ -867,7 +886,6 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                 velocity.addPosition(c.uptimeMillis, finger)
                 if (windowAtDown || popped) {
                     frame.dragCenter = (frame.dragCenter ?: frame.geo.tile.center) + delta
-                    KeepPlaying.navHint = frame.nav?.contains(downAt + finger) == true
                 } else {
                     frame.swipeDrag = (frame.swipeDrag ?: frame.swipe.value) + delta.x
                 }
@@ -875,7 +893,6 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             }
         }
         if (windowAtDown) scope.launch { frame.press.animateTo(1f, MiniSprings.liq()) }
-        KeepPlaying.navHint = false
         val kind = MiniGestures.classify(
             maxPointers = maxPointers,
             travel = travel.getDistance(),
@@ -886,10 +903,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
         )
         when {
             pinching -> releasePinch(frame, scope, raw, axisVelocity.calculateVelocity().takeIf { it.isFinite() } ?: 0f, density, latest)
-            kind == MiniGestureKind.Drag && (windowAtDown || popped) -> {
-                KeepPlaying.navHint = false
-                releaseWindow(frame, scope, velocity.calculateVelocity(), downAt + finger, density, latest)
-            }
+            kind == MiniGestureKind.Drag && (windowAtDown || popped) -> releaseWindow(frame, scope, velocity.calculateVelocity(), density, latest)
             kind == MiniGestureKind.Drag -> releaseSwipe(frame, scope, velocity.calculateVelocity().x, density, latest)
             else -> {
                 frame.gesturing = false
@@ -942,6 +956,7 @@ private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v:
     val d = frame.dims
     val target: Float
     var window = false
+    val wasWindow = KeepPlaying.rest is MiniRest.Window
     when (val r = MiniAxis.release(raw, v, d, frame.maxAxis, frame.canMerge)) {
         is MiniRelease.Rest -> {
             val rest = r.rest
@@ -957,7 +972,13 @@ private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v:
     }
     // A resized window goes back to its corner; a new one starts bottom right, above the nav bar
     // (never left mid-screen over a page).
-    if (window) snapWindow(frame, scope, target, KeepPlaying.windowCorner ?: BottomRight, frame.geo.tile.center, Offset.Zero)
+    if (window) {
+        frame.haptic(dock = false)
+        snapWindow(frame, scope, target, KeepPlaying.windowCorner ?: BottomRight, frame.geo.tile.center, Offset.Zero)
+    } else if (wasWindow) {
+        // Pinched back into the bar.
+        frame.haptic(dock = true)
+    }
     scope.launch {
         frame.axis.snapTo(frame.pinchAxis ?: raw)
         frame.pinchAxis = null
@@ -968,7 +989,7 @@ private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v:
     }
 }
 
-private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, finger: Offset, density: Float, latest: () -> Playing) {
+private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, density: Float, latest: () -> Playing) {
     val g = frame.geo
     val center = g.tile.center
     frame.dragCenter = null
@@ -983,16 +1004,19 @@ private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, 
         latest().close()
         return
     }
-    // Put on the nav bar (lifted over it, or thrown down so it would land in it): back into the
-    // bar, flying from where it was let go (the axis carries it).
-    if (MiniGestures.docksOnNav(finger, center + vel * 0.2f, vel, frame.nav)) {
+    // Thrown at the nav bar (fast, down, landing in it): back into the bar, flying from where it
+    // was let go (the axis carries it).
+    if (MiniGestures.docksOnNav(center + vel * 0.2f, vel, frame.nav, 1000f * density)) {
+        frame.popping = false
         KeepPlaying.windowCenter = center
         KeepPlaying.windowCorner = null
         KeepPlaying.rest = MiniRest.Row
+        frame.haptic(dock = true)
         scope.launch { frame.axis.animateTo(frame.dims.row, MiniSprings.liq()) }
         return
     }
-    // Otherwise only a corner (the bottom ones rest above the nav bar), however it is flung.
+    // Otherwise a corner (the bottom ones rest above the nav bar), however it is dragged or flung.
+    frame.haptic(dock = false)
     // A light flick carries far (a long, low-friction projection), and a flick that clearly goes
     // one way picks that way's corner even if it falls a little short.
     val far = center + vel * 0.38f

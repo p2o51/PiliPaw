@@ -43,18 +43,20 @@ class MiniGesturesTest {
         assertEquals(MiniDragIntent.None, intent(12f, 0f, merged = true))
     }
 
-    @Test fun itDocksOnlyWhenPutOnTheNavBar() {
+    @Test fun onlyAThrowAtTheNavBarDocks() {
         val nav = Rect(16f, 760f, 376f, 828f)
-        // Lifted over the nav bar.
-        assertEquals(true, MiniGestures.docksOnNav(Offset(200f, 790f), Offset(200f, 700f), Offset(0f, 0f), nav))
-        // Thrown down so its centre lands in the nav bar.
-        assertEquals(true, MiniGestures.docksOnNav(Offset(200f, 500f), Offset(190f, 800f), Offset(100f, 1500f), nav))
-        // A downward flick to the bottom corner area above the nav bar: a corner, not the bar.
-        assertEquals(false, MiniGestures.docksOnNav(Offset(300f, 500f), Offset(320f, 720f), Offset(200f, 900f), nav))
-        // Landing in the nav bar's rect but thrown mostly sideways: no.
-        assertEquals(false, MiniGestures.docksOnNav(Offset(100f, 700f), Offset(300f, 790f), Offset(2000f, 300f), nav))
+        val fast = 1000f
+        // Thrown down hard so its centre lands in the nav bar: docks.
+        assertEquals(true, MiniGestures.docksOnNav(Offset(190f, 800f), Offset(100f, 1500f), nav, fast))
+        // Dragged slowly down to the bottom and let go, even right over the nav bar: stays a window.
+        assertEquals(false, MiniGestures.docksOnNav(Offset(200f, 795f), Offset(0f, 300f), nav, fast))
+        assertEquals(false, MiniGestures.docksOnNav(Offset(200f, 795f), Offset(0f, 0f), nav, fast))
+        // A fast flick toward a bottom corner above the nav bar: a corner.
+        assertEquals(false, MiniGestures.docksOnNav(Offset(320f, 720f), Offset(200f, 1800f), nav, fast))
+        // Fast but mostly sideways: no.
+        assertEquals(false, MiniGestures.docksOnNav(Offset(300f, 790f), Offset(2500f, 1200f), nav, fast))
         // No nav bar on this page: never.
-        assertEquals(false, MiniGestures.docksOnNav(Offset(200f, 790f), Offset(200f, 790f), Offset(0f, 0f), null))
+        assertEquals(false, MiniGestures.docksOnNav(Offset(200f, 790f), Offset(0f, 3000f), null, fast))
     }
 
     @Test fun flungDownOntoTheNavItRestsInABottomCornerAboveIt() {

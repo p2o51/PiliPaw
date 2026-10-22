@@ -79,6 +79,13 @@ class MiniGeoTest {
         assertRect(geo(100f).tile, geo(99.999f).tile)
     }
 
+    @Test fun poppingOutTheTileSitsUnderTheFingerAtOnce() {
+        val finger = Offset(200f, 400f)
+        val g = miniGeo(101f, d, bar, circle, 16f / 9f, finger, bounds, nav, px, pinned = true)
+        assertEquals(finger.x, g.tile.center.x, 0.01f)
+        assertEquals(finger.y, g.tile.center.y, 0.01f)
+    }
+
     @Test fun theWindowStaysOnScreen() {
         val g = geo(300f, center = Offset(-500f, 5000f))
         assertTrue(g.tile.left >= bounds.left - 0.01f)
