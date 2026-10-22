@@ -99,6 +99,8 @@ import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -231,8 +233,10 @@ internal class FavDetailViewModel(val mediaId: Long) : ViewModel() {
     suspend fun buildQueue(shuffle: Boolean, from: String? = null): Route.Video? {
         if (building) return null
         building = true
-        // A tap on a row opens its video at once: the 播放全部 button should not flash a spinner for it.
-        if (from == null) queueLoading = true
+        // A tap on a row opens its video at once: the 播放全部 button should not flash a spinner for
+        // it. Nor for a list that comes in quickly: the spinner only once the build takes a while
+        // (a quick one flipped the buttons off and on again around the tap).
+        val spinner = if (from == null) viewModelScope.launch { kotlinx.coroutines.delay(SpinnerAfterMs); queueLoading = true } else null
         try {
             val items = allQueueItems().let { if (shuffle) it.shuffled() else it }
             val start = from?.let { b -> items.indexOfFirst { it.bvid == b } }?.also { i ->
@@ -242,11 +246,15 @@ internal class FavDetailViewModel(val mediaId: Long) : ViewModel() {
             return PlayQueues.create(title, items, start)?.let { PlayQueues.route(it) }
                 ?: throw IllegalStateException("没有可播放的视频")
         } finally {
+            spinner?.cancel()
             building = false
             queueLoading = false
         }
     }
 }
+
+/** How long a 播放全部 build runs before its button shows the spinner. */
+private const val SpinnerAfterMs = 350L
 
 private const val QueuePageSize = 20
 private const val QueueMaxPages = 100
@@ -401,7 +409,18 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
     var listen by rememberSaveable { mutableStateOf(false) }
     val startQueue: (Boolean, String?) -> Unit = { shuffle, from ->
         scope.launch {
-            runCatching { vm.buildQueue(shuffle, from) }
+            val wasLoading = { vm.queueLoading }
+            var spun = false
+            val result = runCatching {
+                coroutineScope {
+                    val watch = launch { snapshotFlow { wasLoading() }.collect { if (it) spun = true } }
+                    vm.buildQueue(shuffle, from).also { watch.cancel() }
+                }
+            }
+            // The page beneath is frozen as last drawn when the video page covers it (its back
+            // shows that picture): with the spinner gone first, it is not frozen spinning.
+            if (spun) repeat(2) { withFrameNanos { } }
+            result
                 .onSuccess { r -> r?.let { nav.push(it.copy(audioOnly = listen)) } }
                 .onFailure {
                     // The folder could not be listed (or this one is not in it): play the video alone.

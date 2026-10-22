@@ -518,6 +518,10 @@ class PageTransitions internal constructor(
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             if (fromRest) {
                 prepareReveal()
+                // No gesture parked the page beneath: it waits where it rests (sliding it in from
+                // −96dp on the emphasized curve put nearly all of that move in the first frames,
+                // read as the page beneath jumping sideways).
+                behind.snapTo(0f)
                 closing.snapTo(0f)
                 touchYDelta = 0f
             }
