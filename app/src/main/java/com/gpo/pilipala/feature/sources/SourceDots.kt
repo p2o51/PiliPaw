@@ -2,7 +2,10 @@ package com.gpo.pilipala.feature.sources
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.TargetBasedAnimation
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +14,7 @@ import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.isSpecified
@@ -37,6 +41,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,6 +68,7 @@ import com.gpo.pilipala.core.source.Sources
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.core.source.VideoSource
 import com.gpo.pilipala.ui.components.NetImage
+import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.yt.core.account.Accounts
@@ -200,14 +206,16 @@ private fun SourceDot(source: VideoSource, size: Dp, modifier: Modifier = Modifi
  * The tick page, a card in the middle of the screen that grows out of the dots and shrinks back
  * into them. The sources are peers: a row (or its round tick) switches one on or off, and Home
  * shows what is ticked. Changes are handed to [Sources] once the card is gone, so Home refreshes
- * once, on the way back. The last ticked source stays on.
+ * once, on the way back; a page left for opens once Home has settled, so back reveals Home as
+ * it now is. The last ticked source stays on.
  */
 @Composable
 private fun SourcesPanel(origin: Offset, onAccount: (VideoSource) -> Unit, onSettings: () -> Unit, onDismiss: () -> Unit) {
     val savedTicks by Sources.enabled.collectAsState()
     var ticks by remember { mutableStateOf(savedTicks) }
     val toast = rememberToast()
-    val scope = rememberCoroutineScope()
+    // App-root: a change of shell disposes this panel (and Home) while the page is still to open.
+    val scope = com.gpo.pilipala.ui.components.LocalToastScope.current ?: rememberCoroutineScope()
     val progress = remember { Animatable(0f) }
     val spatial = YoinMotion.defaultSpatialSpec<Float>()
     val fastSpatial = YoinMotion.fastSpatialSpec<Float>()
@@ -218,7 +226,9 @@ private fun SourcesPanel(origin: Offset, onAccount: (VideoSource) -> Unit, onSet
         leaving = true
         scope.launch {
             progress.animateTo(0f, fastSpatial)
+            val changed = ticks != Sources.enabled.value
             Sources.apply(ticks)
+            if (changed && then !== onDismiss) awaitHomeSettled(spatial)
             then()
         }
     }
@@ -330,15 +340,30 @@ private fun SourceRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        SourceDot(source, 48.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                account.name ?: "未登录",
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            AccountStats(source)
+        // The site's tag over the avatar, level with the name; a fixed width keeps both rows' names in line.
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(
+                Modifier.width(56.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Tag(
+                    source.label,
+                    modifier = Modifier.padding(top = 2.dp),
+                    container = MaterialTheme.colorScheme.secondaryContainer,
+                    content = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                SourceDot(source, 40.dp)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    account.name ?: "未登录",
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                AccountStats(source)
+            }
         }
         if (onAccount != null) {
             TextButton(onClick = onAccount) { Text(if (account.name == null) "登录" else "主页") }
@@ -348,21 +373,17 @@ private fun SourceRow(
 }
 
 /**
- * The account at a glance, under its name: Bilibili's 关注, 粉丝, 硬币 and level; YouTube's handle
- * (or what signing in adds). Numbers go through [com.gpo.pilipala.ui.components.FameCount], so
- * 隐藏数字 hides them here too.
+ * The account at a glance, under its name: Bilibili's 关注, 粉丝, 硬币 and level; YouTube's handle.
+ * Signed out, nothing (the site's tag names the row). Numbers go through
+ * [com.gpo.pilipala.ui.components.FameCount], so 隐藏数字 hides them here too.
  */
 @Composable
 private fun AccountStats(source: VideoSource) {
     when (source) {
         VideoSource.Bilibili -> {
             val user by Account.user.collectAsState()
-            val u = user
-            if (u == null) {
-                StatCaption("哔哩哔哩")
-                return
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Bottom) {
+            val u = user ?: return
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
                 Stat(com.gpo.pilipala.core.util.Fmt.count(u.following.toLong()), "关注")
                 Stat(com.gpo.pilipala.core.util.Fmt.count(u.follower.toLong()), "粉丝")
                 Stat(if (u.coins % 1.0 == 0.0) u.coins.toLong().toString() else "%.1f".format(u.coins), "硬币")
@@ -371,8 +392,8 @@ private fun AccountStats(source: VideoSource) {
         }
         VideoSource.YouTube -> {
             val profile by Accounts.youtube.collectAsState()
-            val p = profile as? Profile.SignedIn
-            StatCaption(p?.handle?.ifEmpty { null } ?: "YouTube")
+            val handle = (profile as? Profile.SignedIn)?.handle
+            if (!handle.isNullOrEmpty()) StatCaption(handle)
         }
     }
 }
@@ -442,3 +463,23 @@ internal fun TickMark(ticked: Boolean, tint: Color, onClick: () -> Unit) {
         }
     }
 }
+
+/**
+ * Home has played a change of sources: [spatial]'s time has passed (the dots and the tab row
+ * move on it) and frames come on time again (a change of shell composes a whole new Home).
+ */
+private suspend fun awaitHomeSettled(spatial: FiniteAnimationSpec<Float>) {
+    val motion = TargetBasedAnimation(spatial, Float.VectorConverter, 0f, 1f).durationNanos
+    val start = withFrameNanos { it }
+    var last = start
+    var calm = 0
+    while ((last - start < motion || calm < SettledCalmFrames) && last - start < motion + SettledMaxExtraNanos) {
+        val now = withFrameNanos { it }
+        calm = if (now - last <= SettledFrameNanos) calm + 1 else 0
+        last = now
+    }
+}
+
+private const val SettledCalmFrames = 2
+private const val SettledFrameNanos = 24_000_000L
+private const val SettledMaxExtraNanos = 400_000_000L

@@ -558,6 +558,11 @@ internal fun <T> SettingsChoiceItem(
     }
 }
 
+/**
+ * The choices as a sheet of rows; picking one closes it. [selected] may match none (a pick
+ * with no current value). [summary] and [leading] dress a row (a line under it, an avatar
+ * in place of the icon).
+ */
 @Composable
 internal fun <T> ChoiceSheet(
     title: String,
@@ -565,6 +570,8 @@ internal fun <T> ChoiceSheet(
     selected: T,
     onSelect: (T) -> Unit,
     onDismiss: () -> Unit,
+    summary: (T) -> String? = { null },
+    leading: (@Composable (T) -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -596,6 +603,8 @@ internal fun <T> ChoiceSheet(
                             SettingsItem(
                                 title = choice.label,
                                 icon = choice.icon,
+                                summary = summary(choice.value),
+                                leading = leading?.let { { it(choice.value) } },
                                 titleColor = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
                                 onClick = {
                                     haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
