@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.feature.library.FavFolder
@@ -45,10 +46,37 @@ import com.gpo.pilipala.yt.core.extractor.YtAccount
 import com.gpo.pilipala.yt.feature.player.Player
 import com.gpo.yoin.symbols.YoinSymbols
 
-/** The signed-in YouTube account's playlists in 收藏, as cards like the 收藏夹 below them. */
-internal fun LazyGridScope.youtubeSection(lists: List<YtAccount.Playlist>, onOpen: (YtAccount.Playlist) -> Unit) {
-    if (lists.isEmpty()) return
+/**
+ * The signed-in account's playlists, kept for the whole session so 收藏 comes back exactly as it
+ * was left (a refresh only swaps them in place). Null: not loaded yet.
+ */
+object YtLibraryCache {
+    private val _lists = kotlinx.coroutines.flow.MutableStateFlow<List<YtAccount.Playlist>?>(null)
+    val lists: kotlinx.coroutines.flow.StateFlow<List<YtAccount.Playlist>?> = _lists
+
+    suspend fun refresh() {
+        runCatching { YtAccount.libraryPlaylists() }.onSuccess { _lists.value = it }
+            .onFailure { if (_lists.value == null) _lists.value = emptyList() }
+    }
+
+    fun clear() {
+        _lists.value = null
+    }
+}
+
+/**
+ * The signed-in YouTube account's playlists in 收藏, as cards like the 收藏夹 below them. Until
+ * the first load lands ([lists] null) two blank cards hold the place, so nothing below jumps.
+ */
+internal fun LazyGridScope.youtubeSection(lists: List<YtAccount.Playlist>?, onOpen: (YtAccount.Playlist) -> Unit) {
+    if (lists != null && lists.isEmpty()) return
     sectionHeader("h_yt", "YouTube")
+    if (lists == null) {
+        items(2, key = { "y_hold$it" }) {
+            FolderCard(FavFolder(id = -1L - it, title = "", cover = "", mediaCount = 0, attr = 2), modifier = Modifier.alpha(0.4f), onClick = {})
+        }
+        return
+    }
     items(lists, key = { "y${it.id}" }) { pl ->
         FolderCard(
             FavFolder(id = pl.id.hashCode().toLong(), title = pl.title, cover = pl.thumbnail, mediaCount = pl.count.filter(Char::isDigit).toIntOrNull() ?: 0, attr = 2),

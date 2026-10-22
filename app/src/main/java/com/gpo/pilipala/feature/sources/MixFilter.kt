@@ -54,6 +54,9 @@ object MixFilter : SourceFilter()
 /** Search results (their 视频 tab) and new Feeds: both sources, or one. */
 object SearchScope : SourceFilter()
 
+/** 收藏 with both accounts signed in: both, or one account's lists. */
+object FavScope : SourceFilter()
+
 /**
  * YouTube's side of the mixed 推荐: the account's home feed signed in; signed out, the local
  * subscriptions' latest uploads, shuffled, as the nearest thing to a recommendation.
@@ -238,3 +241,49 @@ fun InlineSourceChips() {
     }
 }
 
+
+/**
+ * A library's account chips (收藏): each account as avatar and name in Home's chip shape; the
+ * picked one fills, the other stays where it is (tap it to switch); tapping the picked one lets go.
+ */
+@androidx.compose.runtime.Composable
+fun LibrarySourceChips(filter: SourceFilter) {
+    val only by filter.only.collectAsStateCompat()
+    val scheme = androidx.compose.material3.MaterialTheme.colorScheme
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    androidx.compose.foundation.layout.Row(
+        androidx.compose.ui.Modifier.padding(start = 4.dp, top = 4.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        VideoSource.entries.forEach { source ->
+            val picked = only == source
+            val bg by androidx.compose.animation.animateColorAsState(
+                if (picked) scheme.primary else scheme.surfaceContainerHigh,
+                com.gpo.pilipala.ui.theme.YoinMotion.defaultEffectsSpec(),
+                label = "libChip",
+            )
+            val fg by androidx.compose.animation.animateColorAsState(
+                if (picked) scheme.onPrimary else scheme.onSurfaceVariant,
+                com.gpo.pilipala.ui.theme.YoinMotion.defaultEffectsSpec(),
+                label = "libChipText",
+            )
+            androidx.compose.foundation.layout.Row(
+                androidx.compose.ui.Modifier
+                    .height(40.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(bg)
+                    .clickable {
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
+                        filter.set(if (picked) null else source)
+                    }
+                    .padding(start = 8.dp, end = 16.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            ) {
+                SourceDotForMenu(source, 24.dp)
+                androidx.compose.material3.Text(source.label, style = androidx.compose.material3.MaterialTheme.typography.labelLarge, color = fg)
+            }
+        }
+    }
+}

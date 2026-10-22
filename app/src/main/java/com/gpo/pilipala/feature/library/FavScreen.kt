@@ -145,10 +145,15 @@ fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
     var namingMix by remember { mutableStateOf(false) }
     val ytProfile by com.gpo.pilipala.yt.core.account.Accounts.youtube.collectAsState()
     val ytSignedIn = ytProfile is com.gpo.pilipala.yt.core.account.Profile.SignedIn
-    var ytLists by remember { mutableStateOf<List<com.gpo.pilipala.yt.core.extractor.YtAccount.Playlist>>(emptyList()) }
+    val ytLists by com.gpo.pilipala.feature.sources.YtLibraryCache.lists.collectAsState()
     LaunchedEffect(ytSignedIn) {
-        ytLists = if (ytSignedIn) runCatching { com.gpo.pilipala.yt.core.extractor.YtAccount.libraryPlaylists() }.getOrDefault(emptyList()) else emptyList()
+        if (ytSignedIn) com.gpo.pilipala.feature.sources.YtLibraryCache.refresh() else com.gpo.pilipala.feature.sources.YtLibraryCache.clear()
     }
+    // Both accounts here: chips narrow 收藏 to one of them (Mix lists stay, they hold both).
+    val scope by com.gpo.pilipala.feature.sources.FavScope.only.collectAsState()
+    val bothHere = vm.isOwner && ytSignedIn && com.gpo.pilipala.core.source.VideoSource.Bilibili in sources
+    val showBili = !bothHere || scope != com.gpo.pilipala.core.source.VideoSource.YouTube
+    val showYt = vm.isOwner && ytSignedIn && (!bothHere || scope != com.gpo.pilipala.core.source.VideoSource.Bilibili)
     val gridState = rememberLazyGridState()
     LoadMoreEffect(gridState) { vm.created.loadMore() }
     val barInset = if (asTab) LocalBottomBarInset.current else 0.dp
@@ -186,12 +191,18 @@ fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (bothHere) {
+                    item(key = "scope", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, contentType = "scope") {
+                        com.gpo.pilipala.feature.sources.LibrarySourceChips(com.gpo.pilipala.feature.sources.FavScope)
+                    }
+                }
                 if (showMix) {
                     mixSection(mixLists, onOpen = { nav.push(Route.MixList(it.id, it.name)) }, onNew = { namingMix = true })
                 }
-                if (vm.isOwner && ytSignedIn) {
+                if (showYt) {
                     youtubeSection(ytLists, onOpen = { pl -> nav.push(Route.YtPlaylist(pl.url, pl.title, pl.thumbnail)) })
                 }
+                if (showBili) {
                 sectionHeader("h_created", if (vm.isOwner) "我创建的" else "创建的收藏夹")
                 items(vm.created.items, key = { "c${it.id}" }) { folder ->
                     val route = Route.FavDetail(folder.id, folder.title, folder.cover)
@@ -220,6 +231,7 @@ fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
                             onClick = { nav.push(Route.SubDetail(folder.id, folder.type, folder.title, folder.cover)) },
                         )
                     }
+                }
                 }
             }
         }
