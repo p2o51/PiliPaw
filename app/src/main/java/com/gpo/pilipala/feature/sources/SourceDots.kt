@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,6 +64,7 @@ import com.gpo.pilipala.core.source.Sources
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.core.source.VideoSource
 import com.gpo.pilipala.ui.components.NetImage
+import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.yt.core.account.Accounts
@@ -330,15 +332,30 @@ private fun SourceRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        SourceDot(source, 48.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                account.name ?: "未登录",
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            AccountStats(source)
+        // The site's tag over the avatar, level with the name; a fixed width keeps both rows' names in line.
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(
+                Modifier.width(56.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Tag(
+                    source.label,
+                    modifier = Modifier.padding(top = 2.dp),
+                    container = MaterialTheme.colorScheme.secondaryContainer,
+                    content = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                SourceDot(source, 40.dp)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    account.name ?: "未登录",
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                AccountStats(source)
+            }
         }
         if (onAccount != null) {
             TextButton(onClick = onAccount) { Text(if (account.name == null) "登录" else "主页") }
@@ -348,21 +365,17 @@ private fun SourceRow(
 }
 
 /**
- * The account at a glance, under its name: Bilibili's 关注, 粉丝, 硬币 and level; YouTube's handle
- * (or what signing in adds). Numbers go through [com.gpo.pilipala.ui.components.FameCount], so
- * 隐藏数字 hides them here too.
+ * The account at a glance, under its name: Bilibili's 关注, 粉丝, 硬币 and level; YouTube's handle.
+ * Signed out, nothing (the site's tag names the row). Numbers go through
+ * [com.gpo.pilipala.ui.components.FameCount], so 隐藏数字 hides them here too.
  */
 @Composable
 private fun AccountStats(source: VideoSource) {
     when (source) {
         VideoSource.Bilibili -> {
             val user by Account.user.collectAsState()
-            val u = user
-            if (u == null) {
-                StatCaption("哔哩哔哩")
-                return
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Bottom) {
+            val u = user ?: return
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
                 Stat(com.gpo.pilipala.core.util.Fmt.count(u.following.toLong()), "关注")
                 Stat(com.gpo.pilipala.core.util.Fmt.count(u.follower.toLong()), "粉丝")
                 Stat(if (u.coins % 1.0 == 0.0) u.coins.toLong().toString() else "%.1f".format(u.coins), "硬币")
@@ -371,8 +384,8 @@ private fun AccountStats(source: VideoSource) {
         }
         VideoSource.YouTube -> {
             val profile by Accounts.youtube.collectAsState()
-            val p = profile as? Profile.SignedIn
-            StatCaption(p?.handle?.ifEmpty { null } ?: "YouTube")
+            val handle = (profile as? Profile.SignedIn)?.handle
+            if (!handle.isNullOrEmpty()) StatCaption(handle)
         }
     }
 }
