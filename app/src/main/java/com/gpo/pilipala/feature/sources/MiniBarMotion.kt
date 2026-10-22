@@ -329,8 +329,20 @@ internal object MiniGestures {
     /** How far the merge has gone: the finger's way down against [range] (window bottom → nav bar). */
     fun mergeProgress(dy: Float, range: Float): Float = (dy / range.coerceAtLeast(1f)).coerceIn(0f, 1f)
 
+    /** How far down a window's merge must go for a plain release to dock it. */
+    const val MergeAt = 0.4f
+
+    /** How far across the bar a plain release must go to swipe it away. */
+    const val SwipeAwayAt = 0.35f
+
+    /**
+     * True when [before] → [after] crosses [at] either way: the drag just passed the point where
+     * letting go would change the outcome (or came back over it).
+     */
+    fun crosses(before: Float, after: Float, at: Float): Boolean = (before > at) != (after > at)
+
     /** Let go: past [threshold] of the way, or still moving down faster than [minSpeed], it docks. */
-    fun mergeCompletes(progress: Float, velocityY: Float, minSpeed: Float, threshold: Float = 0.4f): Boolean =
+    fun mergeCompletes(progress: Float, velocityY: Float, minSpeed: Float, threshold: Float = MergeAt): Boolean =
         progress > threshold || velocityY > minSpeed
 
     /**

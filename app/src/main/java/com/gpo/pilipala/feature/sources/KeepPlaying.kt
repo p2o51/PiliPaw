@@ -945,6 +945,13 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                 raw = startAxis * span.coerceAtLeast(minSpan) / startSpan
                 val min = if (frame.canMerge) frame.dims.circle else frame.dims.row
                 val now = MiniAxis.rubber(raw, min, frame.maxAxis)
+                // A tick where letting go would change what it becomes: the circle past halfway,
+                // a window ~70% of the way to the detach point (as the release decides).
+                val d = frame.dims
+                val wasAt = frame.pinchAxis ?: startAxis
+                if (frame.canMerge && MiniGestures.crosses(MiniAxis.merge(wasAt, d), MiniAxis.merge(now, d), 0.5f) ||
+                    MiniGestures.crosses(wasAt - d.row, now - d.row, d.detachExtra * 0.7f)
+                ) frame.haptic(dock = false)
                 frame.pinchAxis = now
                 axisVelocity.addDataPoint(upTime, raw)
                 if (now >= frame.dims.detach) {
@@ -1007,7 +1014,10 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                 velocity.addPosition(c.uptimeMillis, finger)
                 // 1:1 with the finger: it shrinks and travels to the bar's picture, the side
                 // blocks unfold around it; back up undoes it.
+                val was = mergeProgress
                 mergeProgress = MiniGestures.mergeProgress(travel.y, mergeRange)
+                // A tick where letting go would dock it, and again coming back over it.
+                if (MiniGestures.crosses(was, mergeProgress, MiniGestures.MergeAt)) frame.haptic(dock = false)
                 frame.pinchAxis = lerp(mergeFromAxis, frame.dims.row, mergeProgress)
                 frame.dragCenter = lerpOffset(mergeFrom, mergeTo, mergeProgress)
                 c.consume()
@@ -1024,7 +1034,12 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                     frame.movedAt = c.uptimeMillis
                     frame.dragCenter = (frame.dragCenter ?: frame.geo.tile.center) + delta
                 } else {
-                    frame.swipeDrag = (frame.swipeDrag ?: frame.swipe.value) + delta.x
+                    val was = frame.swipeDrag ?: frame.swipe.value
+                    val now = was + delta.x
+                    frame.swipeDrag = now
+                    // A tick where letting go would swipe it away, and again coming back over it.
+                    val away = frame.anchor.value.width * MiniGestures.SwipeAwayAt
+                    if (MiniGestures.crosses(abs(was), abs(now), away)) frame.haptic(dock = false)
                 }
                 c.consume()
             }
@@ -1066,6 +1081,14 @@ private const val BottomRight = 3
 
 /** How far a held window gives under the finger. */
 private const val PressScale = 0.97f
+
+/** The floating window's shadow at rest and under a finger. */
+private val WindowShadow = 6.dp
+private val WindowShadowHeld = 14.dp
+
+/** The ring glides over one player tick; paused, each half of its breath. */
+private const val RingTickMs = 520
+private const val RingBreathMs = 1100
 
 /** A tap, by where it landed: the picture opens the video, the side blocks seek, pause pauses. */
 private fun tapAt(frame: MiniFrame, at: Offset, p: Playing) {
@@ -1237,7 +1260,7 @@ private fun releaseSwipe(frame: MiniFrame, scope: CoroutineScope, vx: Float, den
     val width = frame.anchor.value.width
     // Swiping away is the docked bar's alone: a window (resting as one, or drawn as one) never goes.
     val bar = !MiniGestures.isWindow(KeepPlaying.rest is MiniRest.Window, frame.geo.windowed)
-    val away = bar && (abs(x) > width * 0.35f || (abs(vx) > 1000f * density && sign(vx) == sign(x)))
+    val away = bar && (abs(x) > width * MiniGestures.SwipeAwayAt || (abs(vx) > 1000f * density && sign(vx) == sign(x)))
     scope.launch {
         frame.swipe.snapTo(x)
         frame.swipeDrag = null
@@ -1332,12 +1355,39 @@ private fun PauseBlock(p: Playing, frame: MiniFrame) {
 private fun Tile(p: Playing, frame: MiniFrame) {
     val primary = MaterialTheme.colorScheme.primary
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
-    val latestProgress by rememberUpdatedState(p.progress)
+    // The progress glides between the player's ticks (YouTube's come every half second) instead
+    // of stepping; a jump (a seek, ±15) springs there; another video starts where it is.
+    val shown = remember(p.player, p.title) { Animatable(p.progress.coerceIn(0f, 1f)) }
+    LaunchedEffect(p.progress, p.isPlaying) {
+        val to = p.progress.coerceIn(0f, 1f)
+        val step = to - shown.targetValue
+        if (p.isPlaying && step in 0f..0.02f) {
+            shown.animateTo(to, androidx.compose.animation.core.tween(RingTickMs, easing = androidx.compose.animation.core.LinearEasing))
+        } else {
+            shown.animateTo(to, MiniSprings.def())
+        }
+    }
+    // Paused, the ring breathes; playing, it holds full strength.
+    val breath = remember { Animatable(1f) }
+    LaunchedEffect(p.isPlaying) {
+        if (p.isPlaying) {
+            breath.animateTo(1f, MiniSprings.def())
+        } else {
+            while (true) {
+                breath.animateTo(0.45f, androidx.compose.animation.core.tween(RingBreathMs, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                breath.animateTo(1f, androidx.compose.animation.core.tween(RingBreathMs, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+            }
+        }
+    }
+    // A floating window sits above the page: a soft shadow, deeper while a finger holds it.
+    val lift by animateFloatAsState(if (frame.geo.windowed) 1f else 0f, MiniSprings.def(), label = "windowLift")
     Box(
         Modifier
             .graphicsLayer {
                 shape = RoundedCornerShape(frame.geo.tileCorner)
                 clip = true
+                val held = ((1f - frame.press.value) / (1f - PressScale)).coerceIn(0f, 1f)
+                shadowElevation = lift * (WindowShadow + (WindowShadowHeld - WindowShadow) * held).toPx()
             }
             .background(track)
             .then(p.route?.let { Modifier.pageSharedSource(it) } ?: Modifier)
@@ -1349,8 +1399,17 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                 drawPath(path, primary.copy(alpha = 0.25f), style = Stroke(stroke))
                 val measure = PathMeasure().apply { setPath(path, false) }
                 val seg = Path()
-                measure.getSegment(0f, measure.length * latestProgress.coerceIn(0f, 1f), seg, true)
-                drawPath(seg, primary, style = Stroke(stroke, cap = StrokeCap.Round))
+                val head = measure.length * shown.value
+                val strength = breath.value
+                measure.getSegment(0f, head, seg, true)
+                drawPath(seg, primary.copy(alpha = strength), style = Stroke(stroke, cap = StrokeCap.Round))
+                // A bright head where the line is: a dot a little wider than the line, in a soft halo.
+                if (shown.value > 0f) {
+                    val at = measure.getPosition(head)
+                    drawCircle(primary.copy(alpha = 0.3f * strength), radius = stroke * 1.6f, center = at)
+                    drawCircle(primary.copy(alpha = strength), radius = stroke * 0.85f, center = at)
+                    drawCircle(Color.White.copy(alpha = 0.7f * strength), radius = stroke * 0.35f, center = at)
+                }
             },
     ) {
         // The page has left composition before its controller is offered to the dock.
