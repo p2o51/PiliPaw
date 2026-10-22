@@ -2,6 +2,7 @@ package com.gpo.pilipala.feature.listen
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
@@ -265,6 +266,12 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
         } else {
             val pageH = maxHeight
             val pageW = maxWidth
+            // 展开歌词 folds the cover and title away and gives the lyrics the page.
+            var expanded by rememberSaveable { mutableStateOf(false) }
+            androidx.activity.compose.BackHandler(enabled = expanded) { expanded = false }
+            // One cover for both headers: it moves and scales between their slots.
+            val morph = remember { CoverMorph() }
+            val toward = animateFloatAsState(if (expanded) 1f else 0f, YoinMotion.slowSpatialSpec(), label = "coverMorph")
             // Portrait: the lyrics are the page, full width between the title and the
             // transport, large, with no card; the ways on sit on the bottom edge.
             Column(
@@ -274,44 +281,68 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
                     .padding(top = 8.dp, bottom = 2.dp),
             ) {
                 val fl = flight
-                // 展开歌词 folds the cover and title away and gives the lyrics the page.
-                var expanded by rememberSaveable { mutableStateOf(false) }
-                androidx.activity.compose.BackHandler(enabled = expanded) { expanded = false }
-                // A tall phone holds the cover to about a fifth of the height (full width) with
-                // the title row under it; anything squarer (a tablet in portrait, split screen,
-                // a foldable) centres a bigger card, the title centred under it.
+                // A tall phone holds the cover to about a fifth of the height (full width);
+                // anything squarer (a tablet in portrait, split screen, a foldable) a bigger,
+                // centred card, which gives way on a short window so the lyrics keep a few lines.
                 val tall = pageW < 600.dp && pageH / pageW >= 1.9f
-                // The bigger card gives way on a short window, so the lyrics keep a few lines.
                 val coverMaxH = if (tall) pageH * 0.22f else minOf(pageH * 0.28f, pageH - 560.dp).coerceAtLeast(pageH * 0.16f)
                 val contentW = pageW - 48.dp
-                val coverW = minOf(contentW, coverMaxH * (16f / 9f))
+                val fullW = minOf(contentW, coverMaxH * (16f / 9f))
+                // 点赞 moves beside the centred card when making room for it (a slot each side,
+                // so the card stays centred) costs the card at most a fifth of its width; the
+                // title then takes the whole width under it. A full-width card (a tall phone)
+                // keeps 点赞 at the title row's end.
+                val besideW = contentW - LikeSlot * 2
+                val likeBeside = besideW >= fullW * 0.8f
+                val coverW = if (likeBeside) minOf(fullW, besideW) else fullW
                 Column(Modifier.padding(horizontal = 24.dp)) {
                     Box(Modifier.listenReveal(fl, 0.3f)) { bar() }
                     // Expanded (Apple Music's lyrics): the cover steps down into one row with the
                     // title beside it, and the lyrics, larger, take the page under it.
+                    // The headers' own clips are off: the title travels between them as they swap.
                     AnimatedVisibility(
                         visible = expanded,
-                        enter = expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
-                        exit = shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
+                        enter = expandVertically(YoinMotion.slowSpatialSpec(), clip = false) + fadeIn(YoinMotion.defaultEffectsSpec()),
+                        exit = shrinkVertically(YoinMotion.slowSpatialSpec(), clip = false) + fadeOut(YoinMotion.fastEffectsSpec()),
                     ) {
-                        CompactHeader(source, cover, title, subtitle, coverWidth = if (pageW >= 600.dp) 176.dp else 120.dp, onSearch = search)
+                        CompactHeader(
+                            source,
+                            title,
+                            subtitle,
+                            coverWidth = if (pageW >= 600.dp) 176.dp else 120.dp,
+                            morph = morph,
+                            away = { 1f - toward.value },
+                            onSearch = search,
+                        )
                     }
                     AnimatedVisibility(
                         visible = !expanded,
-                        enter = expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
-                        exit = shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
+                        enter = expandVertically(YoinMotion.slowSpatialSpec(), clip = false) + fadeIn(YoinMotion.defaultEffectsSpec()),
+                        exit = shrinkVertically(YoinMotion.slowSpatialSpec(), clip = false) + fadeOut(YoinMotion.fastEffectsSpec()),
                     ) {
-                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(Modifier.fillMaxWidth()) {
                             Spacer(Modifier.height(16.dp))
-                            ListenCover(cover, Modifier.width(coverW))
-                            if (tall) {
-                                // The title row on one line (a marquee), 点赞 at its end.
-                                Spacer(Modifier.height(20.dp))
-                                Box(Modifier.listenReveal(fl, 0.4f)) { TitleRow(source, title, subtitle) }
-                            } else {
-                                Spacer(Modifier.height(16.dp))
-                                Box(Modifier.listenReveal(fl, 0.4f)) {
-                                    CenteredTitle(source, title, subtitle, large = pageW >= 600.dp)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
+                                // As wide again on the left, so the card stays centred.
+                                if (likeBeside) Spacer(Modifier.width(LikeSlot))
+                                // The cover's place; MorphingCover draws it.
+                                Box(Modifier.width(coverW).aspectRatio(16f / 9f).onGloballyPositioned { morph.big = it.boundsInWindow() })
+                                if (likeBeside) {
+                                    Spacer(Modifier.width(LikeGap))
+                                    Box(Modifier.listenReveal(fl, 0.4f)) { source.Like() }
+                                }
+                            }
+                            Spacer(Modifier.height(if (likeBeside) 16.dp else 20.dp))
+                            Box(
+                                Modifier
+                                    .listenReveal(fl, 0.4f)
+                                    .travel({ morph.bigTitle = it }, from = { morph.bigTitle }, to = { morph.smallTitle }, amount = { toward.value }),
+                            ) {
+                                if (likeBeside) {
+                                    WideTitle(title, subtitle, large = pageW >= 600.dp)
+                                } else {
+                                    // The title row on one line (a marquee), 点赞 at its end.
+                                    TitleRow(source, title, subtitle)
                                 }
                             }
                         }
@@ -353,6 +384,7 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
                     }
                 }
             }
+            MorphingCover(cover, morph, toward = { toward.value }) { rootOrigin }
         }
         if (flight != null) FlyingCover(flight, cover) { rootOrigin }
     }
@@ -368,6 +400,64 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
 }
 
 private enum class ListenSheet { Queue, Comments, Search }
+
+/**
+ * Where the portrait page's two headers keep the cover and the title (window px): the full
+ * one ([big], [bigTitle]) and 展开歌词's row ([small], [smallTitle]). A slot that is not laid
+ * out keeps where it last was.
+ */
+@Stable
+private class CoverMorph {
+    var big by mutableStateOf<Rect?>(null)
+    var small by mutableStateOf<Rect?>(null)
+    var bigTitle by mutableStateOf<Rect?>(null)
+    var smallTitle by mutableStateOf<Rect?>(null)
+}
+
+/**
+ * The portrait page's one cover, over both headers: 展开歌词 moves and scales it from the
+ * full card into the row's small one on the spatial spring ([toward] 0 → 1), its corners and
+ * shadow following, and 收起 brings it back.
+ */
+@Composable
+private fun MorphingCover(cover: String, morph: CoverMorph, toward: () -> Float, origin: () -> Offset) {
+    Box(
+        Modifier.layout { m, c ->
+            val a = morph.big
+            val b = morph.small
+            val r = when {
+                a != null && b != null -> lerp(a, b, toward())
+                else -> a ?: b
+            }
+            if (r == null || r.width < 1f) return@layout layout(0, 0) {}
+            val p = m.measure(Constraints.fixed(r.width.roundToInt(), r.height.roundToInt()))
+            val o = origin()
+            layout(c.maxWidth, c.maxHeight) { p.place((r.left - o.x).roundToInt(), (r.top - o.y).roundToInt()) }
+        },
+    ) {
+        ListenCover(cover, Modifier.fillMaxSize(), compact = toward)
+    }
+}
+
+/**
+ * Carries a header's title toward the other header's (reports its own place with [report]):
+ * [amount] 0 where it is, 1 at the other's place.
+ */
+private fun Modifier.travel(report: (Rect) -> Unit, from: () -> Rect?, to: () -> Rect?, amount: () -> Float): Modifier =
+    onGloballyPositioned { report(it.boundsInWindow()) }
+        .graphicsLayer {
+            val a = from()
+            val b = to()
+            if (a != null && b != null) {
+                val k = amount()
+                translationX = (b.left - a.left) * k
+                translationY = (b.top - a.top) * k
+            }
+        }
+
+/** 点赞 beside the card: its 48dp and a 16dp gap. */
+private val LikeGap = 16.dp
+private val LikeSlot = 48.dp + LikeGap
 
 /**
  * The listen page's side of a track switch: [cover] is the cover on screen, which moves on to
@@ -555,7 +645,7 @@ private fun ListenTopBar(header: String, onCollapse: () -> Unit, onShowVideo: ()
 }
 
 @Composable
-private fun ListenCover(cover: String, modifier: Modifier) {
+private fun ListenCover(cover: String, modifier: Modifier, compact: () -> Float = { 0f }) {
     val flight = LocalListenFlight.current
     val switch = LocalListenSwitch.current
     val layer = rememberGraphicsLayer()
@@ -573,8 +663,13 @@ private fun ListenCover(cover: String, modifier: Modifier) {
             // Spread two fingers on it: the cover flies back into the picture with them.
             .pinchOutToVideo(flight?.pinchOut)
             .graphicsLayer { alpha = if (flight?.flying == true) 0f else 1f }
-            .shadow(24.dp, RoundedCornerShape(28.dp), clip = false)
-            .clip(RoundedCornerShape(28.dp))
+            // 28dp corners and a 24dp shadow at full size, 14dp and none in 展开歌词's header.
+            .graphicsLayer {
+                val k = compact().coerceIn(0f, 1f)
+                shape = RoundedCornerShape((28f - 14f * k).dp)
+                clip = true
+                shadowElevation = 24.dp.toPx() * (1f - k)
+            }
             // Kept for the back's hero: the cover as drawn, corners and all.
             .drawWithContent {
                 layer.record { this@drawWithContent.drawContent() }
@@ -604,33 +699,25 @@ private fun TitleRow(source: ListenSource, title: String, subtitle: String) {
     }
 }
 
-/**
- * Squarer windows: the title centred under the cover, as wide as the page allows, on up to two
- * lines; the artist under it with a smaller 点赞 beside.
- */
+/** The title under a card with 点赞 beside it: the whole width, on up to two lines, the artist under it. */
 @Composable
-private fun CenteredTitle(source: ListenSource, title: String, subtitle: String, large: Boolean) {
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        SwapText(title, Modifier.fillMaxWidth(), Alignment.Center) {
+private fun WideTitle(title: String, subtitle: String, large: Boolean) {
+    Column(Modifier.fillMaxWidth()) {
+        SwapText(title, Modifier.fillMaxWidth()) {
             Text(
                 it,
                 style = if (large) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (subtitle.isNotEmpty()) {
-                SwapText(subtitle, Modifier.weight(1f, fill = false)) {
-                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Spacer(Modifier.width(10.dp))
+        if (subtitle.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            SwapText(subtitle) {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            CompositionLocalProvider(LocalListenLikeSize provides 40.dp) { source.Like() }
         }
     }
 }
@@ -658,26 +745,18 @@ private fun MarqueeTitle(text: String, style: TextStyle, start: Dp, end: Dp) {
 @Composable
 private fun CompactHeader(
     source: ListenSource,
-    cover: String,
     title: String,
     subtitle: String,
     coverWidth: Dp,
+    morph: CoverMorph,
+    away: () -> Float,
     onSearch: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        ListenCoverImage(
-            url = cover,
-            thumbWidth = 360.dp,
-            reveal = CoverReveal.Crossfade,
-            direction = LocalListenDirection.current,
-            modifier = Modifier
-                .width(coverWidth)
-                .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-        )
+        // The cover's place; MorphingCover draws it.
+        Box(Modifier.width(coverWidth).aspectRatio(16f / 9f).onGloballyPositioned { morph.small = it.boundsInWindow() })
         Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).travel({ morph.smallTitle = it }, from = { morph.smallTitle }, to = { morph.bigTitle }, amount = away)) {
             SwapText(title) {
                 MarqueeTitle(it, MaterialTheme.typography.titleMedium, start = 16.dp, end = 12.dp)
             }
