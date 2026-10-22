@@ -67,6 +67,7 @@ import com.gpo.pilipala.feature.player.setAudioOnly
 import com.gpo.pilipala.feature.listen.ListenFlight
 import com.gpo.pilipala.feature.listen.LocalPicturePinchIn
 import com.gpo.pilipala.feature.listen.PicturePinchIn
+import com.gpo.pilipala.feature.listen.PinchDriver
 import com.gpo.pilipala.feature.listen.PinchToListenHost
 import com.gpo.pilipala.feature.player.rememberBiliPlayerState
 import com.gpo.pilipala.feature.player.captureVideoFrame
@@ -76,6 +77,7 @@ import com.gpo.pilipala.navigation.transition.PageHeroEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.ImageBitmap
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
@@ -384,26 +386,31 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         // read as the picture becoming the cover, not a cut.
         val listenIn = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.86f, stiffness = 110f)
         val listenOut = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.9f, stiffness = 170f)
+        // The picture as it is now, so a flight into the cover starts from what is on screen.
+        suspend fun capturePicture(): ImageBitmap? = handoff.classicRect?.let { r ->
+            findVideoView(heroView.rootView, r)?.let { v ->
+                withTimeoutOrNull(80) { captureVideoFrame(v, v.width, v.height) }?.asImageBitmap()
+            }
+        }
         LaunchedEffect(listening) {
             if (listening) {
-                if (listenP.value < 0.01f && !openedListening[0]) {
-                    // The picture as it is now, so the flight starts from what is on screen.
-                    listenShot = handoff.classicRect?.let { r ->
-                        findVideoView(heroView.rootView, r)?.let { v ->
-                            withTimeoutOrNull(80) { captureVideoFrame(v, v.width, v.height) }?.asImageBitmap()
-                        }
-                    }
-                }
+                if (listenP.value < 0.01f && !openedListening[0]) listenShot = capturePicture()
                 openedListening[0] = false
                 listenP.animateTo(1f, listenIn)
                 listenShot = null
             } else {
                 openedListening[0] = false
                 listenShot = null
+                // Still listening, only gone fullscreen or immersive (the lyrics move into the
+                // player there): the page steps aside at once, nothing flies home.
+                if (ctrl?.audioOnly == true) {
+                    listenP.snapTo(0f)
+                    return@LaunchedEffect
+                }
                 // 显示画面: the cover flies home once the picture under the page has drawn its
                 // first frame (the video track picks up at the playhead), so it lands on the
                 // video, not on the loading cover; a slow line lets it go after a moment.
-                if (listenP.value > 0.99f && ctrl?.audioOnly == false) {
+                if (listenP.value > 0.99f && ctrl != null) {
                     withTimeoutOrNull(ShowVideoWaitMs) { snapshotFlow { ctrl.firstFrameRendered }.first { it } }
                 }
                 listenP.animateTo(0f, listenOut)
@@ -422,35 +429,53 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         }
         // The pinch drives the same flight by hand: the picture shrinks toward the cover with the
         // fingers; a release past the line goes on in (the spring takes it from there), short of
-        // it the picture springs back home.
+        // it the picture springs back home. Spreading two fingers on the cover runs it back out.
         val pinchScope = androidx.compose.runtime.rememberCoroutineScope()
+        val pinchDriver = remember(listenP) { PinchDriver(pinchScope, listenP) }
         val latestCanPinch by rememberUpdatedState(ctrl != null && !listening && !vm.fullscreen && !showImmersive)
+        val latestListening by rememberUpdatedState(listening)
         pinchToListen.target = remember(listenP) {
             object : PicturePinchIn {
+                var capture: Job? = null
+
                 override fun start(): Boolean {
                     if (!latestCanPinch || listenP.isRunning) return false
-                    pinchScope.launch {
-                        listenShot = handoff.classicRect?.let { r ->
-                            findVideoView(heroView.rootView, r)?.let { v ->
-                                withTimeoutOrNull(80) { captureVideoFrame(v, v.width, v.height) }?.asImageBitmap()
-                            }
-                        }
-                    }
+                    capture = pinchScope.launch { listenShot = capturePicture() }
+                    pinchDriver.begin()
                     return true
                 }
 
-                override fun update(progress: Float) {
-                    pinchScope.launch { listenP.snapTo(progress) }
-                }
+                override fun update(progress: Float) = pinchDriver.drive(progress)
 
                 override fun end(commit: Boolean) {
                     if (commit && latestCanPinch) {
-                        ctrl?.toggleAudioOnly()
+                        pinchDriver.finish { ctrl?.listenOnly(true) }
                     } else {
-                        pinchScope.launch {
+                        // A frame still on its way must not land after the picture is home.
+                        capture?.cancel()
+                        pinchDriver.finish {
                             listenP.animateTo(0f, listenOut)
                             listenShot = null
                         }
+                    }
+                }
+            }
+        }
+        flight.pinchOut = remember(listenP) {
+            object : PicturePinchIn {
+                override fun start(): Boolean {
+                    if (!latestListening || listenP.isRunning) return false
+                    pinchDriver.begin()
+                    return true
+                }
+
+                override fun update(progress: Float) = pinchDriver.drive(1f - progress)
+
+                override fun end(commit: Boolean) {
+                    if (commit && latestListening) {
+                        pinchDriver.finish { ctrl?.listenOnly(false) }
+                    } else {
+                        pinchDriver.finish { listenP.animateTo(1f, listenIn) }
                     }
                 }
             }

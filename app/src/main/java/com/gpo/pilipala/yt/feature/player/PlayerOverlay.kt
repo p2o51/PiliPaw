@@ -3,6 +3,7 @@ package com.gpo.pilipala.yt.feature.player
 import com.gpo.pilipala.feature.player.*
 
 import androidx.activity.compose.PredictiveBackHandler
+import com.gpo.pilipala.feature.listen.pinchToListen
 import android.os.Build
 import androidx.activity.compose.LocalActivity
 import androidx.activity.ComponentActivity
@@ -400,6 +401,11 @@ fun PlayerOverlayHost() {
                         .clip(ContinuousRoundedCornerShape(videoCorner))
                         .background(Color.Black)
                         .onGloballyPositioned { pictureRect = it.boundsInWindow() }
+                        // Two fingers pinching the open picture in fly it into 仅听声音 (as B站's).
+                        .pinchToListen(
+                            enabled = { Player.expanded && progress.value > 0.99f && !Player.fullscreen && !Player.audioOnly },
+                            target = com.gpo.pilipala.yt.feature.listen.YtPinchToListen,
+                        )
                         .clickable(enabled = p < 0.5f) { Player.expanded = true }
                         .draggable(drag, Orientation.Vertical, onDragStarted = { dragging = true }, onDragStopped = { settle(it) })
                         // Open: a tap brings the controls, double tap skips, a hold speeds up.

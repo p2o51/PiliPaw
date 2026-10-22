@@ -56,6 +56,16 @@ import com.gpo.pilipala.yt.feature.player.YtLikes
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.SymbolPlayMode
 import com.gpo.yoin.symbols.YoinSymbols
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalView
+import com.gpo.pilipala.feature.listen.PicturePinchIn
+import com.gpo.pilipala.feature.listen.PinchDriver
+import com.gpo.pilipala.feature.listen.PinchToListenHost
+import com.gpo.pilipala.feature.player.captureVideoFrame
+import com.gpo.pilipala.feature.player.findVideoView
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -71,10 +81,76 @@ fun ListenScreen(overlay: () -> Float, from: () -> Rect?) {
     val listening = Player.audioOnly
     val own = remember { Animatable(if (listening) 1f else 0f) }
     val inSpec = YoinMotion.slowSpatialSpec<Float>(YoinMotionRole.Standard)
+    val latestFrom by rememberUpdatedState(from)
+    // The picture's last frame, so a flight into the cover starts from what was on screen.
+    var shot by remember { mutableStateOf<ImageBitmap?>(null) }
+    val view = LocalView.current
+    suspend fun capturePicture(): ImageBitmap? = latestFrom()?.let { r ->
+        findVideoView(view.rootView, r)?.let { v -> withTimeoutOrNull(80) { captureVideoFrame(v, v.width, v.height) }?.asImageBitmap() }
+    }
     LaunchedEffect(listening) {
-        // 显示画面: the cover flies home once the picture under the page has its first frame.
-        if (!listening && own.value > 0.99f) withTimeoutOrNull(ShowVideoWaitMs) { snapshotFlow { Player.pictureReady }.first { it } }
-        own.animateTo(if (listening) 1f else 0f, if (listening) inSpec else ShowVideoSpec)
+        if (listening) {
+            if (own.value < 0.01f) shot = capturePicture()
+            own.animateTo(1f, inSpec)
+            shot = null
+        } else {
+            shot = null
+            // 显示画面: the cover flies home once the picture under the page has its first frame.
+            if (own.value > 0.99f) withTimeoutOrNull(ShowVideoWaitMs) { snapshotFlow { Player.pictureReady }.first { it } }
+            own.animateTo(0f, ShowVideoSpec)
+        }
+    }
+    // Two fingers drive the same flight by hand: pinched in on the picture they fly it into the
+    // cover (仅听声音), spread on the cover they fly it back (显示画面); a release short of the
+    // line springs back.
+    val scope = rememberCoroutineScope()
+    val driver = remember { PinchDriver(scope, own) }
+    val latestListening by rememberUpdatedState(listening)
+    val pinchIn = remember {
+        object : PicturePinchIn {
+            var capture: Job? = null
+
+            override fun start(): Boolean {
+                if (latestListening || own.isRunning || !Player.expanded || Player.fullscreen) return false
+                capture = scope.launch { shot = capturePicture() }
+                driver.begin()
+                return true
+            }
+
+            override fun update(progress: Float) = driver.drive(progress)
+
+            override fun end(commit: Boolean) {
+                if (commit && !latestListening) {
+                    driver.finish { Player.changeAudioOnly(true) }
+                } else {
+                    // A frame still on its way must not land after the picture is home.
+                    capture?.cancel()
+                    driver.finish {
+                        own.animateTo(0f, ShowVideoSpec)
+                        shot = null
+                    }
+                }
+            }
+        }
+    }
+    DisposableEffect(pinchIn) {
+        YtPinchToListen.target = pinchIn
+        onDispose { if (YtPinchToListen.target === pinchIn) YtPinchToListen.target = null }
+    }
+    val pinchOut = remember {
+        object : PicturePinchIn {
+            override fun start(): Boolean {
+                if (!latestListening || own.isRunning) return false
+                driver.begin()
+                return true
+            }
+
+            override fun update(progress: Float) = driver.drive(1f - progress)
+
+            override fun end(commit: Boolean) {
+                if (commit && latestListening) driver.finish { Player.changeAudioOnly(false) } else driver.finish { own.animateTo(1f, inSpec) }
+            }
+        }
     }
     val latestOverlay by rememberUpdatedState(overlay)
     // The fold runs the whole way down, so the cover visibly flies into the bar's tile and the bar
@@ -90,10 +166,13 @@ fun ListenScreen(overlay: () -> Float, from: () -> Rect?) {
     val lines = remember(picked, cues) { (picked ?: cues).map { SubtitleLine(it.startMs, it.endMs, it.text) } }
     val source = remember(session.url) { YtListenSource(session.url, key) }
     source.lines = lines
-    val latestFrom by rememberUpdatedState(from)
-    val flight = remember { ListenFlight(progress, { latestFrom() }) }
+    val flight = remember { ListenFlight(progress, { latestFrom() }, { shot }) }
+    flight.pinchOut = pinchOut
     ListenPage(source, flight)
 }
+
+/** The YouTube picture's pinch into 仅听声音 (PlayerOverlay), filled in by [ListenScreen]. */
+internal val YtPinchToListen = PinchToListenHost()
 
 /** 显示画面: the cover back into the picture, a little quicker than the way in (as B站's). */
 private val ShowVideoSpec = spring<Float>(dampingRatio = 0.9f, stiffness = 170f)

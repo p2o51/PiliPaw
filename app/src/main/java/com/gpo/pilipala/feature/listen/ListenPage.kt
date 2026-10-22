@@ -179,6 +179,9 @@ internal class ListenFlight(
     /** The cover as last drawn (the back's hero flies it home). */
     var coverLayer: GraphicsLayer? = null
 
+    /** Two fingers spread on the cover: back to the picture (null: not offered). */
+    var pinchOut: PicturePinchIn? = null
+
     val flying: Boolean get() = abs(progress() - 1f) > 0.002f
 }
 
@@ -407,6 +410,8 @@ private fun ListenCover(cover: String, modifier: Modifier) {
             .aspectRatio(16f / 9f)
             // Where the flying cover lands; hidden while it flies (FlyingCover draws it then).
             .onGloballyPositioned { c -> flight?.coverRect = c.boundsInWindow() }
+            // Spread two fingers on it: the cover flies back into the picture with them.
+            .pinchOutToVideo(flight?.pinchOut)
             .graphicsLayer { alpha = if (flight?.flying == true) 0f else 1f }
             .shadow(24.dp, RoundedCornerShape(28.dp), clip = false)
             .clip(RoundedCornerShape(28.dp))
