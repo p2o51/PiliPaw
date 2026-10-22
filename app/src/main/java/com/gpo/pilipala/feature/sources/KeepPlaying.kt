@@ -384,7 +384,6 @@ private val CircleSize = 48.dp
 private val BlockGap = 3.dp
 private val NavGap = 8.dp
 private val SideMargin = 16.dp
-private val BarMaxWidth = 480.dp
 private val InnerCorner = 6.dp
 private val WindowCorner = 16.dp
 private val ProgressStroke = 3.dp
@@ -404,15 +403,14 @@ internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, densit
     val barH = (if (tablet) BarHeightTablet else BarHeightPhone).toPx()
     val navGap = NavGap.toPx()
     val side = SideMargin.toPx()
-    val maxBar = BarMaxWidth.toPx()
+    // It hugs its blocks: three square keys (as wide as the bar is tall), the 16:9 picture, 3dp gaps.
+    val bw = minOf(miniBarWidth(barH, BlockGap.toPx()), w - side * 2f)
     when {
-        nav != null && tablet && nav.left - navGap - side >= 280.dp.toPx() -> {
-            val bw = minOf(maxBar, nav.left - navGap - side)
+        nav != null && tablet && nav.left - navGap - side >= bw -> {
             val top = nav.center.y - barH / 2f
             Rect(nav.left - navGap - bw, top, nav.left - navGap, top + barH)
         }
         else -> {
-            val bw = minOf(maxBar, w - side * 2f)
             val left = (w - bw) / 2f
             val bottom = nav?.top?.minus(navGap) ?: (h - side)
             Rect(left, bottom - barH, left + bw, bottom)
@@ -613,7 +611,6 @@ fun MiniBarHost() {
         val barH = with(density) { (if (tablet) BarHeightTablet else BarHeightPhone).toPx() }
         val navGap = with(density) { NavGap.toPx() }
         val side = with(density) { SideMargin.toPx() }
-        val maxBar = with(density) { BarMaxWidth.toPx() }
         val dims = with(density) { MiniDims(circle = CircleSize.toPx(), row = barH * 16f / 9f, detachExtra = 40.dp.toPx()) }
         // Landing from the video page's swipe down: the shell's nav bar may not be back yet.
         val nav = NavSpot.bounds ?: NavSpot.last?.takeIf { KeepPlaying.arriving }

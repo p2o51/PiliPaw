@@ -378,3 +378,6 @@ internal object MiniTouch {
     fun span(): Float = Offset(xs[0] - xs[1], ys[0] - ys[1]).getDistance()
     fun centroid(): Offset = Offset((xs[0] + xs[1]) / 2f, (ys[0] + ys[1]) / 2f)
 }
+
+/** The bar's width for its height [barH]: −15, pause and +15 square, the picture 16:9, [gap] between. */
+internal fun miniBarWidth(barH: Float, gap: Float): Float = barH * 3f + barH * 16f / 9f + gap * 3f
