@@ -123,6 +123,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import com.gpo.pilipala.ui.components.ExpressivePageBackground
 import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
+import com.gpo.pilipala.ui.theme.BackMotionTokens
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
@@ -201,14 +202,31 @@ fun PlayerOverlayHost() {
 
     // A throw that flips open / closed hands its speed to the spring below (progress units / s).
     val throwVelocity = remember { floatArrayOf(0f) }
+    // Back as B站's video page does it (navigation/transition/PageBack.kt): the gesture shrinks
+    // the open player to 0.9 with 28dp corners, following the finger; on commit (or 收起) the
+    // details are gone in the first tenth of the ride and the picture alone flies into the bar.
+    val back = remember { Animatable(0f) }
+    var backLeftEdge by remember { mutableStateOf(true) }
+    var backDy by remember { mutableFloatStateOf(0f) }
+    var fading by remember { mutableStateOf(false) }
+    val collapse: () -> Unit = {
+        fading = true
+        Player.expanded = false
+    }
     LaunchedEffect(expanded) {
+        if (expanded) fading = false
         if (!expanded) Player.fullscreen = false
         com.gpo.pilipala.feature.sources.MiniLog.event(if (expanded) "YouTube opens" else "YouTube collapses", "")
         val v = throwVelocity[0]
         throwVelocity[0] = 0f
+        if (!expanded && back.value > 0f) launch { back.animateTo(0f, spatial) }
         progress.animateTo(if (expanded) 1f else 0f, spatial, initialVelocity = v)
         // Landed back on the bar or window: where it opened from is spent.
-        if (!expanded) com.gpo.pilipala.feature.sources.KeepPlaying.openFrom = null
+        if (!expanded) {
+            com.gpo.pilipala.feature.sources.KeepPlaying.openFrom = null
+            fading = false
+            backDy = 0f
+        }
     }
     // The mini bar takes the picture only once this has landed on its tile (one surface at a time).
     LaunchedEffect(progress) {
@@ -220,14 +238,30 @@ fun PlayerOverlayHost() {
     // page's own back.
     val open by remember { derivedStateOf { progress.value > 0.001f } }
     PredictiveBackHandler(enabled = expanded || open) { events ->
+        // Open all the way: the page's back (shrink, then the picture flies home). Left part-way
+        // by a drag: the drag's own way, the progress previewing the collapse.
+        val asPage = progress.value > 0.99f
         val from = progress.value
+        var startY = Float.NaN
         try {
-            events.collect { e -> progress.snapTo(from - BackPreview * e.progress) }
+            events.collect { e ->
+                if (asPage) {
+                    if (startY.isNaN()) {
+                        startY = e.touchY
+                        backLeftEdge = e.swipeEdge == androidx.activity.BackEventCompat.EDGE_LEFT
+                    }
+                    backDy = e.touchY - startY
+                    back.snapTo(YoinMotion.backGestureEasing.transform(e.progress))
+                } else {
+                    progress.snapTo(from - BackPreview * e.progress)
+                }
+            }
             // Commit (also the 3-button / no-gesture path: an empty flow lands here at once).
-            if (Player.expanded) Player.expanded = false
+            if (Player.expanded) collapse()
             else scope.launch { progress.animateTo(0f, spatial) }
         } catch (e: CancellationException) {
-            scope.launch { progress.animateTo(from, spatial) }
+            scope.launch { back.animateTo(0f, YoinMotion.predictiveBackSettleSpring()) }
+            if (!asPage) scope.launch { progress.animateTo(from, spatial) }
             throw e
         }
     }
@@ -366,16 +400,30 @@ fun PlayerOverlayHost() {
             }
 
             val scheme = MaterialTheme.colorScheme
+            // Leaving by back or 收起: everything but the picture is gone in the first tenth.
+            val pageAlpha = if (fading) (1f - 10f * (1f - p)).coerceAtLeast(0f) else 1f
+            val b = back.value
+            val pageCorner = if (b > 0f) maxOf(corner, BackMotionTokens.PopPageCornerRadius * b) else corner
             Box(
                 Modifier
                     .offset { IntOffset(containerX.roundToPx(), containerY.roundToPx()) }
                     .size(containerW, containerH)
-                    .clip(ContinuousRoundedCornerShape(corner))
-                    .background(lerp(scheme.surfaceContainerHigh, scheme.surface, p)),
+                    .graphicsLayer {
+                        if (b <= 0f) return@graphicsLayer
+                        val scale = 1f - (1f - BackMotionTokens.PopPageScaleTarget) * b
+                        val margin = BackMotionTokens.DisplayBoundsMargin.toPx()
+                        scaleX = scale
+                        scaleY = scale
+                        // LEFT-edge swipes park the page's right edge 8dp from the screen edge.
+                        translationX = if (backLeftEdge) (size.width * (1f - BackMotionTokens.PopPageScaleTarget) / 2f - margin) * b else 0f
+                        translationY = com.gpo.pilipala.navigation.transition.verticalFollow(backDy, size.height, scale, margin) * b
+                    }
+                    .clip(ContinuousRoundedCornerShape(pageCorner))
+                    .background(lerp(scheme.surfaceContainerHigh, scheme.surface, p).copy(alpha = pageAlpha)),
             ) {
                 // Full content first (under the picture in z-order).
                 if (p > 0.01f) {
-                    val alpha = ((p - 0.5f) / 0.5f).coerceIn(0f, 1f)
+                    val alpha = minOf(((p - 0.5f) / 0.5f).coerceIn(0f, 1f), pageAlpha)
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -393,7 +441,7 @@ fun PlayerOverlayHost() {
                             leftWidth = leftW,
                             statusTop = statusTop,
                             navBottom = navBottom,
-                            onCollapse = { Player.expanded = false },
+                            onCollapse = collapse,
                         )
                     }
                 }
@@ -439,7 +487,7 @@ fun PlayerOverlayHost() {
                     }
                     if (expanded && p > 0.99f && !Player.fullscreen && !Player.audioOnly && session.error == null) {
                         androidx.compose.runtime.CompositionLocalProvider(com.gpo.pilipala.feature.sources.LocalBackHasMore provides ytTrailOn) {
-                            YtPictureChrome(chrome, seek, reveal, onCollapse = { if (ytTrailOn && !trailMenu.isOpen) trailMenu.open() else Player.expanded = false })
+                            YtPictureChrome(chrome, seek, reveal, onCollapse = { if (ytTrailOn && !trailMenu.isOpen) trailMenu.open() else collapse() })
                         }
                     }
                 }
@@ -466,7 +514,7 @@ fun PlayerOverlayHost() {
             },
             onHome = {
                 trailMenu.dismiss()
-                Player.expanded = false
+                collapse()
             },
         )
         // Over everything, the overlay included: it takes the video surface while it is up.

@@ -170,7 +170,7 @@ internal fun Modifier.voteHighFrameRate(active: Boolean): Modifier =
  * AOSP getYOffset: decelerated ratio of the raw finger travel (capped at half
  * the page), scaled to the slack the shrunken page has before the 8dp margin.
  */
-private fun verticalFollow(rawDy: Float, height: Float, scale: Float, marginPx: Float): Float {
+internal fun verticalFollow(rawDy: Float, height: Float, scale: Float, marginPx: Float): Float {
     if (rawDy == 0f || height <= 0f) return 0f
     val halfH = height / 2f
     val ratio = min(halfH, abs(rawDy)) / halfH
