@@ -317,6 +317,7 @@ fun MiniBarHost() {
     // Playing is rebuilt with every tick of progress; gestures read the latest one instead of
     // restarting (a restart cut every pinch and swipe short).
     val latest by androidx.compose.runtime.rememberUpdatedState(p)
+    val latestLevel by androidx.compose.runtime.rememberUpdatedState(level)
 
     BoxWithConstraints(Modifier.fillMaxSize().navigationBarsPadding()) {
         val w = with(density) { maxWidth.toPx() }
@@ -386,7 +387,7 @@ fun MiniBarHost() {
             awaitEachGesture {
                 awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
                 var startSpan = 0f
-                var startLevel = level
+                var startLevel = latestLevel
                 do {
                     val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
                     val down = event.changes.filter { it.pressed }
@@ -394,7 +395,7 @@ fun MiniBarHost() {
                         val span = (down[0].position - down[1].position).getDistance().coerceAtLeast(minSpan)
                         if (startSpan == 0f) {
                             startSpan = span
-                            startLevel = level
+                            startLevel = latestLevel
                         }
                         pinch = (startLevel + (span / startSpan - 1f)).coerceIn(-0.2f, 2.6f)
                         if ((pinch ?: 0f) > 1f && KeepPlaying.windowCenter.isSpecified) {
@@ -463,6 +464,9 @@ fun MiniBarHost() {
     }
 }
 
+/** What the window's drag reads at any moment. */
+private data class WindowLive(val cx: Float, val cy: Float, val width: Float, val height: Float, val dockY: Float, val areaW: Float, val areaH: Float)
+
 /**
  * The floating window: the picture alone, as wide as the pinch made it (16:9). Drag it anywhere;
  * let it go near the bar's place and it docks back into the bar. A tap plays or pauses.
@@ -490,9 +494,12 @@ private fun FloatingWindow(
     }
     // Kept on screen whatever the size.
     val c = KeepPlaying.windowCenter
-    val cx = c.x.coerceIn(width / 2f, (areaW - width / 2f).coerceAtLeast(width / 2f))
+    val cx = c.x.coerceIn(-width / 2f, areaW + width / 2f)
     val cy = c.y.coerceIn(height / 2f, (areaH - height / 2f).coerceAtLeast(height / 2f))
     val dockY = barRect.top - with(density) { 24.dp.toPx() }
+    // The drag reads these live: a gesture outlives the composition it started in.
+    val live by androidx.compose.runtime.rememberUpdatedState(WindowLive(cx, cy, width, height, dockY, areaW, areaH))
+    val latestP by androidx.compose.runtime.rememberUpdatedState(p)
     Box(
         Modifier
             .offset { IntOffset((cx - width / 2f).roundToInt(), (cy - height / 2f).roundToInt()) }
@@ -504,16 +511,31 @@ private fun FloatingWindow(
             .then(pinchInput)
             .pointerInput(Unit) {
                 detectDragGestures(
+                    // Start from where it is drawn (the kept centre may lie outside the screen's bounds).
+                    onDragStart = { KeepPlaying.windowCenter = Offset(live.cx, live.cy) },
                     onDragEnd = {
-                        // Dropped over the bar's place: back into the bar.
-                        if (KeepPlaying.windowCenter.y + height / 2f > dockY + height * 0.5f) {
-                            KeepPlaying.level = 1f
-                            KeepPlaying.windowCenter = Offset.Unspecified
+                        val l = live
+                        val c = KeepPlaying.windowCenter
+                        when {
+                            // Pushed half off the screen sideways: closed.
+                            c.x < 0f || c.x > l.areaW -> {
+                                KeepPlaying.resetDock()
+                                latestP.close()
+                            }
+                            // Dropped over the bar's place: back into the bar.
+                            c.y + l.height / 2f > l.dockY + l.height * 0.5f -> {
+                                KeepPlaying.level = 1f
+                                KeepPlaying.windowCenter = Offset.Unspecified
+                            }
+                            // Anywhere else: kept on screen.
+                            else -> KeepPlaying.windowCenter = Offset(l.cx, l.cy)
                         }
                     },
                 ) { change, drag ->
                     change.consume()
-                    KeepPlaying.windowCenter = Offset(cx, cy) + drag
+                    // Free sideways (off the edge closes it), kept on screen up and down.
+                    val c = KeepPlaying.windowCenter + drag
+                    KeepPlaying.windowCenter = Offset(c.x, c.y.coerceIn(0f, live.areaH))
                 }
             }
             .clickable(onClick = p.toggle),

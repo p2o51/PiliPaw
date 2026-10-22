@@ -90,7 +90,11 @@ internal object PlayerHost {
         return true
     }
 
-    fun released(slot: PlayerSlot) = machine.released(slot)
+    fun released(slot: PlayerSlot) {
+        // The bar's video went: nothing of its window (size, place) outlives it.
+        if (machine.docked == slot) KeepPlaying.resetDock()
+        machine.released(slot)
+    }
 
     private fun apply(actions: List<HostAction>) {
         for (a in actions) when (a) {
