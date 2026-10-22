@@ -10,7 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MiniGeoTest {
-    private val d = MiniDims(circle = 48f, row = 100f, detachExtra = 40f, openPast = 36f)
+    private val d = MiniDims(circle = 48f, row = 100f, detachExtra = 40f)
     private val bar = Rect(16f, 700f, 376f, 756f)
     private val nav = Rect(16f, 764f, 376f, 832f)
     private val circle = Rect(26f, 774f, 74f, 822f)

@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MiniAxisTest {
-    private val d = MiniDims(circle = 48f, row = 100f, detachExtra = 40f, openPast = 36f)
+    private val d = MiniDims(circle = 48f, row = 100f, detachExtra = 40f)
     private val max = 360f
 
     private fun rest(raw: Float, v: Float = 0f, canMerge: Boolean = true) = MiniAxis.release(raw, v, d, max, canMerge)
@@ -32,8 +32,9 @@ class MiniAxisTest {
         assertEquals(MiniRelease.Rest(MiniRest.Window(max)), rest(max + 20f))
     }
 
-    @Test fun farPastTheLargestOpensTheVideo() {
-        assertEquals(MiniRelease.Open, rest(max + 37f))
+    @Test fun farPastTheLargestNeverOpensTheVideo() {
+        assertEquals(MiniRelease.Rest(MiniRest.Window(max)), rest(max + 37f))
+        assertEquals(MiniRelease.Rest(MiniRest.Window(max)), rest(max * 3f, v = 5000f))
     }
 
     @Test fun pastHalfwayDownMerges() {

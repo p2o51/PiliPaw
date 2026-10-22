@@ -37,10 +37,9 @@ internal sealed interface MiniRest {
     data class Window(val axisDp: Float) : MiniRest
 }
 
-/** What a released pinch does. */
+/** What a released pinch does: where the bar comes to rest (a pinch never opens the video). */
 internal sealed interface MiniRelease {
     data class Rest(val rest: MiniRest) : MiniRelease
-    data object Open : MiniRelease
 }
 
 /**
@@ -51,8 +50,6 @@ internal data class MiniDims(
     val circle: Float,
     val row: Float,
     val detachExtra: Float,
-    /** Spread past the largest window by this much and the video opens. */
-    val openPast: Float,
 ) {
     val detach: Float get() = row + detachExtra
 }
@@ -85,10 +82,10 @@ internal object MiniAxis {
      * Where a pinch released at [raw] (the fingers' size, before rubber banding) moving at
      * [velocity] (per second) lands. Above the bar: a window once ~70% of the way to the detach
      * point, else back to the bar; below it: the circle past halfway (when there is a nav bar
-     * to merge into), else the bar. Past the largest window by [MiniDims.openPast]: the video.
+     * to merge into), else the bar. Past the largest window: back to the largest (never the video).
      */
     fun release(raw: Float, velocity: Float, d: MiniDims, max: Float, canMerge: Boolean): MiniRelease {
-        if (raw > max + d.openPast) return MiniRelease.Open
+        // Past the largest window it only rubber-bands; a pinch never opens the video (a tap does).
         // A quick flick counts a little further along its way.
         val at = raw + velocity * 0.08f
         val extra = at - d.row

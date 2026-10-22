@@ -174,7 +174,7 @@ object KeepPlaying {
         val bar = miniBarRect(if (shell) NavSpot.bounds ?: NavSpot.last else null, w, h, tablet, density)
         val barH = bar.height
         val gap = with(density) { BlockGap.toPx() }
-        return miniGeo(barH * 16f / 9f, MiniDims(1f, barH * 16f / 9f, 1f, 1f), bar, null, 16f / 9f, Offset.Unspecified, Rect(0f, 0f, w, h), null, MiniPx(gap, 0f, 0f, 0f, 0f)).tile
+        return miniGeo(barH * 16f / 9f, MiniDims(1f, barH * 16f / 9f, 1f), bar, null, 16f / 9f, Offset.Unspecified, Rect(0f, 0f, w, h), null, MiniPx(gap, 0f, 0f, 0f, 0f)).tile
     }
 
     /** A video opened, or the docked one went: the next dock starts again as the plain bar. */
@@ -439,7 +439,7 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
     /** That flight's last frame, shown in the tile until the video itself is up. */
     var arrived by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
 
-    var dims by mutableStateOf(MiniDims(1f, 2f, 1f, 1f))
+    var dims by mutableStateOf(MiniDims(1f, 2f, 1f))
     var circle by mutableStateOf<Rect?>(null)
     var nav by mutableStateOf<Rect?>(null)
     var aspect by mutableFloatStateOf(16f / 9f)
@@ -504,7 +504,7 @@ private fun rememberVideoAspect(player: androidx.media3.common.Player?): Float {
  * on a tablet. Scrolling down pours the picture into a 48dp circle at the nav bar's start, with a
  * progress ring; scrolling up brings it out again. Two fingers run one size axis: circle ← bar →
  * a floating window of the video's own shape (drag it, fling it, drop it on the nav bar to dock)
- * → the video page. Tapping the picture opens the video.
+ * (rubber-banding past its largest size). Tapping the picture is what opens the video.
  */
 @OptIn(FlowPreview::class)
 @Composable
@@ -569,7 +569,7 @@ fun MiniBarHost() {
         val navGap = with(density) { NavGap.toPx() }
         val side = with(density) { SideMargin.toPx() }
         val maxBar = with(density) { BarMaxWidth.toPx() }
-        val dims = with(density) { MiniDims(circle = CircleSize.toPx(), row = barH * 16f / 9f, detachExtra = 40.dp.toPx(), openPast = 36.dp.toPx()) }
+        val dims = with(density) { MiniDims(circle = CircleSize.toPx(), row = barH * 16f / 9f, detachExtra = 40.dp.toPx()) }
         // Landing from the video page's swipe down: the shell's nav bar may not be back yet.
         val nav = NavSpot.bounds ?: NavSpot.last?.takeIf { KeepPlaying.arriving }
         val barTarget = miniBarRect(nav, w, h, tablet, density)
@@ -903,12 +903,6 @@ private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v:
     val target: Float
     var window = false
     when (val r = MiniAxis.release(raw, v, d, frame.maxAxis, frame.canMerge)) {
-        MiniRelease.Open -> {
-            if (latest().source == VideoSource.YouTube) KeepPlaying.openFrom = frame.geo.tile
-            latest().open()
-            KeepPlaying.rest = MiniRest.Row
-            target = d.row
-        }
         is MiniRelease.Rest -> {
             val rest = r.rest
             if (rest is MiniRest.Window) {
