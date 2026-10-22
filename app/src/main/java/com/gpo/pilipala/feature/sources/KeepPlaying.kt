@@ -163,10 +163,19 @@ object KeepPlaying {
     /** A flight landed on the bar's tile, carrying [frame] (null: the picture itself comes on). */
     internal class Arrival(val frame: androidx.compose.ui.graphics.ImageBitmap?)
 
-    internal fun arrive(frame: androidx.compose.ui.graphics.ImageBitmap?) {
+    internal fun arrive(frame: androidx.compose.ui.graphics.ImageBitmap?, shell: Boolean = false) {
         arrival = Arrival(frame)
         arrivalAt = android.os.SystemClock.uptimeMillis()
+        // Landing over the shell: hold the bar where the nav bar was until the shell reports it
+        // again (or the bar would drop to the bottom for a frame and spring back up: a second move).
+        if (shell) navHoldUntil = arrivalAt + 1_500
+        MiniLog.event("arrive", if (frame != null) "frame" else "in place")
     }
+
+    private var navHoldUntil = 0L
+
+    /** Where the nav bar is, or was a moment ago while a flight lands over the shell. */
+    internal fun navForBar(): Rect? = NavSpot.bounds ?: NavSpot.last?.takeIf { android.os.SystemClock.uptimeMillis() < navHoldUntil }
 
     /** The bar appearing now takes over from a flight that just landed (good for a moment only). */
     internal fun takeArrival(): Arrival? {
@@ -574,7 +583,8 @@ fun MiniBarHost() {
     // Coming and going fade; a picture that just flew in from its page is simply there (the
     // flight left it in the tile), and only the side blocks grow in around it.
     val shownA = remember { Animatable(0f) }
-    val sidesIn = remember { Animatable(1f) }
+    // Hidden until the bar shows: an arriving bar grows them in once, never shows them first.
+    val sidesIn = remember { Animatable(0f) }
     var arrived by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     val up = playing != null
     val fadeSpec = YoinMotion.defaultEffectsSpec<Float>()
@@ -583,14 +593,20 @@ fun MiniBarHost() {
             val arrival = KeepPlaying.takeArrival()
             KeepPlaying.landing = null
             if (arrival != null && shownA.value < 0.01f) {
+                MiniLog.event("bar takes over", "arrival")
                 arrived = arrival.frame
                 shownA.snapTo(1f)
-                sidesIn.snapTo(0f)
                 sidesIn.animateTo(1f, MiniSprings.def())
                 return@LaunchedEffect
             }
+            MiniLog.event("bar fades in", "")
+            sidesIn.snapTo(1f)
+            shownA.animateTo(1f, fadeSpec)
+        } else {
+            MiniLog.event("bar fades out", "")
+            shownA.animateTo(0f, fadeSpec)
+            sidesIn.snapTo(0f)
         }
-        shownA.animateTo(if (up) 1f else 0f, fadeSpec)
     }
     val shown = if (up && KeepPlaying.arriving) 1f else shownA.value
     var last by remember { mutableStateOf<Playing?>(null) }
@@ -613,7 +629,7 @@ fun MiniBarHost() {
         val side = with(density) { SideMargin.toPx() }
         val dims = with(density) { MiniDims(circle = CircleSize.toPx(), row = barH * 16f / 9f, detachExtra = 40.dp.toPx()) }
         // Landing from the video page's swipe down: the shell's nav bar may not be back yet.
-        val nav = NavSpot.bounds ?: NavSpot.last?.takeIf { KeepPlaying.arriving }
+        val nav = KeepPlaying.navForBar()
         val barTarget = miniBarRect(nav, w, h, tablet, density)
         // The merged circle at the nav bar's start; kept after the nav bar goes so the picture
         // can fly back out of it.
@@ -993,6 +1009,7 @@ private fun snapWindow(frame: MiniFrame, scope: CoroutineScope, axis: Float, cor
     val (w, h) = MiniAxis.pictureSize(axis, frame.aspect)
     val area = frame.restArea
     val c = corner ?: MiniGestures.nearestCorner(from, w, h, area)
+    MiniLog.event("window to corner", "$c")
     KeepPlaying.windowCorner = c
     val to = MiniGestures.cornerCenter(c, w, h, area)
     KeepPlaying.windowCenter = from
@@ -1087,6 +1104,7 @@ private fun releaseMerge(frame: MiniFrame, scope: CoroutineScope, progress: Floa
     KeepPlaying.windowCenter = at
     val now = frame.pinchAxis ?: frame.axisNow
     if (MiniGestures.mergeCompletes(progress, vy, 500f * density)) {
+        MiniLog.event("window merges into bar", "")
         KeepPlaying.windowCorner = null
         KeepPlaying.rest = MiniRest.Row
         frame.haptic(dock = true)
@@ -1349,4 +1367,19 @@ private fun KeepAskDialog() {
         confirmButton = { TextButton(onClick = { KeepPlaying.choose(keep = true) }) { Text("继续播放") } },
         dismissButton = { TextButton(onClick = { KeepPlaying.choose(keep = false) }) { Text("停止播放") } },
     )
+}
+
+/**
+ * Debug builds only: every mini bar / window transition's start, with a running id and its
+ * caller, in logcat (tag PiliMini), so a double start shows up as two lines.
+ */
+internal object MiniLog {
+    private var id = 0
+
+    fun event(what: String, detail: String) {
+        if (!com.gpo.pilipala.BuildConfig.DEBUG) return
+        id++
+        val caller = Throwable().stackTrace.getOrNull(2)?.let { "${it.fileName}:${it.lineNumber}" }.orEmpty()
+        android.util.Log.d("PiliMini", "#$id $what $detail ($caller)")
+    }
 }

@@ -103,12 +103,17 @@ internal object PlayerHost {
     /** The player on a page (or YouTube's, open) right now. */
     val front: PlayerSlot? get() = machine.front
 
-    fun opened(slot: PlayerSlot) = apply(machine.opened(slot))
+    fun opened(slot: PlayerSlot) {
+        MiniLog.event("opened", slot.label())
+        apply(machine.opened(slot))
+    }
 
     fun started(slot: PlayerSlot) = apply(machine.started(slot))
 
     fun dock(slot: PlayerSlot): Boolean {
-        val actions = machine.dock(slot) ?: return false
+        val actions = machine.dock(slot)
+        MiniLog.event(if (actions == null) "dock refused" else "dock", slot.label())
+        if (actions == null) return false
         apply(actions)
         return true
     }
@@ -118,7 +123,13 @@ internal object PlayerHost {
 
     fun openingFromDock(form: Any) = machine.openingFromDock(form)
 
+    private fun PlayerSlot.label() = when (this) {
+        PlayerSlot.YouTube -> "YouTube"
+        is PlayerSlot.Bili -> "B站@" + Integer.toHexString(System.identityHashCode(player))
+    }
+
     fun released(slot: PlayerSlot) {
+        MiniLog.event("released", slot.label())
         // The bar's video went: nothing of its window (size, place) outlives it.
         if (machine.docked == slot) KeepPlaying.resetDock()
         machine.released(slot)

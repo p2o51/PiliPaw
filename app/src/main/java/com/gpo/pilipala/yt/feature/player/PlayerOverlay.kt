@@ -200,6 +200,7 @@ fun PlayerOverlayHost() {
 
     LaunchedEffect(expanded) {
         if (!expanded) Player.fullscreen = false
+        com.gpo.pilipala.feature.sources.MiniLog.event(if (expanded) "YouTube opens" else "YouTube collapses", "")
         progress.animateTo(if (expanded) 1f else 0f, spatial)
         // Landed back on the bar or window: where it opened from is spent.
         if (!expanded) com.gpo.pilipala.feature.sources.KeepPlaying.openFrom = null

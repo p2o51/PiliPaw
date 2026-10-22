@@ -584,6 +584,7 @@ class PageTransitions internal constructor(
             val shot = withTimeoutOrNull(HeroCaptureTimeoutMs) { runCatching { capture() }.getOrNull() } ?: return
             if (shot.second.isEmpty) return
             dock.landing(shot.first)
+            com.gpo.pilipala.feature.sources.MiniLog.event("hero flies to bar", top.toString())
             hero = HeroFlight(shot.first, shot.second, to)
             return
         }

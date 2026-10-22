@@ -43,6 +43,11 @@ internal fun rememberVideoSwipeDown(): PictureSwipeDown? {
     if (key != null) {
         androidx.compose.runtime.DisposableEffect(transitions, key) {
             val stack = nav.backStack
+            fun shellBeneath(): Boolean {
+                val i = stack.indexOfLast { it.toString() == key }
+                val beneath = stack.getOrNull(i - 1)
+                return beneath == com.gpo.pilipala.navigation.Route.Main || beneath == com.gpo.pilipala.yt.navigation.Route.Main
+            }
             val dock = HeroDock(
                 key = key,
                 enabled = {
@@ -50,14 +55,12 @@ internal fun rememberVideoSwipeDown(): PictureSwipeDown? {
                     c != null && BiliKeeper.wouldKeep(c)
                 },
                 target = {
-                    val i = stack.indexOfLast { it.toString() == key }
-                    val beneath = stack.getOrNull(i - 1)
-                    val shell = beneath == com.gpo.pilipala.navigation.Route.Main || beneath == com.gpo.pilipala.yt.navigation.Route.Main
+                    val shell = shellBeneath()
                     // Opened from the floating window (or circle): back to it, else the bar's tile.
                     val form = PlayerHost.front?.let(PlayerHost::remembered) as? com.gpo.pilipala.feature.sources.DockForm
                     form?.rect ?: metrics.let { m -> KeepPlaying.dockTile(shell, m.w, m.h, m.tablet, density) }
                 },
-                landing = { KeepPlaying.arrive(it) },
+                landing = { KeepPlaying.arrive(it, shellBeneath()) },
             )
             transitions.registerHeroDock(dock)
             onDispose { transitions.unregisterHeroDock(dock) }
