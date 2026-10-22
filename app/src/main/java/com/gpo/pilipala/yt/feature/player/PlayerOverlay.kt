@@ -185,6 +185,10 @@ fun PlayerOverlayHost() {
     val feedback = remember { GestureFeedback() }
     val haptics = LocalHapticFeedback.current
     val seek = rememberSeekState()
+    // The portrait controls (PiliPaw's look): a tap on the picture brings them, they fold away.
+    val chrome = remember(session.url) { YtChrome() }
+    YtChromeAutoHide(chrome, seek, session)
+    val reveal = rememberChromeReveal(chrome)
     var pictureRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     val frames = remember(session.info) { pickFrameset(session.info?.previewFrames.orEmpty(), PreviewMinWidthPx) }
 
@@ -355,6 +359,7 @@ fun PlayerOverlayHost() {
                         FullContent(
                             session = session,
                             seek = seek,
+                            chrome = chrome,
                             twoPane = twoPane,
                             topUnderVideo = fullVideoY + fullVideoH,
                             leftWidth = leftW,
@@ -390,14 +395,17 @@ fun PlayerOverlayHost() {
                         .onGloballyPositioned { pictureRect = it.boundsInWindow() }
                         .clickable(enabled = p < 0.5f) { Player.expanded = true }
                         .draggable(drag, Orientation.Vertical, onDragStarted = { dragging = true }, onDragStopped = { settle(it) })
-                        // Open: double tap skips, a hold speeds up (a tap does nothing, nothing to show).
-                        .then(if (expanded) Modifier.pictureGestures(feedback, haptics) {} else Modifier),
+                        // Open: a tap brings the controls, double tap skips, a hold speeds up.
+                        .then(if (expanded) Modifier.pictureGestures(feedback, haptics) { chrome.toggle() } else Modifier),
                 ) {
                     Picture(session)
                     if (!Player.fullscreen && !Player.audioOnly) SubtitleOverlay(big = false)
                     if (expanded) {
                         DoubleTapSeekLayer(feedback.skip, big = false)
                         HoldSpeedPill(feedback, big = false, modifier = Modifier.align(Alignment.Center))
+                    }
+                    if (expanded && p > 0.99f && !Player.fullscreen && !Player.audioOnly && session.error == null) {
+                        YtPictureChrome(chrome, seek, reveal, onCollapse = { Player.expanded = false })
                     }
                 }
                 // Over the picture: the scrub preview rides above the seek bar's thumb.
@@ -479,6 +487,7 @@ private fun MiniContent(session: Player.Session, modifier: Modifier) {
 private fun FullContent(
     session: Player.Session,
     seek: SeekState,
+    chrome: YtChrome,
     twoPane: Boolean,
     topUnderVideo: Dp,
     leftWidth: Dp,
@@ -502,7 +511,7 @@ private fun FullContent(
                     modifier = Modifier.width(leftWidth).fillMaxHeight().padding(top = topUnderVideo),
                     contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = navBottom + 24.dp),
                 ) {
-                    item(key = "controls") { Controls(seek, onCollapse, Modifier.padding(horizontal = 16.dp)) }
+                    item(key = "controls") { RevealedStrip(seek, chrome, hasNext = related.isNotEmpty(), Modifier.padding(horizontal = 8.dp)) }
                     ytIntroItems(session, info, related, onSeek, includeRelated = false)
                 }
                 // The side panel: 评论 / 相关 (PiliPaw's side pane).
@@ -531,7 +540,7 @@ private fun FullContent(
         } else {
             val tabs = rememberPagerState { 2 }
             Column(Modifier.fillMaxSize().padding(top = topUnderVideo)) {
-                Controls(seek, onCollapse, Modifier.padding(horizontal = 16.dp))
+                RevealedStrip(seek, chrome, hasNext = related.isNotEmpty())
                 YtDetailTabRow(listOf("简介", "评论"), tabs, Color.Transparent)
                 HorizontalPager(tabs, Modifier.weight(1f).fillMaxWidth(), key = { it }) { page ->
                     if (page == 0) {
@@ -551,30 +560,21 @@ private fun FullContent(
     }
 }
 
-/** Under the picture, in the page's colours: collapse, the seek bar, the times, fullscreen and play. */
+/**
+ * The control strip under the picture, sliding out (it takes real height, the page moves down)
+ * while the controls are up and folding away with them, as PiliPaw's inline strip does.
+ */
 @Composable
-private fun Controls(seek: SeekState, onCollapse: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth().padding(top = 8.dp)) {
-        PawSeekBar(seek, pageTrackInk(), modifier = Modifier.padding(horizontal = 4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onCollapse, shapes = IconButtonDefaults.shapes()) {
-                Icon(YoinSymbols.ChevronDown, "收起")
-            }
-            Spacer(Modifier.weight(1f))
-            TimeLabels(seek, MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
-            var sheet by remember { mutableStateOf(false) }
-            IconButton(onClick = { sheet = true }, shapes = IconButtonDefaults.shapes()) {
-                Icon(YoinSymbols.Settings, "播放设置")
-            }
-            if (sheet) PlaybackSheet(onDismiss = { sheet = false })
-            IconButton(onClick = { Player.fullscreen = true }, shapes = IconButtonDefaults.shapes()) {
-                Icon(PiliSymbols.Fullscreen, "全屏")
-            }
-            FilledTonalIconButton(onClick = Player::toggle, shapes = IconButtonDefaults.shapes()) {
-                Icon(if (Player.isPlaying) YoinSymbols.PauseFilled else YoinSymbols.PlayFilled, if (Player.isPlaying) "暂停" else "播放")
-            }
-        }
+private fun RevealedStrip(seek: SeekState, chrome: YtChrome, hasNext: Boolean, modifier: Modifier = Modifier) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = chrome.visible,
+        modifier = modifier,
+        enter = androidx.compose.animation.expandVertically(YoinMotion.defaultSpatialSpec()) +
+            androidx.compose.animation.fadeIn(YoinMotion.defaultEffectsSpec()),
+        exit = androidx.compose.animation.shrinkVertically(YoinMotion.defaultSpatialSpec()) +
+            androidx.compose.animation.fadeOut(YoinMotion.fastEffectsSpec()),
+    ) {
+        YtInlineStrip(seek, chrome, hasNext)
     }
 }
 

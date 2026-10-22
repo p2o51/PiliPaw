@@ -77,13 +77,13 @@ import kotlin.math.roundToInt
 internal class TrackInk(val rest: Color, val buffered: Color, val played: Color)
 
 /** On the black fullscreen frame: plain white at three strengths (a scrim colour). */
-internal val VideoTrackInk = TrackInk(Color.White.copy(alpha = 0.24f), Color.White.copy(alpha = 0.42f), Color.White)
+internal val VideoTrackInk = TrackInk(Color.White.copy(alpha = 0.18f), Color.White.copy(alpha = 0.35f), Color.White)
 
 /** Under the picture, on the page: the page's own colours. */
 @Composable
 internal fun pageTrackInk(): TrackInk {
     val scheme = MaterialTheme.colorScheme
-    return TrackInk(scheme.surfaceContainerHighest, scheme.onSurface.copy(alpha = 0.24f), scheme.primary)
+    return TrackInk(scheme.onSurface.copy(alpha = 0.1f), scheme.onSurface.copy(alpha = 0.2f), scheme.primary)
 }
 
 /**
@@ -117,7 +117,7 @@ internal fun PawSeekBar(seek: SeekState, ink: TrackInk, onPoke: () -> Unit = {},
     Box(
         modifier
             .fillMaxWidth()
-            .height(28.dp)
+            .height(24.dp)
             .onGloballyPositioned { seek.track = it.boundsInWindow() }
             .pointerInput(duration) {
                 awaitEachGesture {
@@ -162,7 +162,7 @@ internal fun PawSeekBar(seek: SeekState, ink: TrackInk, onPoke: () -> Unit = {},
         ) {
             val w = size.width
             val cy = size.height / 2f
-            val th = (4.dp + 4.dp * grow).toPx()
+            val th = (3.dp + 5.dp * grow).toPx()
             val top = cy - th / 2f
             fun bar(color: Color, from: Float, to: Float) {
                 val len = to - from
@@ -201,7 +201,7 @@ internal fun PawSeekBar(seek: SeekState, ink: TrackInk, onPoke: () -> Unit = {},
                 val x = w * played
                 val thumbW = 4.dp.toPx()
                 val g = grow.coerceAtMost(1f)
-                val thumbH = (th + 12.dp.toPx()) * g
+                val thumbH = (th + 10.dp.toPx()) * g
                 val side = 3.dp.toPx() * g
                 drawRect(Color.Black, Offset(x - thumbW / 2f - side, top - 1f), Size(thumbW + side * 2f, th + 2f), blendMode = BlendMode.Clear)
                 drawRoundRect(ink.played, Offset(x - thumbW / 2f, cy - thumbH / 2f), Size(thumbW, thumbH), CornerRadius(thumbW / 2f, thumbW / 2f))
@@ -225,7 +225,7 @@ internal fun SeekBubbleLayer(seek: SeekState, frames: Frameset?, big: Boolean, m
     val f = if (scrubbing) seek.scrub else last[0]
     val timeMs = (f * seek.duration).toLong()
     var origin by remember { mutableStateOf(Offset.Zero) }
-    val width: Dp = if (big) 200.dp else 160.dp
+    val width: Dp = if (big) 192.dp else 152.dp
     Layout(
         content = {
             AnimatedVisibility(
@@ -240,29 +240,30 @@ internal fun SeekBubbleLayer(seek: SeekState, frames: Frameset?, big: Boolean, m
                         StoryboardFrame(frames, timeMs, width)
                         Spacer(Modifier.height(6.dp))
                     }
+                    // One dark block with the chapter over the time (PiliPaw's bubble).
                     val chapter = Player.chapters.at(timeMs)
-                    if (chapter != null && chapter.title.isNotEmpty()) {
+                    Column(
+                        Modifier
+                            .background(Color.Black.copy(alpha = 0.62f), YoinShapeTokens.Large)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        if (chapter != null && chapter.title.isNotEmpty()) {
+                            Text(
+                                chapter.title,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White.copy(alpha = 0.8f),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = width),
+                            )
+                        }
                         Text(
-                            chapter.title,
-                            style = MaterialTheme.typography.labelMedium,
+                            Fmt.duration(timeMs / 1000).ifEmpty { "0:00" },
+                            style = (if (big) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelLarge).withTabularFigures(),
                             color = Color.White,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .widthIn(max = width)
-                                .background(Color.Black.copy(alpha = 0.62f), YoinShapeTokens.Full)
-                                .padding(horizontal = 10.dp, vertical = 2.dp),
                         )
-                        Spacer(Modifier.height(4.dp))
                     }
-                    Text(
-                        Fmt.duration(timeMs / 1000).ifEmpty { "0:00" },
-                        style = (if (big) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelLarge).withTabularFigures(),
-                        color = Color.White,
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.62f), YoinShapeTokens.Full)
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
-                    )
                 }
             }
         },
@@ -276,7 +277,7 @@ internal fun SeekBubbleLayer(seek: SeekState, frames: Frameset?, big: Boolean, m
                 val track = seek.track
                 val cx = track.left - origin.x + track.width * f
                 val x = (cx - p.width / 2f).roundToInt().coerceIn(0, (constraints.maxWidth - p.width).coerceAtLeast(0))
-                val y = (track.top - origin.y - 8.dp.toPx() - p.height).roundToInt().coerceAtLeast(0)
+                val y = (track.top - origin.y - 18.dp.toPx() - p.height).roundToInt().coerceAtLeast(0)
                 p.place(IntOffset(x, y))
             }
         }
