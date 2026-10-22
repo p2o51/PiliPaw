@@ -647,6 +647,10 @@ fun MiniBarHost() {
         }
         frame.dims = dims
         frame.view = androidx.compose.ui.platform.LocalView.current
+        // A bar swiped away waits out there; the next one to show comes back in the middle.
+        LaunchedEffect(frame, up) {
+            if (up && frame.swipeDrag == null && !frame.swipe.isRunning && frame.swipe.value != 0f) frame.swipe.snapTo(0f)
+        }
         frame.sidesIn = sidesIn
         arrived?.let {
             frame.arrived = it
@@ -1171,8 +1175,9 @@ private fun releaseSwipe(frame: MiniFrame, scope: CoroutineScope, vx: Float, den
         if (away) {
             val dir = if (x != 0f) sign(x) else sign(vx)
             frame.swipe.animateTo(dir * (width + 200f * density), MiniSprings.fast(), initialVelocity = vx)
+            // It stays out there, faded, while it closes; it comes back to the middle only when
+            // a bar shows again (snapping home here flashed it back in at full strength).
             latest().close()
-            frame.swipe.snapTo(0f)
         } else {
             frame.swipe.animateTo(0f, MiniSprings.def(), initialVelocity = vx)
         }
