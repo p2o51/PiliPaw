@@ -43,6 +43,34 @@ class MiniGesturesTest {
         assertEquals(MiniDragIntent.None, intent(12f, 0f, merged = true))
     }
 
+    @Test fun theKeysReachOutwardOnly() {
+        val play = Rect(108f, 168f, 140f, 200f)
+        val close = Rect(260f, 168f, 292f, 200f)
+        assertEquals(MiniKey.Close, MiniGestures.keyAt(Offset(276f, 184f), play, close, 8f))
+        // Just outside the window's edge: still the key.
+        assertEquals(MiniKey.Close, MiniGestures.keyAt(Offset(298f, 205f), play, close, 8f))
+        assertEquals(MiniKey.Play, MiniGestures.keyAt(Offset(102f, 205f), play, close, 8f))
+        // Just inside the picture past the key: not the key.
+        assertEquals(null, MiniGestures.keyAt(Offset(255f, 184f), play, close, 8f))
+        assertEquals(null, MiniGestures.keyAt(Offset(276f, 163f), play, close, 8f))
+    }
+
+    @Test fun aDragStartingOnCloseDoesNotClose() {
+        assertEquals(false, MiniGestures.keyFires(MiniGestureKind.Drag, MiniKey.Close, 1_000, settling = false))
+        assertEquals(false, MiniGestures.keyFires(MiniGestureKind.Pinch, MiniKey.Close, 1_000, settling = false))
+        assertEquals(false, MiniGestures.keyFires(MiniGestureKind.None, MiniKey.Close, 1_000, settling = false))
+    }
+
+    @Test fun aTapOnCloseCloses() {
+        assertEquals(true, MiniGestures.keyFires(MiniGestureKind.Tap, MiniKey.Close, 1_000, settling = false))
+        assertEquals(true, MiniGestures.keyFires(MiniGestureKind.Tap, MiniKey.Play, 0, settling = true))
+    }
+
+    @Test fun closeIgnoresATapRightAfterTheWindowMoved() {
+        assertEquals(false, MiniGestures.keyFires(MiniGestureKind.Tap, MiniKey.Close, 120, settling = false))
+        assertEquals(false, MiniGestures.keyFires(MiniGestureKind.Tap, MiniKey.Close, 1_000, settling = true))
+    }
+
     @Test fun onlyADownwardDragFromABottomCornerMerges() {
         assertEquals(true, MiniGestures.startsMerge(3, Offset(2f, 12f)))
         assertEquals(true, MiniGestures.startsMerge(2, Offset(-3f, 10f)))

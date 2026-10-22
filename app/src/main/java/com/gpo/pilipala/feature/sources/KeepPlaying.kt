@@ -467,6 +467,15 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
     /** A held window gives a little under the finger. */
     val press = Animatable(1f)
 
+    /** When the window last moved (uptime ms): close ignores taps right after. */
+    var movedAt = 0L
+
+    /** Touches on the window, counted: each one brings the keys' backing back. */
+    var touches by androidx.compose.runtime.mutableIntStateOf(0)
+
+    /** The keys' backing (1) fading to bare icons (0) after a few idle seconds. */
+    val keysBacking = Animatable(1f)
+
     /** The bar's picture is popping out under a finger: it sits under the finger as it grows. */
     var popping by mutableStateOf(false)
 
@@ -651,6 +660,12 @@ fun MiniBarHost() {
             frame.axis.animateTo(restAxis, MiniSprings.liq())
         }
         val scope = rememberCoroutineScope()
+        // The window's keys lose their backing after ~3s untouched; any touch brings it back.
+        LaunchedEffect(frame.touches) {
+            frame.keysBacking.snapTo(1f)
+            kotlinx.coroutines.delay(3_000)
+            frame.keysBacking.animateTo(0f, androidx.compose.animation.core.tween(250))
+        }
         // A resting window keeps its corner when the screen around it changes (rotation, nav bar).
         LaunchedEffect(frame.restArea, maxAxis) {
             val corner = KeepPlaying.windowCorner ?: return@LaunchedEffect
@@ -764,28 +779,10 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
         // Window px: the node moves with the window, the finger's place must not.
         val downAt = down.position + g0.hit.topLeft
         // The window's keys: their press is theirs alone (no drag, no open, no pinch).
-        val key = when {
-            !windowAtDown || g0.buttonsAlpha < 0.5f -> null
-            g0.play.inflate(8f * density).contains(downAt) -> false
-            g0.close.inflate(8f * density).contains(downAt) -> true
-            else -> null
-        }
-        if (key != null) {
-            down.consume()
-            var off = false
-            while (true) {
-                val e = awaitPointerEvent(PointerEventPass.Initial)
-                e.changes.forEach { it.consume() }
-                if (MiniTouch.count >= 2) off = true
-                val c = e.changes.firstOrNull { it.id == down.id } ?: break
-                if ((c.position - down.position).getDistance() > viewConfiguration.touchSlop) off = true
-                if (!c.pressed) break
-            }
-            if (!off) {
-                if (key) latest().close() else latest().toggle()
-            }
-            return@awaitEachGesture
-        }
+        // A key under the finger fires only if this whole gesture turns out to be a clean tap.
+        val keyAtDown = if (windowAtDown && g0.buttonsAlpha > 0.5f) MiniGestures.keyAt(downAt, g0.play, g0.close, 8f * density) else null
+        // Any touch brings the keys' backing back and restarts their idle timer.
+        if (windowAtDown) frame.touches++
         if (windowAtDown) scope.launch { frame.press.animateTo(PressScale, MiniSprings.fast()) }
         var pinching = false
         var dragging = false
@@ -918,6 +915,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             } else if (dragging) {
                 velocity.addPosition(c.uptimeMillis, finger)
                 if (windowAtDown || popped) {
+                    frame.movedAt = c.uptimeMillis
                     frame.dragCenter = (frame.dragCenter ?: frame.geo.tile.center) + delta
                 } else {
                     frame.swipeDrag = (frame.swipeDrag ?: frame.swipe.value) + delta.x
@@ -941,7 +939,16 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             kind == MiniGestureKind.Drag -> releaseSwipe(frame, scope, velocity.calculateVelocity().x, density, latest)
             else -> {
                 frame.gesturing = false
-                if (kind == MiniGestureKind.Tap) tapAt(frame, downAt, latest())
+                when {
+                    keyAtDown != null -> {
+                        val settling = frame.flingJob?.isActive == true
+                        val since = android.os.SystemClock.uptimeMillis() - frame.movedAt
+                        if (MiniGestures.keyFires(kind, keyAtDown, since, settling)) {
+                            if (keyAtDown == MiniKey.Close) latest().close() else latest().toggle()
+                        }
+                    }
+                    kind == MiniGestureKind.Tap -> tapAt(frame, downAt, latest())
+                }
             }
         }
     }
@@ -979,9 +986,14 @@ private fun snapWindow(frame: MiniFrame, scope: CoroutineScope, axis: Float, cor
     val to = MiniGestures.cornerCenter(c, w, h, area)
     KeepPlaying.windowCenter = from
     frame.flingJob?.cancel()
+    frame.movedAt = android.os.SystemClock.uptimeMillis()
     frame.flingJob = scope.launch {
-        animate(Offset.VectorConverter, from, to, initialVelocity = velocity, animationSpec = MiniSprings.liq()) { value, _ ->
-            KeepPlaying.windowCenter = value
+        try {
+            animate(Offset.VectorConverter, from, to, initialVelocity = velocity, animationSpec = MiniSprings.liq()) { value, _ ->
+                KeepPlaying.windowCenter = value
+            }
+        } finally {
+            frame.movedAt = android.os.SystemClock.uptimeMillis()
         }
     }
 }
@@ -1112,20 +1124,21 @@ private fun releaseSwipe(frame: MiniFrame, scope: CoroutineScope, vx: Float, den
 private fun WindowKey(close: Boolean, p: Playing, frame: MiniFrame) {
     Box(
         Modifier
-            .graphicsLayer {
-                alpha = frame.geo.buttonsAlpha
-                shape = androidx.compose.foundation.shape.CircleShape
-                clip = true
-            }
-            .background(Color.Black.copy(alpha = 0.45f))
+            .graphicsLayer { alpha = frame.geo.buttonsAlpha }
+            // The scrim fades away when idle; the icon keeps a soft shadow to stay legible.
+            .drawBehind { drawCircle(Color.Black.copy(alpha = 0.45f * frame.keysBacking.value)) }
             .a11yClick(if (close) "关闭" else if (p.isPlaying) "暂停" else "播放") { if (close) p.close() else p.toggle() },
         contentAlignment = Alignment.Center,
     ) {
         val m = Modifier.fillMaxSize(0.6f)
+        val shadow = Modifier.fillMaxSize(0.6f).offset { IntOffset(0, 1.dp.roundToPx()) }
         if (close) {
+            Icon(com.gpo.yoin.symbols.YoinSymbols.Close, contentDescription = null, tint = Color.Black.copy(alpha = 0.45f), modifier = shadow)
             Icon(com.gpo.yoin.symbols.YoinSymbols.Close, contentDescription = null, tint = Color.White, modifier = m)
         } else {
-            Icon(com.gpo.yoin.symbols.rememberPlayPauseSymbolPainter(p.isPlaying), contentDescription = null, tint = Color.White, modifier = m)
+            val painter = com.gpo.yoin.symbols.rememberPlayPauseSymbolPainter(p.isPlaying)
+            Icon(painter, contentDescription = null, tint = Color.Black.copy(alpha = 0.45f), modifier = shadow)
+            Icon(painter, contentDescription = null, tint = Color.White, modifier = m)
         }
     }
 }

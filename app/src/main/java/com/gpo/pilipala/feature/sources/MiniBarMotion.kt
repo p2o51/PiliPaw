@@ -242,6 +242,9 @@ internal fun miniGeo(
 
 internal fun Rect.union(o: Rect) = Rect(minOf(left, o.left), minOf(top, o.top), maxOf(right, o.right), maxOf(bottom, o.bottom))
 
+/** The floating window's two keys. */
+internal enum class MiniKey { Play, Close }
+
 /** What one finger's drag does, decided once it passes touch slop. */
 internal enum class MiniDragIntent { MoveWindow, SwipeAway, PopOut, None }
 
@@ -316,6 +319,27 @@ internal object MiniGestures {
     /** Let go: past [threshold] of the way, or still moving down faster than [minSpeed], it docks. */
     fun mergeCompletes(progress: Float, velocityY: Float, minSpeed: Float, threshold: Float = 0.4f): Boolean =
         progress > threshold || velocityY > minSpeed
+
+    /**
+     * The key a finger came down on: its own circle, plus [pad] only outward (past the window's
+     * edges: left and below for play, right and below for close), never over the picture.
+     */
+    fun keyAt(at: Offset, play: Rect, close: Rect, pad: Float): MiniKey? = when {
+        !play.isEmpty && Rect(play.left - pad, play.top, play.right, play.bottom + pad).contains(at) -> MiniKey.Play
+        !close.isEmpty && Rect(close.left, close.top, close.right + pad, close.bottom + pad).contains(at) -> MiniKey.Close
+        else -> null
+    }
+
+    /**
+     * A key fires only for a tap that began on it (the gesture's [kind] decides: any drag, fling
+     * or second finger is not one). Close is stricter: not while the window is still settling,
+     * nor within [quietMs] of it moving.
+     */
+    fun keyFires(kind: MiniGestureKind, key: MiniKey?, msSinceMoved: Long, settling: Boolean, quietMs: Long = 300): Boolean = when {
+        key == null || kind != MiniGestureKind.Tap -> false
+        key == MiniKey.Close -> !settling && msSinceMoved >= quietMs
+        else -> true
+    }
 
     /** Scaling a window by [k] about [centroid] (the fingers' middle) moves its centre with them. */
     fun scaleAbout(center: Offset, centroid: Offset, k: Float): Offset = centroid + (center - centroid) * k
