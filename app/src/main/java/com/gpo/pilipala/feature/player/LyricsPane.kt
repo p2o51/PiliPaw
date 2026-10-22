@@ -65,6 +65,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -308,7 +310,7 @@ internal fun LyricsList(
     val padBottom = (frameHeight * (1f - seat) - 24.dp).coerceAtLeast(12.dp)
     LazyColumn(
         state = listState,
-        modifier = modifier.lyricsEdgeFade(),
+        modifier = modifier.lyricsEdgeFade(horizontalPadding),
         contentPadding = PaddingValues(start = horizontalPadding, end = horizontalPadding, top = padTop, bottom = padBottom),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -410,8 +412,12 @@ private fun LazyListLayoutInfo.seatOffset(target: Int, seat: Float): Int {
     return -viewportStartOffset - seatTop(rowPx, seat)
 }
 
-/** Both edges dissolve, so cues fade in and out instead of being cut by the frame. */
-private fun Modifier.lyricsEdgeFade(): Modifier =
+/**
+ * All four edges dissolve, so cues fade in and out instead of being cut by the frame: top and
+ * bottom as the list scrolls, left and right across the [side] gutter (a current cue springing
+ * past full size, or a long word, melts into it instead of meeting a hard edge).
+ */
+private fun Modifier.lyricsEdgeFade(side: Dp): Modifier =
     graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
         .drawWithContent {
             drawContent()
@@ -425,7 +431,43 @@ private fun Modifier.lyricsEdgeFade(): Modifier =
                 ),
                 blendMode = BlendMode.DstIn,
             )
+            drawSideFade(side.toPx(), side.toPx())
         }
+
+/**
+ * Text that runs sideways (a marquee title) fades out over [start] / [end] at its two ends
+ * instead of being clipped; pair it with [bleed] so the fade sits in the gutter beside it.
+ */
+internal fun Modifier.sideFade(start: Dp, end: Dp = start): Modifier =
+    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            drawSideFade(start.toPx(), end.toPx())
+        }
+
+/** Widens a box by [start] / [end] into its neighbours' room, keeping its own footprint. */
+internal fun Modifier.bleed(start: Dp, end: Dp = start): Modifier = layout { m, c ->
+    val s = start.roundToPx()
+    val e = end.roundToPx()
+    val wide = if (c.hasBoundedWidth) c.copy(minWidth = c.minWidth + s + e, maxWidth = c.maxWidth + s + e) else c
+    val p = m.measure(wide)
+    layout((p.width - s - e).coerceAtLeast(0), p.height) { p.placeRelative(-s, 0) }
+}
+
+private fun DrawScope.drawSideFade(start: Float, end: Float) {
+    if (size.width <= 0f || (start <= 0f && end <= 0f)) return
+    val a = (start / size.width).coerceIn(0f, 0.5f)
+    val b = (end / size.width).coerceIn(0f, 0.5f)
+    drawRect(
+        brush = Brush.horizontalGradient(
+            0f to (if (a > 0f) Color.Transparent else Color.Black),
+            a to Color.Black,
+            1f - b to Color.Black,
+            1f to (if (b > 0f) Color.Transparent else Color.Black),
+        ),
+        blendMode = BlendMode.DstIn,
+    )
+}
 
 /**
  * Cover colours behind the lyrics (Yoin's now-playing wash): the page's cover base over the
