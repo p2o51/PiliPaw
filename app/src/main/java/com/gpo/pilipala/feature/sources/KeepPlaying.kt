@@ -861,6 +861,9 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
     }
 }
 
+/** The corner a new window rests in (MiniGestures.cornerCenter: 3 = bottom right). */
+private const val BottomRight = 3
+
 /** How far a held window gives under the finger. */
 private const val PressScale = 0.97f
 
@@ -918,8 +921,9 @@ private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v:
             target = frame.restAxis(KeepPlaying.rest, density)
         }
     }
-    // A resized window goes back to its corner (a new one: the corner nearest where it is).
-    if (window) snapWindow(frame, scope, target, KeepPlaying.windowCorner, frame.geo.tile.center, Offset.Zero)
+    // A resized window goes back to its corner; a new one starts bottom right, above the nav bar
+    // (never left mid-screen over a page).
+    if (window) snapWindow(frame, scope, target, KeepPlaying.windowCorner ?: BottomRight, frame.geo.tile.center, Offset.Zero)
     scope.launch {
         frame.axis.snapTo(frame.pinchAxis ?: raw)
         frame.pinchAxis = null
