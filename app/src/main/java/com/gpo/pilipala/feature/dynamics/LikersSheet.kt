@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -196,7 +197,7 @@ internal fun LikersSheet(
                         val last = pager.items.lastIndex
                         itemsIndexed(pager.items, key = { _, r -> "${r.mid}_${r.action}" }) { index, r ->
                             ReactorRow(r, index == 0, index == last) {
-                                onDismiss()
+                                scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
                                 nav.push(Route.Member(r.mid, r.face, r.name))
                             }
                         }

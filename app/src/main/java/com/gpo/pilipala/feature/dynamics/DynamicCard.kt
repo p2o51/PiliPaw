@@ -877,6 +877,7 @@ private fun MoreSheet(item: JsonObject, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val nav = LocalNavigator.current
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val close: () -> Unit = { scope.launch { state.hide() }.invokeOnCompletion { onDismiss() } }
     val url = dynamicShareUrl(item)
     val archive = item.major.obj("archive").takeIf { item.dynType == "DYNAMIC_TYPE_AV" }
 
@@ -898,21 +899,21 @@ private fun MoreSheet(item: JsonObject, onDismiss: () -> Unit) {
                             runCatching { DynamicsApi.watchLater(archive.long("aid"), archive.str("bvid")) }
                                 .onSuccess { toast("已添加到稍后再看") }
                                 .onFailure { toast(it.friendlyMessage()) }
-                            onDismiss()
+                            close()
                         }
                     }
                 }
                 SheetRow(YoinSymbols.Share, "分享") {
                     shareText(context, url)
-                    onDismiss()
+                    close()
                 }
                 SheetRow(YoinSymbols.Copy, "复制链接") {
                     copyText(context, url)
                     toast("已复制")
-                    onDismiss()
+                    close()
                 }
                 SheetRow(YoinSymbols.Launch, "网页打开") {
-                    onDismiss()
+                    close()
                     nav.push(Route.Web(url, "动态"))
                 }
             }
@@ -947,6 +948,7 @@ private fun ForwardSheet(item: DynItem, onDismiss: () -> Unit) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val close: () -> Unit = { scope.launch { state.hide() }.invokeOnCompletion { onDismiss() } }
     var text by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     val preview = rememberRichContent(item.json)
@@ -987,7 +989,7 @@ private fun ForwardSheet(item: DynItem, onDismiss: () -> Unit) {
                                 .onSuccess {
                                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                     toast("已转发")
-                                    onDismiss()
+                                    close()
                                 }
                                 .onFailure { toast(it.friendlyMessage()) }
                             sending = false

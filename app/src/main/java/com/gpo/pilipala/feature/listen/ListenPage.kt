@@ -40,6 +40,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -652,7 +653,9 @@ private fun LyricsSearchSheet(source: ListenSource, durationMs: Long, onDismiss:
     LaunchedEffect(Unit) { if (query.isNotBlank()) run() }
     val navBottom = sheetNavBottom()
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.7f).dp
-    ModalBottomSheet(onDismissRequest = onDismiss, contentWindowInsets = SheetInsets, properties = rememberSheetProperties()) {
+    val sheetState = rememberModalBottomSheetState()
+    val close: () -> Unit = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, contentWindowInsets = SheetInsets, properties = rememberSheetProperties()) {
         Column(Modifier.padding(horizontal = 20.dp)) {
             Text("搜索歌词", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
@@ -676,7 +679,7 @@ private fun LyricsSearchSheet(source: ListenSource, durationMs: Long, onDismiss:
                     scope.launch {
                         source.clearLyrics()
                         toast("已换回视频字幕")
-                        onDismiss()
+                        close()
                     }
                 }) { Text("换回视频自己的字幕") }
             }
@@ -709,7 +712,7 @@ private fun LyricsSearchSheet(source: ListenSource, durationMs: Long, onDismiss:
                                         } else {
                                             source.pickLyrics(picked)
                                             toast("已使用 ${c.source.label} 的歌词")
-                                            onDismiss()
+                                            close()
                                         }
                                     }
                                 }

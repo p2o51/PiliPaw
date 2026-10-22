@@ -34,6 +34,7 @@ import com.gpo.yoin.symbols.PiliSymbols
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,7 +43,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -160,7 +163,10 @@ fun MixPickerSheet(item: LibItem, onDismiss: () -> Unit) {
     val toast = rememberToast()
     var naming by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDismiss, properties = rememberSheetProperties()) {
+    val sheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
+    val close: () -> Unit = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, properties = rememberSheetProperties()) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -218,7 +224,7 @@ fun MixPickerSheet(item: LibItem, onDismiss: () -> Unit) {
                             Library.togglePlaylistItem(list.id, item)
                             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                             toast("已加到「${list.name}」")
-                            onDismiss()
+                            close()
                         },
                     ) { Text("新建") }
                 }
@@ -356,7 +362,10 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
         r.onSuccess { n -> toast(if (n > 0) "加入 $n 个视频" else "已关联") }
             .onFailure { toast(it.friendlyMessage()) }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, properties = rememberSheetProperties()) {
+    val sheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
+    val close: () -> Unit = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, properties = rememberSheetProperties()) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -391,7 +400,7 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
                                 .clip(RoundedCornerShape(20.dp))
                                 .combinedClickable(enabled = !linked) {
                                     MixSync.link(list.id, MixSync.biliFolderLink(f.id, f.title), done)
-                                    onDismiss()
+                                    close()
                                 }
                                 .padding(horizontal = 8.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -420,7 +429,7 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
                     enabled = url.contains("list="),
                     onClick = {
                         MixSync.link(list.id, MixSync.youtubePlaylistLink(url.trim(), "YouTube 播放列表"), done)
-                        onDismiss()
+                        close()
                     },
                 ) { Text("关联") }
             }

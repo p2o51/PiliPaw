@@ -18,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.toShape
@@ -26,6 +27,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,7 +73,10 @@ fun AccountPanel(onDismiss: () -> Unit) {
     val profile by Accounts.youtube.collectAsState()
     val nav = LocalNavigator.current
     var confirm by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = onDismiss, contentWindowInsets = SheetInsets, properties = rememberSheetProperties()) {
+    val sheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
+    val close: () -> Unit = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, contentWindowInsets = SheetInsets, properties = rememberSheetProperties()) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -87,7 +93,7 @@ fun AccountPanel(onDismiss: () -> Unit) {
                     }
                     Button(
                         onClick = {
-                            onDismiss()
+                            close()
                             nav.push(Route.SignIn)
                         },
                         shapes = ButtonDefaults.shapes(),
@@ -122,7 +128,7 @@ fun AccountPanel(onDismiss: () -> Unit) {
             onConfirm = {
                 confirm = false
                 SignIn.signOut()
-                onDismiss()
+                close()
             },
             onDismiss = { confirm = false },
         )

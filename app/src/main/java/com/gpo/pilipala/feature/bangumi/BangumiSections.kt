@@ -39,6 +39,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -403,9 +405,11 @@ internal fun EpisodeGridSheet(
     onDismiss: () -> Unit,
 ) {
     val navBottom = sheetNavBottom()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = sheetState,
         contentWindowInsets = SheetInsets,
         properties = rememberSheetProperties(),
     ) {
@@ -420,7 +424,8 @@ internal fun EpisodeGridSheet(
                 EpisodeGrid(
                     groups,
                     currentId,
-                    onSelect,
+                    // Slide out first: the parent's onSelect also drops the sheet.
+                    { e -> scope.launch { sheetState.hide() }.invokeOnCompletion { onSelect(e) } },
                     Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp + navBottom),
                 )

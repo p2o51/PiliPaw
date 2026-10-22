@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,9 +82,12 @@ internal fun CoinSheet(
     val haptic = LocalHapticFeedback.current
     var count by remember { mutableIntStateOf(maxCoins.coerceIn(1, 2)) }
     var alsoLike by remember { mutableStateOf(!liked) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    var confirmed by remember { mutableStateOf(false) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = sheetState,
         contentWindowInsets = SheetInsets,
         properties = rememberSheetProperties(),
     ) {
@@ -137,7 +141,14 @@ internal fun CoinSheet(
             Button(
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onConfirm(count, alsoLike && !liked)
+                    val n = count
+                    val like = alsoLike && !liked
+                    // Slide out first: the parent's onConfirm also drops the sheet (once: a
+                    // second tap while it slides must not send the coins again).
+                    if (!confirmed) {
+                        confirmed = true
+                        scope.launch { sheetState.hide() }.invokeOnCompletion { onConfirm(n, like) }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 enabled = maxCoins > 0,
@@ -257,8 +268,12 @@ internal fun FavSheet(
             }
             .onFailure { error = it.friendlyMessage() }
     }
+    val sheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
+    val close: () -> Unit = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         contentWindowInsets = SheetInsets,
         properties = rememberSheetProperties(),
     ) {
@@ -346,7 +361,7 @@ internal fun FavSheet(
                     val del = all.filter { checked[it.id] != true && it.faved }.map { it.id }
                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                     mixItem?.let { com.gpo.pilipala.feature.sources.applyMixTicks(it, mixTicks, add) }
-                    if (add.isEmpty() && del.isEmpty()) onDismiss() else actions.saveFav(add, del, onDone = onDismiss)
+                    if (add.isEmpty() && del.isEmpty()) close() else actions.saveFav(add, del, onDone = close)
                 },
                 enabled = folders != null && !actions.busy,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).height(52.dp),
@@ -372,9 +387,12 @@ internal fun TripleSheet(
     onConfirm: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    var confirmed by remember { mutableStateOf(false) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = sheetState,
         contentWindowInsets = SheetInsets,
         properties = rememberSheetProperties(),
     ) {
@@ -396,7 +414,11 @@ internal fun TripleSheet(
             Button(
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onConfirm()
+                    // Slide out first: the parent's onConfirm also drops the sheet (once).
+                    if (!confirmed) {
+                        confirmed = true
+                        scope.launch { sheetState.hide() }.invokeOnCompletion { onConfirm() }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shapes = ButtonDefaults.shapes(),

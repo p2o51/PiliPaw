@@ -23,6 +23,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -206,8 +209,11 @@ internal fun EpisodeListSheet(
     val haptic = LocalHapticFeedback.current
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.75f).dp
     val navBottom = sheetNavBottom()
+    val sheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         contentWindowInsets = SheetInsets,
         properties = rememberSheetProperties(),
     ) {
@@ -246,7 +252,8 @@ internal fun EpisodeListSheet(
                     } else {
                         EpisodeListRow(entry, entry.key == currentKey) {
                             haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            onSelect(entry)
+                            // Slide out first: the parent's onSelect also drops the sheet.
+                            scope.launch { sheetState.hide() }.invokeOnCompletion { onSelect(entry) }
                         }
                     }
                 }
