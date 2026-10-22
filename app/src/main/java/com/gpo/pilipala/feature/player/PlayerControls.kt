@@ -798,10 +798,24 @@ internal fun InlineStrip(
                             PillButton(text = Qualities.videoShort(ctrl.currentQn), onClick = actions.onQuality)
                         }
                     }
+                    ListenButton { ctrl.toggleAudioOnly() }
                     FullscreenButton(fullscreen = false, onClick = actions.onFullscreen)
                 }
             }
         }
+    }
+}
+
+/** 仅听声音, beside 全屏: the picture flies into the listen page's cover. */
+@Composable
+private fun ListenButton(onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        shapes = IconButtonDefaults.shapes(),
+        colors = IconButtonDefaults.iconButtonColors(contentColor = LocalPlayerInk.current.content),
+        modifier = Modifier.size(44.dp),
+    ) {
+        Icon(YoinSymbols.Headphones, contentDescription = "仅听声音")
     }
 }
 
