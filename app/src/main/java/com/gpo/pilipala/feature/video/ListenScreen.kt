@@ -201,7 +201,11 @@ internal fun ListenScreen(
                         enter = androidx.compose.animation.expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
                         exit = androidx.compose.animation.shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
                     ) {
-                        CompactHeader(vm, cover, title, subtitle, gate, coverWidth = if (pageW >= 600.dp) 176.dp else 120.dp)
+                        CompactHeader(
+                            vm, cover, title, subtitle, gate,
+                            coverWidth = if (pageW >= 600.dp) 176.dp else 120.dp,
+                            onSearch = { sheet = ListenSheet.Search },
+                        )
                     }
                     androidx.compose.animation.AnimatedVisibility(
                         visible = !expanded,
@@ -253,7 +257,6 @@ internal fun ListenScreen(
                         QuietAction(PiliSymbols.Comment, d?.reply?.takeIf { it > 0 }?.let { "评论 ${Fmt.count(it)}" } ?: "评论") {
                             sheet = ListenSheet.Comments
                         }
-                        QuietAction(YoinSymbols.Search, "搜歌词") { sheet = ListenSheet.Search }
                     }
                 }
             }
@@ -435,7 +438,7 @@ private fun LikeButton(vm: VideoDetailViewModel, gate: (() -> Unit) -> Unit) {
     }
 }
 
-/** Expanded lyrics' header: a small cover, the title and UP beside it, 点赞 at the end. */
+/** Expanded lyrics' header: a small cover, the title and UP beside it, 搜索歌词 and 点赞 at the end. */
 @Composable
 private fun CompactHeader(
     vm: VideoDetailViewModel,
@@ -444,6 +447,7 @@ private fun CompactHeader(
     subtitle: String,
     gate: (() -> Unit) -> Unit,
     coverWidth: Dp,
+    onSearch: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         NetImage(cover, Modifier.width(coverWidth).aspectRatio(16f / 9f), shape = RoundedCornerShape(14.dp), thumbWidth = 360.dp)
@@ -461,6 +465,10 @@ private fun CompactHeader(
             }
         }
         Spacer(Modifier.width(12.dp))
+        FilledTonalIconButton(onClick = onSearch, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp)) {
+            Icon(YoinSymbols.Search, contentDescription = "搜索歌词")
+        }
+        Spacer(Modifier.width(8.dp))
         LikeButton(vm, gate)
     }
 }
@@ -570,8 +578,6 @@ private fun WideListen(
                     ) { Text(label, style = MaterialTheme.typography.titleSmall) }
                     Spacer(Modifier.width(4.dp))
                 }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = onSearch, shapes = IconButtonDefaults.shapes()) { Icon(YoinSymbols.Search, contentDescription = "搜索歌词") }
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 when (tabs.getOrNull(tab.coerceIn(0, tabs.lastIndex))) {
