@@ -13,3 +13,4 @@ captures/
 *.apk
 /.claude/round4.js
 /.claude/devin-review-*.md
+local.properties
