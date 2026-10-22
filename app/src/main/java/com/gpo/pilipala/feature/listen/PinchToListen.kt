@@ -2,7 +2,8 @@ package com.gpo.pilipala.feature.listen
 
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
@@ -70,7 +71,6 @@ internal fun Modifier.pinchToListen(enabled: () -> Boolean): Modifier {
                         if (target == null || !latestEnabled()) break
                         if (!target.start()) break
                         claimed = target
-                        startSpan = event.calculateCentroidSize(useCurrent = true).coerceAtLeast(1f)
                     }
                     val c = claimed
                     if (c != null) {
@@ -80,13 +80,19 @@ internal fun Modifier.pinchToListen(enabled: () -> Boolean): Modifier {
                             commit = progress >= CommitAt
                             break
                         }
-                        val span = event.calculateCentroidSize(useCurrent = true)
-                        progress = ((1f - span / startSpan) / ClosedAt).coerceIn(0f, 1f)
-                        if (crossed != (progress >= CommitAt)) {
-                            crossed = progress >= CommitAt
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        // The spread is measured from the first event that has one (the second
+                        // finger's own down can report none yet).
+                        val span = spread(event.changes)
+                        if (startSpan <= 1f) {
+                            startSpan = span
+                        } else {
+                            progress = ((1f - span / startSpan) / ClosedAt).coerceIn(0f, 1f)
+                            if (crossed != (progress >= CommitAt)) {
+                                crossed = progress >= CommitAt
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            }
+                            c.update(progress)
                         }
-                        c.update(progress)
                     }
                     event = awaitPointerEvent(PointerEventPass.Initial)
                 }
@@ -98,6 +104,26 @@ internal fun Modifier.pinchToListen(enabled: () -> Boolean): Modifier {
             }
         }
     }
+}
+
+/** The pressed fingers' mean distance from their centre (px). */
+private fun spread(changes: List<PointerInputChange>): Float {
+    var n = 0
+    var cx = 0f
+    var cy = 0f
+    changes.fastForEach {
+        if (it.pressed) {
+            n++
+            cx += it.position.x
+            cy += it.position.y
+        }
+    }
+    if (n < 2) return 0f
+    cx /= n
+    cy /= n
+    var sum = 0f
+    changes.fastForEach { if (it.pressed) sum += (it.position - Offset(cx, cy)).getDistance() }
+    return sum / n
 }
 
 /** The fingers' spread lost (a share of where it began) for the picture to reach the cover. */
