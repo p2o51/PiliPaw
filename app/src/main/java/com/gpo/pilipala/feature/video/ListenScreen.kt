@@ -116,6 +116,7 @@ private class BiliListenSource(
     override val playback: ListenPlayback = BiliListenPlayback(ctrl)
     private val mixKey: String? get() = ctrl.target?.bvid?.let { "bili:$it" }
     override val hasQueue: Boolean get() = queue != null || MixPlayback.runs(mixKey)
+    override val position: Int get() = if (queue != null) index else if (MixPlayback.listId != null) MixPlayback.index else -1
     override val commentsLabel: String get() = vm.detail?.reply?.takeIf { it > 0 }?.let { "评论 ${Fmt.count(it)}" } ?: "评论"
     override val hasComments: Boolean get() = (vm.detail?.aid ?: 0L) > 0
 
@@ -145,14 +146,15 @@ private class BiliListenSource(
 
     @Composable
     override fun QueueSheet(onDismiss: () -> Unit) {
+        // The Mix's list while it plays through, even while it hands over to its next item.
         if (queue != null) ListenQueueSheet(queue, ctrl, onDismiss)
-        else if (MixPlayback.runs(mixKey)) MixQueueSheet(ctrl.isPlaying, onDismiss)
+        else if (MixPlayback.listId != null) MixQueueSheet(ctrl.isPlaying, onDismiss)
     }
 
     @Composable
     override fun QueuePane(modifier: Modifier) {
         if (queue != null) QueueList(queue, ctrl, modifier)
-        else if (MixPlayback.runs(mixKey)) MixQueueList(ctrl.isPlaying, modifier)
+        else if (MixPlayback.listId != null) MixQueueList(ctrl.isPlaying, modifier)
     }
 
     @Composable

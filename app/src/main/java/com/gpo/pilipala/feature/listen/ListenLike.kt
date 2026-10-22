@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +40,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.pow
+
+/** The like button's size where it sits: 48dp, a step smaller beside the centred artist line. */
+internal val LocalListenLikeSize = staticCompositionLocalOf { 48.dp }
 
 /**
  * The listen page's 点赞, holding a 三连 the way the detail page's action row does: a tap
@@ -142,7 +146,7 @@ internal fun ChargeLikeButton(
             ),
             interactionSource = interaction,
             modifier = Modifier
-                .size(48.dp)
+                .size(LocalListenLikeSize.current)
                 .graphicsLayer {
                     val s = 1f + 0.08f * c + 0.3f * (burst.pop[0].value - 1f)
                     scaleX = s

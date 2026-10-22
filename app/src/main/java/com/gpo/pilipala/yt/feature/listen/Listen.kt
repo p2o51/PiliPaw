@@ -32,6 +32,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.feature.listen.ChargeLikeButton
 import com.gpo.pilipala.feature.listen.ListenFlight
+import com.gpo.pilipala.feature.listen.LocalListenLikeSize
 import com.gpo.pilipala.feature.listen.ListenMode
 import com.gpo.pilipala.feature.listen.ListenPage
 import com.gpo.pilipala.feature.listen.ListenPlayback
@@ -190,6 +191,7 @@ private class YtListenSource(val url: String, val key: String) : ListenSource {
     override val cover: String get() = session?.thumbnail.orEmpty()
     override val header: String get() = com.gpo.pilipala.feature.video.mixHeader(url) ?: "仅听声音"
     override val hasQueue: Boolean get() = com.gpo.pilipala.feature.sources.MixPlayback.runs(url)
+    override val position: Int get() = com.gpo.pilipala.feature.sources.MixPlayback.let { if (it.listId != null) it.index else -1 }
     override val playback: ListenPlayback = YtListenPlayback
     override val noLyricsLabel: String get() = if (Player.subtitleTracks.isEmpty()) "这个视频没有字幕" else "字幕加载中"
 
@@ -244,7 +246,7 @@ private class YtListenSource(val url: String, val key: String) : ListenSource {
                 celebration = 0,
             )
         } else {
-            FilledTonalIconButton(onClick = { listSheet = true }, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp)) {
+            FilledTonalIconButton(onClick = { listSheet = true }, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(LocalListenLikeSize.current)) {
                 Icon(YoinSymbols.Library, contentDescription = "加到 Mix")
             }
         }
@@ -252,15 +254,15 @@ private class YtListenSource(val url: String, val key: String) : ListenSource {
         if (listSheet && video != null) SaveToListSheet(Library.itemOf(video), onDismiss = { listSheet = false })
     }
 
-    /** A Mix playing through: its list, B站 and YouTube alike. */
+    /** A Mix playing through: its list, B站 and YouTube alike (kept up while it hands over). */
     @Composable
     override fun QueueSheet(onDismiss: () -> Unit) {
-        if (com.gpo.pilipala.feature.sources.MixPlayback.runs(url)) com.gpo.pilipala.feature.video.MixQueueSheet(Player.isPlaying, onDismiss)
+        if (com.gpo.pilipala.feature.sources.MixPlayback.listId != null) com.gpo.pilipala.feature.video.MixQueueSheet(Player.isPlaying, onDismiss)
     }
 
     @Composable
     override fun QueuePane(modifier: Modifier) {
-        if (com.gpo.pilipala.feature.sources.MixPlayback.runs(url)) com.gpo.pilipala.feature.video.MixQueueList(Player.isPlaying, modifier)
+        if (com.gpo.pilipala.feature.sources.MixPlayback.listId != null) com.gpo.pilipala.feature.video.MixQueueList(Player.isPlaying, modifier)
     }
 
     @Composable

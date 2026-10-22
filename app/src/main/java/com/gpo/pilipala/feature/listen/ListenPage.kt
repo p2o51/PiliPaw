@@ -1,10 +1,17 @@
 package com.gpo.pilipala.feature.listen
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -40,15 +47,16 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +79,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
@@ -78,6 +87,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -86,26 +96,39 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.core.util.Images
 import com.gpo.pilipala.feature.player.ListenTransport
 import com.gpo.pilipala.feature.player.LyricsList
 import com.gpo.pilipala.feature.player.SubtitleLine
+import com.gpo.pilipala.feature.player.bleed
 import com.gpo.pilipala.feature.player.lyrics.LyricCandidate
 import com.gpo.pilipala.feature.player.lyrics.LyricsSearch
 import com.gpo.pilipala.feature.player.lyricsBackdrop
+import com.gpo.pilipala.feature.player.sheets.rememberAnimationsRemoved
+import com.gpo.pilipala.feature.player.sideFade
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.SheetInsets
 import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.sheetNavBottom
+import com.gpo.pilipala.ui.theme.CoverTheme
+import com.gpo.pilipala.ui.theme.ExpressiveColorSchemeFactory
 import com.gpo.pilipala.ui.theme.YoinMotion
+import com.gpo.pilipala.ui.theme.loadCoverBackdrop
+import com.gpo.pilipala.ui.theme.piliIsDark
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * What the listen page shows and does, whichever part is playing: Bilibili's video page
@@ -128,6 +151,9 @@ internal interface ListenSource {
     /** Shown where the lyrics go when there are none. */
     val noLyricsLabel: String get() = "这个视频没有字幕"
     val hasQueue: Boolean get() = false
+
+    /** Where in the list or Mix this plays (-1: none), so a switch knows next from previous. */
+    val position: Int get() = -1
     val commentsLabel: String get() = "评论"
     val hasComments: Boolean get() = true
 
@@ -200,12 +226,20 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
     var sheet by remember { mutableStateOf<ListenSheet?>(null) }
     val title = source.title
     val subtitle = source.subtitle
-    val cover = source.cover
     val lines = source.lines
     val search = { sheet = ListenSheet.Search }
+    val switch = rememberListenSwitch(source)
+    val cover = switch.cover
+    val hasQueue = rememberHeldQueue(source.hasQueue)
 
     var rootOrigin by remember { mutableStateOf(Offset.Zero) }
-    CompositionLocalProvider(LocalListenFlight provides flight) {
+    // The page wears the cover on screen: its colours change as that cover is revealed.
+    CoverTheme(switch.themeCover) {
+    CompositionLocalProvider(
+        LocalListenFlight provides flight,
+        LocalListenDirection provides switch.direction,
+        LocalListenSwitch provides switch,
+    ) {
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
@@ -227,7 +261,7 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
             ListenTopBar(header = source.header, onCollapse = source::collapse, onShowVideo = source::showVideo)
         }
         if (wide) {
-            WideListen(source, bar, cover, title, subtitle, lines, onSearch = search)
+            WideListen(source, bar, cover, title, subtitle, lines, hasQueue, onSearch = search)
         } else {
             val pageH = maxHeight
             val pageW = maxWidth
@@ -243,9 +277,12 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
                 // 展开歌词 folds the cover and title away and gives the lyrics the page.
                 var expanded by rememberSaveable { mutableStateOf(false) }
                 androidx.activity.compose.BackHandler(enabled = expanded) { expanded = false }
-                // The cover is held to about a fifth of the height: a tall phone shows it full
-                // width, a tablet in portrait a smaller card, centred, with the title under it.
-                val coverMaxH = pageH * 0.22f
+                // A tall phone holds the cover to about a fifth of the height (full width) with
+                // the title row under it; anything squarer (a tablet in portrait, split screen,
+                // a foldable) centres a bigger card, the title centred under it.
+                val tall = pageW < 600.dp && pageH / pageW >= 1.9f
+                // The bigger card gives way on a short window, so the lyrics keep a few lines.
+                val coverMaxH = if (tall) pageH * 0.22f else minOf(pageH * 0.28f, pageH - 560.dp).coerceAtLeast(pageH * 0.16f)
                 val contentW = pageW - 48.dp
                 val coverW = minOf(contentW, coverMaxH * (16f / 9f))
                 Column(Modifier.padding(horizontal = 24.dp)) {
@@ -264,14 +301,18 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
                         enter = expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),
                         exit = shrinkVertically(YoinMotion.defaultSpatialSpec()) + fadeOut(YoinMotion.fastEffectsSpec()),
                     ) {
-                        Column(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                             Spacer(Modifier.height(16.dp))
-                            // The cover centred at its held-down size; the title row under it, on one
-                            // line, keeps to the cover's width.
-                            Column(Modifier.width(coverW).align(Alignment.CenterHorizontally)) {
-                                ListenCover(cover, Modifier.fillMaxWidth())
+                            ListenCover(cover, Modifier.width(coverW))
+                            if (tall) {
+                                // The title row on one line (a marquee), 点赞 at its end.
                                 Spacer(Modifier.height(20.dp))
                                 Box(Modifier.listenReveal(fl, 0.4f)) { TitleRow(source, title, subtitle) }
+                            } else {
+                                Spacer(Modifier.height(16.dp))
+                                Box(Modifier.listenReveal(fl, 0.4f)) {
+                                    CenteredTitle(source, title, subtitle, large = pageW >= 600.dp)
+                                }
                             }
                         }
                     }
@@ -303,7 +344,7 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        if (source.hasQueue) {
+                        if (hasQueue) {
                             QuietAction(YoinSymbols.Playlist, "播放列表") { sheet = ListenSheet.Queue }
                         }
                         if (source.hasComments) {
@@ -316,6 +357,7 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
         if (flight != null) FlyingCover(flight, cover) { rootOrigin }
     }
     }
+    }
 
     when (sheet) {
         ListenSheet.Queue -> source.QueueSheet(onDismiss = { sheet = null })
@@ -326,6 +368,118 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
 }
 
 private enum class ListenSheet { Queue, Comments, Search }
+
+/**
+ * The listen page's side of a track switch: [cover] is the cover on screen, which moves on to
+ * the source's only once the new image has decoded and its colours are read, so the old one
+ * stays up meanwhile. [themeCover], the one the page's colours come from, follows it as the
+ * new cover starts to develop (so picture and colours change together), or a moment later
+ * when no large cover is showing. [direction] is 1 for a next (and anything that is not a
+ * step back in the list), -1 for a previous.
+ */
+@Stable
+private class ListenSwitch(cover: String, var position: Int) {
+    var cover by mutableStateOf(cover)
+    var themeCover by mutableStateOf(cover)
+    var direction = 1
+}
+
+private val LocalListenSwitch = staticCompositionLocalOf<ListenSwitch?> { null }
+
+@Composable
+private fun rememberListenSwitch(source: ListenSource): ListenSwitch {
+    val context = LocalContext.current
+    val px = with(LocalDensity.current) { ListenCoverThumb.roundToPx() }
+    val target = source.cover
+    val position = source.position
+    val dark = piliIsDark()
+    val switch = remember { ListenSwitch(target, position) }
+    // The list's place moves first (the item is picked before it loads): it sets the way.
+    if (position != switch.position) {
+        switch.direction = if (position >= 0 && switch.position >= 0 && position < switch.position) -1 else 1
+        switch.position = position
+    }
+    LaunchedEffect(target) {
+        // A blank cover (the next item still loading) keeps the one on screen.
+        if (target.isBlank() || target == switch.cover) return@LaunchedEffect
+        preloadListenCover(context, target, px)
+        if (AppSettings.coverColor.state.value) {
+            // The colours and their scheme are worked out here, off the main thread, so the
+            // frame that swaps the cover has nothing heavy left to do.
+            loadCoverBackdrop(context, Images.normalize(target))?.let { c ->
+                withContext(Dispatchers.Default) { ExpressiveColorSchemeFactory.fromSeeds(c.base.toArgb(), c.accent.toArgb(), dark) }
+            }
+        }
+        switch.cover = target
+        delay(ThemeFallbackMs)
+        switch.themeCover = target
+    }
+    return switch
+}
+
+/** Which way the current switch runs (see [ListenSwitch.direction]). */
+private val LocalListenDirection = compositionLocalOf { 1 }
+
+/**
+ * [hasQueue], held through a switch: the list or Mix moves to the next item before the player
+ * has it, and in between the source briefly reports no queue (the 播放列表 tab would drop
+ * out and come back). It is let go only once it has stayed off a while.
+ */
+@Composable
+private fun rememberHeldQueue(hasQueue: Boolean): Boolean {
+    var held by remember { mutableStateOf(hasQueue) }
+    LaunchedEffect(hasQueue) {
+        if (hasQueue) {
+            held = true
+        } else {
+            delay(QueueHoldMs)
+            held = false
+        }
+    }
+    return hasQueue || held
+}
+
+private const val QueueHoldMs = 4_000L
+
+/** How long the colours wait for a large cover to start developing before they change anyway. */
+private const val ThemeFallbackMs = 600L
+
+/** The large cover's request width (the flight's and the page's). */
+private val ListenCoverThumb = 720.dp
+
+/**
+ * Text that changes with the track: the old crossfades out sliding a little the switch's way,
+ * the new comes in after it from the other side (no motion with 移除动画).
+ */
+@Composable
+private fun SwapText(
+    text: String,
+    modifier: Modifier = Modifier,
+    alignment: Alignment = Alignment.TopStart,
+    content: @Composable (String) -> Unit,
+) {
+    val direction = LocalListenDirection.current
+    val still = rememberAnimationsRemoved()
+    val shift = with(LocalDensity.current) { 16.dp.roundToPx() }
+    val fadeIn = YoinMotion.defaultEffectsSpec<Float>()
+    val fadeOut = YoinMotion.fastEffectsSpec<Float>()
+    val slide = YoinMotion.defaultSpatialSpec<IntOffset>()
+    AnimatedContent(
+        targetState = text,
+        modifier = modifier,
+        contentAlignment = alignment,
+        transitionSpec = {
+            if (still) {
+                EnterTransition.None togetherWith ExitTransition.None
+            } else {
+                (fadeIn(fadeIn) + slideInHorizontally(slide) { shift * direction }) togetherWith
+                    (fadeOut(fadeOut) + slideOutHorizontally(slide) { -shift * direction }) using
+                    SizeTransform(clip = false)
+            }
+        },
+        label = "listenText",
+    ) { content(it) }
+}
 
 /** A piece of the listen page that rises in once the flight has carried [start] of the way. */
 private fun Modifier.listenReveal(flight: ListenFlight?, start: Float): Modifier =
@@ -403,10 +557,15 @@ private fun ListenTopBar(header: String, onCollapse: () -> Unit, onShowVideo: ()
 @Composable
 private fun ListenCover(cover: String, modifier: Modifier) {
     val flight = LocalListenFlight.current
+    val switch = LocalListenSwitch.current
     val layer = rememberGraphicsLayer()
     flight?.coverLayer = layer
-    NetImage(
+    ListenCoverImage(
         url = cover,
+        thumbWidth = ListenCoverThumb,
+        reveal = CoverReveal.Dissolve,
+        direction = LocalListenDirection.current,
+        onReveal = { switch?.themeCover = it },
         modifier = modifier
             .aspectRatio(16f / 9f)
             // Where the flying cover lands; hidden while it flies (FlyingCover draws it then).
@@ -420,9 +579,8 @@ private fun ListenCover(cover: String, modifier: Modifier) {
             .drawWithContent {
                 layer.record { this@drawWithContent.drawContent() }
                 drawLayer(layer)
-            },
-        shape = RoundedCornerShape(28.dp),
-        thumbWidth = 720.dp,
+            }
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     )
 }
 
@@ -430,21 +588,70 @@ private fun ListenCover(cover: String, modifier: Modifier) {
 private fun TitleRow(source: ListenSource, title: String, subtitle: String) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2_000),
-            )
+            // The marquee runs out into the page gutter and the gap before 点赞, fading there.
+            SwapText(title) {
+                MarqueeTitle(it, MaterialTheme.typography.titleLarge, start = 24.dp, end = 16.dp)
+            }
             if (subtitle.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                SwapText(subtitle) {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(16.dp))
         source.Like()
     }
+}
+
+/**
+ * Squarer windows: the title centred under the cover, as wide as the page allows, on up to two
+ * lines; the artist under it with a smaller 点赞 beside.
+ */
+@Composable
+private fun CenteredTitle(source: ListenSource, title: String, subtitle: String, large: Boolean) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        SwapText(title, Modifier.fillMaxWidth(), Alignment.Center) {
+            Text(
+                it,
+                style = if (large) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (subtitle.isNotEmpty()) {
+                SwapText(subtitle, Modifier.weight(1f, fill = false)) {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.width(10.dp))
+            }
+            CompositionLocalProvider(LocalListenLikeSize provides 40.dp) { source.Like() }
+        }
+    }
+}
+
+/**
+ * One line that runs sideways when it is too long: it reaches [start] / [end] out past its slot
+ * (the gutter, the gap beside it) and fades out there instead of being cut at the slot's edge.
+ */
+@Composable
+private fun MarqueeTitle(text: String, style: TextStyle, start: Dp, end: Dp) {
+    Text(
+        text,
+        style = style,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        modifier = Modifier
+            .bleed(start, end)
+            .sideFade(start, end)
+            .basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2_000)
+            .padding(start = start, end = end),
+    )
 }
 
 /** Expanded lyrics' header: a small cover, the title and UP beside it, 搜索歌词 and 点赞 at the end. */
@@ -458,18 +665,26 @@ private fun CompactHeader(
     onSearch: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        NetImage(cover, Modifier.width(coverWidth).aspectRatio(16f / 9f), shape = RoundedCornerShape(14.dp), thumbWidth = 360.dp)
+        ListenCoverImage(
+            url = cover,
+            thumbWidth = 360.dp,
+            reveal = CoverReveal.Crossfade,
+            direction = LocalListenDirection.current,
+            modifier = Modifier
+                .width(coverWidth)
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        )
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2_000),
-            )
+            SwapText(title) {
+                MarqueeTitle(it, MaterialTheme.typography.titleMedium, start = 16.dp, end = 12.dp)
+            }
             if (subtitle.isNotEmpty()) {
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                SwapText(subtitle) {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
         Spacer(Modifier.width(12.dp))
@@ -540,15 +755,18 @@ private fun WideListen(
     title: String,
     subtitle: String,
     lines: List<SubtitleLine>,
+    hasQueue: Boolean,
     onSearch: () -> Unit,
 ) {
     val flight = LocalListenFlight.current
-    var tab by rememberSaveable { mutableStateOf(0) }
+    // Kept by name: a tab coming or going never moves the pick onto its neighbour.
+    var tab by rememberSaveable { mutableStateOf("歌词") }
     val tabs = buildList {
         add("歌词")
-        if (source.hasQueue) add("播放列表")
+        if (hasQueue) add("播放列表")
         if (source.hasComments) add("评论")
     }
+    val shownTab = tab.takeIf { it in tabs } ?: "歌词"
     Row(
         Modifier
             .fillMaxSize()
@@ -563,10 +781,14 @@ private fun WideListen(
             Spacer(Modifier.height(22.dp))
             Row(Modifier.fillMaxWidth().listenReveal(flight, 0.4f), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    SwapText(title) {
+                        Text(it, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
                     if (subtitle.isNotEmpty()) {
                         Spacer(Modifier.height(4.dp))
-                        Text(subtitle, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        SwapText(subtitle) {
+                            Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
                 Spacer(Modifier.width(12.dp))
@@ -587,11 +809,11 @@ private fun WideListen(
                 .padding(top = 16.dp),
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                tabs.forEachIndexed { i, label ->
-                    val on = tab.coerceIn(0, tabs.lastIndex) == i
+                tabs.forEach { label ->
+                    val on = shownTab == label
                     val scheme = MaterialTheme.colorScheme
                     TextButton(
-                        onClick = { tab = i },
+                        onClick = { tab = label },
                         colors = ButtonDefaults.textButtonColors(
                             containerColor = if (on) scheme.primary else Color.Transparent,
                             contentColor = if (on) scheme.onPrimary else scheme.onSurfaceVariant,
@@ -602,7 +824,7 @@ private fun WideListen(
                 }
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
-                when (tabs.getOrNull(tab.coerceIn(0, tabs.lastIndex))) {
+                when (shownTab) {
                     "播放列表" -> source.QueuePane(Modifier.fillMaxSize())
                     "评论" -> source.CommentsPane(Modifier.fillMaxSize())
                     else -> BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -620,6 +842,9 @@ private fun WideListen(
                                 frameHeight = maxHeight,
                                 horizontalPadding = 32.dp,
                                 modifier = Modifier.fillMaxSize(),
+                                // The phone's own size and weights (the frame-height default
+                                // set it a size or two down, and the lines read differently).
+                                textStyle = MaterialTheme.typography.headlineLarge,
                             )
                         }
                     }
