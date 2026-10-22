@@ -382,7 +382,9 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         val flight = remember(listenP) {
             ListenFlight(progress = { listenP.value }, from = { handoff.classicRect }, shot = { listenShot })
         }
-        if (ctrl != null && (listening || listenShown)) ListenScreen(vm, ctrl, queue, gate, flight)
+        if (ctrl != null && (listening || listenShown)) {
+            ListenScreen(vm, ctrl, queue, gate, flight, onTriple = { sheet = VideoSheet.Triple })
+        }
     }
 
     val d = vm.detail

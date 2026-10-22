@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.Constraints
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.gpo.pilipala.core.util.Fmt
+import com.gpo.pilipala.feature.listen.ChargeLikeButton
 import com.gpo.pilipala.feature.player.ListenTransport
 import com.gpo.pilipala.feature.player.LyricsList
 import com.gpo.pilipala.feature.player.PiliPlayerController
@@ -129,6 +130,7 @@ internal fun ListenScreen(
     queue: PlayQueue?,
     gate: (() -> Unit) -> Unit,
     flight: ListenFlight? = null,
+    onTriple: () -> Unit = {},
 ) {
     val nav = LocalNavigator.current
     var sheet by remember { mutableStateOf<ListenSheet?>(null) }
@@ -142,7 +144,7 @@ internal fun ListenScreen(
     val header = if (queue != null) "${queue.title} · ${index + 1} / ${queue.size}" else "仅听声音"
 
     var rootOrigin by remember { mutableStateOf(Offset.Zero) }
-    CompositionLocalProvider(LocalListenFlight provides flight) {
+    CompositionLocalProvider(LocalListenFlight provides flight, LocalListenTriple provides onTriple) {
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
@@ -305,6 +307,9 @@ internal class ListenFlight(
 
 private val LocalListenFlight = staticCompositionLocalOf<ListenFlight?> { null }
 
+/** Opens the 三连 sheet (the detail page owns it). */
+private val LocalListenTriple = staticCompositionLocalOf<() -> Unit> { {} }
+
 /** A piece of the listen page that rises in once the flight has carried [start] of the way. */
 private fun Modifier.listenReveal(flight: ListenFlight?, start: Float): Modifier =
     if (flight == null) this else graphicsLayer {
@@ -416,26 +421,20 @@ private fun TitleRow(vm: VideoDetailViewModel, title: String, subtitle: String, 
     }
 }
 
+/** 点赞; held, 三连 (its sheet asks before any coin goes out). */
 @Composable
 private fun LikeButton(vm: VideoDetailViewModel, gate: (() -> Unit) -> Unit) {
-    val haptics = LocalHapticFeedback.current
-    val liked = vm.actions.liked
-    run {
-        val scheme = MaterialTheme.colorScheme
-        val container by animateColorAsState(if (liked) scheme.primary else scheme.secondaryContainer, YoinMotion.defaultEffectsSpec(), label = "listenLike")
-        val content by animateColorAsState(if (liked) scheme.onPrimary else scheme.onSecondaryContainer, YoinMotion.defaultEffectsSpec(), label = "listenLikeContent")
-        FilledTonalIconButton(
-            onClick = {
-                haptics.performHapticFeedback(if (liked) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
-                gate { vm.actions.toggleLike() }
-            },
-            shapes = IconButtonDefaults.shapes(),
-            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = container, contentColor = content),
-            modifier = Modifier.size(48.dp),
-        ) {
-            Icon(if (liked) PiliSymbols.ThumbUpFilled else PiliSymbols.ThumbUp, contentDescription = if (liked) "取消点赞" else "点赞")
-        }
-    }
+    val onTriple = LocalListenTriple.current
+    ChargeLikeButton(
+        checked = vm.actions.liked,
+        icon = PiliSymbols.ThumbUp,
+        checkedIcon = PiliSymbols.ThumbUpFilled,
+        label = "点赞",
+        checkedLabel = "取消点赞",
+        onClick = { gate { vm.actions.toggleLike() } },
+        onCharged = { gate(onTriple) },
+        celebration = vm.actions.tripleCelebration,
+    )
 }
 
 /** Expanded lyrics' header: a small cover, the title and UP beside it, 搜索歌词 and 点赞 at the end. */
