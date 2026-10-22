@@ -267,9 +267,20 @@ internal fun UpCard(
     }
 }
 
-/** 关注 / 已关注, or 互相关注 when the UP follows back ([mutual]). */
+/**
+ * 关注 / 已关注, or 互相关注 when the UP follows back ([mutual]). [followLabel] /
+ * [followingLabel] rename it for other sources (YouTube's 订阅 / 已订阅).
+ */
 @Composable
-internal fun FollowToggle(following: Boolean, busy: Boolean, onFollow: () -> Unit, mutual: Boolean = false) {
+internal fun FollowToggle(
+    following: Boolean,
+    busy: Boolean,
+    onFollow: () -> Unit,
+    mutual: Boolean = false,
+    followLabel: String = "关注",
+    followingLabel: String = "已关注",
+    enabled: Boolean = true,
+) {
     val haptic = LocalHapticFeedback.current
     val colors = MaterialTheme.colorScheme
     val container by animateColorAsState(
@@ -290,6 +301,7 @@ internal fun FollowToggle(following: Boolean, busy: Boolean, onFollow: () -> Uni
                 onFollow()
             }
         },
+        enabled = enabled,
         shapes = ToggleButtonDefaults.shapes(),
         colors = ToggleButtonDefaults.toggleButtonColors(
             containerColor = container,
@@ -302,8 +314,8 @@ internal fun FollowToggle(following: Boolean, busy: Boolean, onFollow: () -> Uni
         val effects = YoinMotion.defaultEffectsSpec<Float>()
         val label = when {
             following && mutual -> "互相关注"
-            following -> "已关注"
-            else -> "关注"
+            following -> followingLabel
+            else -> followLabel
         }
         AnimatedContent(
             label,
@@ -311,7 +323,7 @@ internal fun FollowToggle(following: Boolean, busy: Boolean, onFollow: () -> Uni
             label = "follow",
         ) { text ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (text != "关注") PiliSymbols.PersonCheck else PiliSymbols.PersonAdd, null, Modifier.size(18.dp))
+                Icon(if (text != followLabel) PiliSymbols.PersonCheck else PiliSymbols.PersonAdd, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(text, style = MaterialTheme.typography.labelLarge)
             }

@@ -89,7 +89,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
 import com.gpo.pilipala.yt.feature.listen.ListenScreen
 import com.gpo.pilipala.yt.feature.mute.Mutes
-import com.gpo.pilipala.yt.feature.library.AddToPlaylistSheet
 import com.gpo.pilipala.yt.feature.library.Library
 import com.gpo.pilipala.yt.core.extractor.VideoItem
 import com.gpo.pilipala.yt.core.extractor.YtAccount
@@ -100,15 +99,9 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyRow
-import com.gpo.pilipala.yt.ui.components.FameCount
-import com.gpo.pilipala.ui.components.sheetBottomPadding
-import com.gpo.pilipala.ui.components.rememberSheetProperties
-import com.gpo.pilipala.feature.settings.ConnectedToggleRow
-import com.gpo.pilipala.feature.settings.Choice
 import com.gpo.pilipala.yt.feature.comments.rememberCommentsState
 import com.gpo.pilipala.yt.feature.comments.CommentsList
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.material3.ModalBottomSheet
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.yt.ui.components.friendlyMessage
 import com.gpo.pilipala.yt.core.account.AccountSubscriptions
@@ -119,11 +112,16 @@ import com.gpo.pilipala.yt.navigation.LocalNavigator
 import com.gpo.pilipala.yt.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.NetImage
-import com.gpo.pilipala.yt.ui.components.ValueLabel
-import com.gpo.pilipala.yt.ui.components.VideoRow
 import com.gpo.pilipala.ui.shell.floatingBarInset
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.CoverTheme
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import com.gpo.pilipala.ui.components.ExpressivePageBackground
+import com.gpo.pilipala.ui.components.readingWidth
+import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
@@ -467,6 +465,11 @@ private fun MiniContent(session: Player.Session, modifier: Modifier) {
     }
 }
 
+/**
+ * The page under the picture, as PiliPaw's video page: on phones and tablet portrait the
+ * controls, then 简介 / 评论 tabs over a pager (the intro is a grid, so 相关推荐 runs two columns
+ * from tablet portrait); wide, the intro under the picture and 评论 / 相关 in a side panel.
+ */
 @Composable
 private fun FullContent(
     session: Player.Session,
@@ -485,86 +488,61 @@ private fun FullContent(
     }
     val comments = rememberCommentsState(session.url)
     val onSeek: (Long) -> Unit = { Player.exo.seekTo(it * 1000) }
-    if (twoPane) {
-        Row(Modifier.fillMaxSize()) {
-            Column(
-                Modifier
-                    .width(leftWidth)
-                    .fillMaxHeight()
-                    .padding(top = topUnderVideo)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = navBottom + 24.dp),
-            ) {
-                Controls(seek, onCollapse)
-                Details(session, info)
+    val bottom = PaddingValues(bottom = navBottom + 24.dp)
+    ExpressivePageBackground(Modifier.fillMaxSize(), belowPlayer = !twoPane) {
+        if (twoPane) {
+            Row(Modifier.fillMaxSize()) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(1),
+                    modifier = Modifier.width(leftWidth).fillMaxHeight().padding(top = topUnderVideo),
+                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = navBottom + 24.dp),
+                ) {
+                    item(key = "controls") { Controls(seek, onCollapse, Modifier.padding(horizontal = 16.dp)) }
+                    ytIntroItems(session, info, related, onSeek, includeRelated = false)
+                }
+                // The side panel: 评论 / 相关 (PiliPaw's side pane).
+                val panel = MaterialTheme.colorScheme.surfaceContainerLow
+                val tabs = rememberPagerState { 2 }
+                Column(
+                    Modifier
+                        .fillMaxHeight()
+                        .width(RelatedPaneWidth)
+                        .padding(top = statusTop + 8.dp, end = 16.dp, bottom = navBottom + 16.dp)
+                        .clip(YoinContainerShapes.Panel)
+                        .background(panel),
+                ) {
+                    YtDetailTabRow(listOf("评论", "相关"), tabs, panel)
+                    HorizontalPager(tabs, Modifier.weight(1f).fillMaxWidth(), key = { it }) { page ->
+                        if (page == 0) {
+                            CommentsList(comments, onSeek, Modifier.fillMaxSize(), PaddingValues(bottom = 16.dp))
+                        } else {
+                            LazyVerticalGrid(GridCells.Fixed(1), Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+                                ytRelatedItems(related)
+                            }
+                        }
+                    }
+                }
             }
-            // The right column: 相关 or 评论.
-            var showComments by rememberSaveable(session.url) { mutableStateOf(false) }
-            Column(Modifier.fillMaxHeight().width(RelatedPaneWidth).padding(top = statusTop + 12.dp)) {
-                ConnectedToggleRow(
-                    choices = listOf(Choice(false, "相关"), Choice(true, "评论")),
-                    selected = showComments,
-                    onSelect = { showComments = it },
-                    modifier = Modifier.padding(start = 8.dp, end = 24.dp, bottom = 8.dp),
-                )
-                if (showComments) {
-                    CommentsList(comments, onSeek, Modifier.fillMaxSize(), PaddingValues(bottom = navBottom + 24.dp))
-                } else {
-                    val listState = rememberLazyListState()
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = navBottom + 24.dp),
-                    ) {
-                        items(related, key = { it.url }) { VideoRow(it, thumbWidth = 144.dp) }
+        } else {
+            val tabs = rememberPagerState { 2 }
+            Column(Modifier.fillMaxSize().padding(top = topUnderVideo)) {
+                Controls(seek, onCollapse, Modifier.padding(horizontal = 16.dp))
+                YtDetailTabRow(listOf("简介", "评论"), tabs, Color.Transparent)
+                HorizontalPager(tabs, Modifier.weight(1f).fillMaxWidth(), key = { it }) { page ->
+                    if (page == 0) {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(RelatedMinCell),
+                            modifier = Modifier.fillMaxSize().readingWidth(),
+                            contentPadding = bottom,
+                        ) {
+                            ytIntroItems(session, info, related, onSeek, includeRelated = true)
+                        }
+                    } else {
+                        CommentsList(comments, onSeek, Modifier.fillMaxSize(), bottom)
                     }
                 }
             }
         }
-    } else {
-        var sheet by rememberSaveable(session.url) { mutableStateOf(false) }
-        Column(Modifier.fillMaxSize().padding(top = topUnderVideo)) {
-            Controls(seek, onCollapse, Modifier.padding(horizontal = 16.dp))
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = navBottom + 24.dp),
-            ) {
-                item(key = "details") { Details(session, info, Modifier.padding(horizontal = 16.dp)) }
-                item(key = "comments") { CommentsEntry(-1) { sheet = true } }
-                items(related, key = { it.url }) { VideoRow(it) }
-            }
-        }
-        if (sheet) {
-            ModalBottomSheet(onDismissRequest = { sheet = false }, properties = rememberSheetProperties()) {
-                CommentsList(comments, onSeek, Modifier.fillMaxWidth(), PaddingValues(bottom = sheetBottomPadding())) {
-                    item(key = "title") {
-                        Text("评论", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 评论 (and how many) as a tonal row under the details; opens the sheet. */
-@Composable
-private fun CommentsEntry(count: Long, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .fillMaxWidth()
-            .clip(ContinuousRoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text("评论", style = MaterialTheme.typography.titleSmall)
-        if (count >= 0) FameCount(Fmt.count(count), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.weight(1f))
-        Icon(YoinSymbols.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -593,215 +571,6 @@ private fun Controls(seek: SeekState, onCollapse: () -> Unit, modifier: Modifier
             }
         }
     }
-}
-
-@Composable
-private fun Details(session: Player.Session, info: StreamInfo?, modifier: Modifier = Modifier) {
-    val nav = LocalNavigator.current
-    Column(modifier.padding(top = 8.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(session.title, style = MaterialTheme.typography.titleLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        if (info != null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (info.viewCount >= 0) ValueLabel(Fmt.count(info.viewCount), "次观看")
-                if (info.likeCount >= 0) ValueLabel(Fmt.count(info.likeCount), "赞")
-                // Return YouTube Dislike's estimate (YouTube hides the real count).
-                if (info.dislikeCount >= 0) ValueLabel(Fmt.count(info.dislikeCount), "踩")
-                Fmt.ago(info.uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli() ?: 0L).takeIf { it.isNotEmpty() }?.let {
-                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            val channel = ChannelItem(
-                url = info.uploaderUrl.orEmpty(),
-                name = info.uploaderName.orEmpty(),
-                avatar = info.uploaderAvatarUrl.orEmpty(),
-                subscribers = info.uploaderSubscriberCount,
-                videos = -1,
-                verified = false,
-            )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .clip(ContinuousRoundedCornerShape(12.dp))
-                        .clickable(enabled = channel.url.isNotEmpty()) {
-                            Player.expanded = false
-                            nav.push(Route.Channel(channel.url, channel.name, channel.avatar))
-                        },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Avatar(channel.avatar, size = 40.dp)
-                    Column {
-                        Text(channel.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (channel.subscribers >= 0) ValueLabel(Fmt.count(channel.subscribers), "订阅者")
-                    }
-                }
-                SubscribeButton(channel)
-            }
-            VideoActions(info)
-            if (Player.chapters.isNotEmpty()) ChapterRow(Player.chapters)
-            Description(info)
-        }
-    }
-}
-
-/**
- * 稍后再看 and 加入播放列表 as tonal buttons. Signed out both are this device's; signed in,
- * 稍后再看 is the account's (a write: a dry run in debug builds).
- */
-@Composable
-private fun VideoActions(info: StreamInfo) {
-    val profile by Accounts.youtube.collectAsState()
-    val later by Library.watchLater.collectAsState()
-    val toast = rememberToast()
-    val scope = rememberCoroutineScope()
-    val video = remember(info) {
-        VideoItem(
-            url = info.url, title = info.name.orEmpty(), thumbnail = info.thumbnailUrl.orEmpty(),
-            channelName = info.uploaderName.orEmpty(), channelUrl = info.uploaderUrl.orEmpty(),
-            channelAvatar = info.uploaderAvatarUrl.orEmpty(), durationSec = info.duration, views = info.viewCount,
-            uploaded = "", uploadedAt = 0, isLive = false, isShort = false, channelVerified = false,
-        )
-    }
-    var addSheet by remember { mutableStateOf(false) }
-    val signedIn = profile is Profile.SignedIn
-    val inLater = !signedIn && later.any { it.key == Library.keyOf(info.url) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilledTonalButton(onClick = {
-            if (signedIn) {
-                scope.launch {
-                    toast(runCatching { AccountWrites.run("加入稍后再看") { YtAccount.watchLater(info.id, add = true) } }.getOrElse { it.friendlyMessage() })
-                }
-            } else {
-                toast(if (Library.toggleWatchLater(video)) "已加入稍后再看" else "已移出稍后再看")
-            }
-        }) {
-            Icon(if (inLater) YoinSymbols.Check else PiliSymbols.WatchLater, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("稍后再看")
-        }
-        FilledTonalButton(onClick = { addSheet = true }) {
-            Icon(YoinSymbols.Add, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("加到 Mix")
-        }
-        FilledTonalButton(onClick = { Player.changeAudioOnly(true) }) {
-            Icon(YoinSymbols.Headphones, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("仅听声音")
-        }
-    }
-    if (addSheet) AddToPlaylistSheet(video, onDismiss = { addSheet = false })
-}
-
-/**
- * 章节: the chapters as a row of small cards (still, time, title), the one playing in the
- * primary container; a tap seeks there.
- */
-@Composable
-private fun ChapterRow(chapters: List<Chapter>) {
-    var position by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(chapters) {
-        while (true) {
-            position = Player.exo.currentPosition
-            delay(500)
-        }
-    }
-    val current = chapters.at(position)
-    val listState = rememberLazyListState()
-    LaunchedEffect(current) {
-        val i = chapters.indexOf(current)
-        if (i >= 0) listState.animateScrollToItem(i)
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("章节", style = MaterialTheme.typography.titleSmall)
-        LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(chapters, key = { it.startMs }) { c ->
-                val on = c === current
-                Column(
-                    Modifier
-                        .width(148.dp)
-                        .clip(ContinuousRoundedCornerShape(12.dp))
-                        .background(if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer)
-                        .clickable { Player.exo.seekTo(c.startMs) }
-                        .padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    if (c.preview.isNotEmpty()) {
-                        NetImage(c.preview, Modifier.fillMaxWidth().aspectRatio(16f / 9f), shape = ContinuousRoundedCornerShape(8.dp))
-                    }
-                    Text(
-                        Fmt.duration(c.startMs / 1000).ifEmpty { "0:00" },
-                        style = MaterialTheme.typography.labelMedium.withTabularFigures(),
-                        color = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        c.title,
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        color = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * 订阅 / 已订阅. Signed out it is the local list; signed in it is the account's (a write, so a
- * dry run in debug builds, which says so and changes nothing).
- */
-@Composable
-fun SubscribeButton(channel: ChannelItem) {
-    val profile by Accounts.youtube.collectAsState()
-    val subs by Subscriptions.channels.collectAsState()
-    val accountIds by AccountSubscriptions.ids.collectAsState()
-    val scope = rememberCoroutineScope()
-    val toast = rememberToast()
-    val signedIn = profile is Profile.SignedIn
-    val subscribed = if (signedIn) AccountSubscriptions.channelId(channel.url) in accountIds else subs.any { it.url == channel.url }
-    val onClick: () -> Unit = {
-        if (signedIn) {
-            scope.launch {
-                toast(runCatching { AccountSubscriptions.toggle(channel.url, channel.name) }.getOrElse { it.friendlyMessage() })
-            }
-        } else {
-            Subscriptions.toggle(channel)
-        }
-    }
-    if (subscribed) {
-        FilledTonalButton(onClick = onClick) { Text("已订阅") }
-    } else {
-        Button(onClick = onClick, enabled = channel.url.isNotEmpty()) { Text("订阅") }
-    }
-}
-
-@Composable
-private fun Description(info: StreamInfo) {
-    val text = remember(info) {
-        val d = info.description ?: return@remember ""
-        when (d.type) {
-            org.schabi.newpipe.extractor.stream.Description.HTML ->
-                HtmlCompat.fromHtml(d.content, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim()
-            else -> d.content.orEmpty().trim()
-        }
-    }
-    if (text.isEmpty()) return
-    var open by remember { mutableStateOf(false) }
-    Text(
-        text,
-        style = MaterialTheme.typography.bodyMedium,
-        maxLines = if (open) Int.MAX_VALUE else 3,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(ContinuousRoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable { open = !open }
-            .animateContentSize(YoinMotion.defaultSpatialSpec())
-            .padding(16.dp),
-    )
 }
 
 /** The picture-in-picture window's content: the video on black, nothing else. */
