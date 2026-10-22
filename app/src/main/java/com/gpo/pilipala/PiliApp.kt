@@ -20,6 +20,7 @@ class PiliApp : Application(), SingletonImageLoader.Factory {
         com.gpo.pilipala.core.util.CrashLog.install(this)
         BiliClient.init(this)
         com.gpo.pilipala.feature.player.lyrics.LyricsStore.init(this)
+        com.gpo.pilipala.yt.feature.listen.LyricsStore.init(this)
         AppSettings.init(this)
         com.gpo.pilipala.feature.player.cdn.CdnRouter.init(this)
         Account.init(this)

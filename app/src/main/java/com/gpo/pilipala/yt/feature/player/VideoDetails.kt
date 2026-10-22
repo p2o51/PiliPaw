@@ -433,7 +433,7 @@ private fun YtVideoActions(info: StreamInfo) {
     }
     val key = Library.keyOf(info.url)
     val signedIn = profile is Profile.SignedIn
-    var liked by rememberSaveable(info.url) { mutableStateOf(false) }
+    val liked = YtLikes.liked(info.url)
     var inAccountLater by rememberSaveable(info.url) { mutableStateOf(false) }
     var listSheet by remember { mutableStateOf(false) }
     val inLater = if (signedIn) inAccountLater else later.any { it.key == key }
@@ -442,15 +442,7 @@ private fun YtVideoActions(info: StreamInfo) {
     val likeLabel = if (info.likeCount > 0 && !FameMode.hides(false)) Fmt.count(info.likeCount + if (liked) 1 else 0) else "赞"
 
     fun like(to: Boolean) {
-        liked = to
-        scope.launch {
-            val line = runCatching { AccountWrites.run(if (to) "赞" else "取消赞") { YtAccount.like(info.id, to) } }
-                .getOrElse { e ->
-                    liked = !to
-                    e.friendlyMessage()
-                }
-            if (AccountWrites.dryRun || liked != to) toast(line)
-        }
+        scope.launch { YtLikes.set(info.url, info.id, to)?.let(toast) }
     }
 
     val first = if (signedIn) {

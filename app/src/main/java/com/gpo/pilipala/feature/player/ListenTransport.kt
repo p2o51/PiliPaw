@@ -34,6 +34,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.WavyProgressIndicatorDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
+import com.gpo.pilipala.feature.listen.ListenMode
+import com.gpo.pilipala.feature.listen.ListenPlayback
+import com.gpo.pilipala.feature.listen.rememberListenPosition
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -80,10 +84,28 @@ internal fun ListenTransport(
     horizontalPadding: Dp = 16.dp,
     lyricsExpanded: Boolean = false,
     onExpandLyrics: (() -> Unit)? = null,
+) = ListenTransport(
+    playback = remember(ctrl) { BiliListenPlayback(ctrl) },
+    controlSize = controlSize,
+    modifier = modifier,
+    horizontalPadding = horizontalPadding,
+    lyricsExpanded = lyricsExpanded,
+    onExpandLyrics = onExpandLyrics,
+)
+
+/** The transport over either part's player ([ListenPlayback]). */
+@Composable
+internal fun ListenTransport(
+    playback: ListenPlayback,
+    controlSize: Dp,
+    modifier: Modifier = Modifier,
+    horizontalPadding: Dp = 16.dp,
+    lyricsExpanded: Boolean = false,
+    onExpandLyrics: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
-    val playing = ctrl.isPlaying || (ctrl.playWhenReady && !ctrl.ended)
+    val playing = playback.playing
     val iconSize = controlSize * 0.5f
     val playPadding by animateDpAsState(
         targetValue = if (playing) 22.dp else 14.dp,
@@ -91,12 +113,12 @@ internal fun ListenTransport(
         label = "listenPlayPadding",
     )
     val nextAlpha by animateFloatAsState(
-        targetValue = if (ctrl.hasNext) 1f else 0.38f,
+        targetValue = if (playback.hasNext) 1f else 0.38f,
         animationSpec = YoinMotion.defaultEffectsSpec(),
         label = "listenNext",
     )
-    val d = ctrl.durationMs
-    val live = rememberLivePosition(ctrl, running = true)
+    val d = playback.durationMs
+    val live = rememberListenPosition(playback)
     val timeStyle = MaterialTheme.typography.labelLarge.withTabularFigures()
     Column(
         modifier
@@ -109,7 +131,7 @@ internal fun ListenTransport(
             FilledTonalButton(
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    ctrl.togglePlay()
+                    playback.togglePlay()
                 },
                 shape = MaterialTheme.shapes.extraLarge,
                 contentPadding = PaddingValues(horizontal = playPadding),
@@ -126,9 +148,9 @@ internal fun ListenTransport(
             FilledIconButton(
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    ctrl.skipNext()
+                    playback.skipNext()
                 },
-                enabled = ctrl.hasNext,
+                enabled = playback.hasNext,
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = scheme.primary,
                     contentColor = scheme.onPrimary,
@@ -169,7 +191,7 @@ internal fun ListenTransport(
                 }
                 Spacer(Modifier.width(8.dp))
             }
-            ListenPlayModeButton(ctrl, controlSize, iconSize)
+            ListenPlayModeButton(playback, controlSize, iconSize)
         }
         Row(
             Modifier.fillMaxWidth(),
@@ -179,7 +201,7 @@ internal fun ListenTransport(
             FilledIconButton(
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    ctrl.skipPrevious()
+                    playback.skipPrevious()
                 },
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = scheme.secondary,
@@ -187,10 +209,10 @@ internal fun ListenTransport(
                 ),
                 modifier = Modifier.size(controlSize),
             ) {
-                Icon(YoinSymbols.SkipPreviousFilled, contentDescription = "上一个", modifier = Modifier.size(iconSize))
+                Icon(YoinSymbols.SkipPreviousFilled, contentDescription = playback.previousLabel, modifier = Modifier.size(iconSize))
             }
             Text(
-                clock(ctrl.positionMs),
+                clock(live.value),
                 style = timeStyle,
                 color = scheme.onSurfaceVariant,
                 maxLines = 1,
@@ -198,14 +220,14 @@ internal fun ListenTransport(
             )
             ListenWaveBar(
                 progress = { if (d > 0) live.value.toFloat() / d else 0f },
-                buffered = if (d > 0) ctrl.bufferedMs.toFloat() / d else 0f,
+                buffered = if (d > 0) playback.bufferedMs.toFloat() / d else 0f,
                 durationMs = d,
                 playing = playing,
-                onSeek = { f -> ctrl.seekTo((f * d).toLong()) },
+                onSeek = { f -> playback.seekTo((f * d).toLong()) },
                 modifier = Modifier.weight(1f).height(controlSize),
             )
             Text(
-                "-" + clock((d - ctrl.positionMs).coerceAtLeast(0L)),
+                "-" + clock((d - live.value).coerceAtLeast(0L)),
                 style = timeStyle,
                 color = scheme.onSurfaceVariant,
                 textAlign = TextAlign.End,
@@ -221,31 +243,48 @@ internal fun listenTransportHeight(controlSize: Dp): Dp = controlSize * 2 + List
 
 private val ListenRowGap = 4.dp
 
+/** Bilibili's controller behind the listen transport. */
+@Stable
+internal class BiliListenPlayback(private val ctrl: PiliPlayerController) : ListenPlayback {
+    override val playing: Boolean get() = ctrl.isPlaying || (ctrl.playWhenReady && !ctrl.ended)
+    override val hasNext: Boolean get() = ctrl.hasNext
+    override val durationMs: Long get() = ctrl.durationMs
+    override val bufferedMs: Long get() = ctrl.bufferedMs
+    override fun positionMs(): Long = ctrl.exactPositionMs()
+    override fun togglePlay() = ctrl.togglePlay()
+    override fun skipNext() = ctrl.skipNext()
+    override fun skipPrevious() = ctrl.skipPrevious()
+    override fun seekTo(ms: Long) = ctrl.seekTo(ms)
+
+    @Composable
+    override fun mode(): ListenMode {
+        val queue = ctrl.queue
+        if (queue != null) {
+            val mode by queue.mode.collectAsState()
+            return ListenMode(mode.symbol, mode.label, lit = mode != PlayMode.ListLoop)
+        }
+        val loop = ctrl.loop
+        return ListenMode(if (loop) SymbolPlayMode.RepeatOne else SymbolPlayMode.RepeatAll, if (loop) "单曲循环" else "不循环", lit = loop)
+    }
+
+    override fun stepMode() {
+        val queue = ctrl.queue
+        if (queue != null) queue.cycleMode() else ctrl.changeLoop(!ctrl.loop)
+    }
+}
+
 /**
  * Yoin's play-mode key: a circle showing the mode's symbol, resting on tertiaryContainer in
  * 列表循环 and lit (primary) otherwise; a tap steps the mode.
  */
 @Composable
-private fun ListenPlayModeButton(ctrl: PiliPlayerController, size: Dp, iconSize: Dp) {
+private fun ListenPlayModeButton(playback: ListenPlayback, size: Dp, iconSize: Dp) {
     val haptics = LocalHapticFeedback.current
-    val queue = ctrl.queue
-    val symbol: SymbolPlayMode
-    val label: String
-    val lit: Boolean
-    val onStep: () -> Unit
-    if (queue != null) {
-        val mode by queue.mode.collectAsState()
-        symbol = mode.symbol
-        label = mode.label
-        lit = mode != PlayMode.ListLoop
-        onStep = { queue.cycleMode() }
-    } else {
-        val loop = ctrl.loop
-        symbol = if (loop) SymbolPlayMode.RepeatOne else SymbolPlayMode.RepeatAll
-        label = if (loop) "单曲循环" else "不循环"
-        lit = loop
-        onStep = { ctrl.changeLoop(!loop) }
-    }
+    val mode = playback.mode()
+    val symbol = mode.symbol
+    val label = mode.label
+    val lit = mode.lit
+    val onStep: () -> Unit = playback::stepMode
     val scheme = MaterialTheme.colorScheme
     val container by animateColorAsState(
         if (lit) scheme.primary else scheme.tertiaryContainer,
