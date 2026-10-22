@@ -341,6 +341,18 @@ internal object MiniGestures {
         else -> true
     }
 
+    /**
+     * Whether a touch lands on a floating window: by where it rests, not by its live size (the
+     * liquid spring dips below the detach size while it settles; that must not make it the bar).
+     */
+    fun isWindow(restIsWindow: Boolean, liveWindowed: Boolean): Boolean = restIsWindow || liveWindowed
+
+    /** How far the bar's picture has lifted off as a window (0 the bar, 1 a window): its way up over [range]. */
+    fun popProgress(dyUp: Float, range: Float): Float = (dyUp / range.coerceAtLeast(1f)).coerceIn(0f, 1f)
+
+    /** Let go: a pop-out past halfway stays a window, else it settles back into the bar. */
+    fun popKeeps(progress: Float): Boolean = progress >= 0.5f
+
     /** Scaling a window by [k] about [centroid] (the fingers' middle) moves its centre with them. */
     fun scaleAbout(center: Offset, centroid: Offset, k: Float): Offset = centroid + (center - centroid) * k
 }

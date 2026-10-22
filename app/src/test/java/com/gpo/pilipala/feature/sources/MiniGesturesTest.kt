@@ -71,6 +71,27 @@ class MiniGesturesTest {
         assertEquals(false, MiniGestures.keyFires(MiniGestureKind.Tap, MiniKey.Close, 1_000, settling = true))
     }
 
+    @Test fun popOutThenOneDownwardDragFromTheBottomCornerMerges() {
+        // Pulled up off the bar, past halfway: a window.
+        val p = MiniGestures.popProgress(60f, 48f)
+        assertEquals(1f, p, 0f)
+        assertEquals(true, MiniGestures.popKeeps(p))
+        // Let go low on the screen: its corner (bottom right) is known at release.
+        val area = Rect(12f, 40f, 388f, 700f)
+        val corner = MiniGestures.nearestCorner(Offset(300f, 650f), 140f, 79f, area)
+        assertEquals(3, corner)
+        // Still settling (its live size dipped under the window's): it is a window all the same,
+        assertEquals(true, MiniGestures.isWindow(restIsWindow = true, liveWindowed = false))
+        // and the very next drag down merges.
+        assertEquals(true, MiniGestures.startsMerge(corner, Offset(1f, 12f)))
+    }
+
+    @Test fun aPopOutDraggedBackDownGoesBackIntoTheBar() {
+        assertEquals(0.25f, MiniGestures.popProgress(12f, 48f), 0f)
+        assertEquals(false, MiniGestures.popKeeps(MiniGestures.popProgress(12f, 48f)))
+        assertEquals(0f, MiniGestures.popProgress(-20f, 48f), 0f)
+    }
+
     @Test fun onlyADownwardDragFromABottomCornerMerges() {
         assertEquals(true, MiniGestures.startsMerge(3, Offset(2f, 12f)))
         assertEquals(true, MiniGestures.startsMerge(2, Offset(-3f, 10f)))
