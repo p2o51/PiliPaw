@@ -1140,35 +1140,11 @@ private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, 
     frame.dragCenter = null
     frame.gesturing = false
     val vel = Offset(v.x, v.y)
-    // Where the throw would carry it (a friction-like decay over ~0.3s).
-    val projected = center + vel * 0.3f
-    val h = g.tile.height
-    // Thrown hard off a side: closed (a window always has a way out).
-    if (abs(v.x) > 2500f * density && (projected.x < 0f || projected.x > frame.bounds.right + frame.bounds.left)) {
-        KeepPlaying.windowCenter = center
-        // It goes on off that side with the throw, fading, and closes once it is gone (the
-        // next bar to show comes back in the middle, as after a swipe away).
-        val screenW = frame.bounds.right + frame.bounds.left
-        val away = if (v.x > 0f) screenW - g.tile.left else -g.tile.right
-        MiniLog.event("window thrown off", if (v.x > 0f) "right" else "left")
-        scope.launch {
-            frame.swipe.snapTo(0f)
-            frame.swipe.animateTo(away, MiniSprings.fast(), initialVelocity = v.x)
-            latest().close()
-        }
-        return
-    }
-    // A corner (the bottom ones rest above the nav bar), however it is dragged or flung: only a
-    // drag down from a bottom corner, or a pinch, takes it back into the bar.
+    // A corner (the bottom ones rest above the nav bar), however it is dragged or flung, however
+    // hard: a window never closes by a throw or a swipe, only by its close key; only a drag down
+    // from a bottom corner, or a pinch, takes it back into the bar.
     frame.haptic(dock = false)
-    // A light flick carries far (a long, low-friction projection), and a flick that clearly goes
-    // one way picks that way's corner even if it falls a little short.
-    val far = center + vel * 0.38f
-    val w = g.tile.width
-    var corner = MiniGestures.nearestCorner(far, w, h, frame.restArea)
-    val bias = 250f * density
-    if (abs(v.y) > bias) corner = (corner and 1) or (if (v.y > 0f) 2 else 0)
-    if (abs(v.x) > bias) corner = (corner and 2) or (if (v.x > 0f) 1 else 0)
+    val corner = MiniGestures.flungCorner(center, vel, g.tile.width, g.tile.height, frame.restArea, 250f * density)
     // At the size it rests at (a popped-out window may still be growing into its smallest).
     snapWindow(frame, scope, frame.restAxis(KeepPlaying.rest, density), corner, center, vel)
 }
@@ -1176,7 +1152,9 @@ private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, 
 private fun releaseSwipe(frame: MiniFrame, scope: CoroutineScope, vx: Float, density: Float, latest: () -> Playing) {
     val x = frame.swipeDrag ?: 0f
     val width = frame.anchor.value.width
-    val away = abs(x) > width * 0.35f || (abs(vx) > 1000f * density && sign(vx) == sign(x))
+    // Swiping away is the docked bar's alone: a window (resting as one, or drawn as one) never goes.
+    val bar = !MiniGestures.isWindow(KeepPlaying.rest is MiniRest.Window, frame.geo.windowed)
+    val away = bar && (abs(x) > width * 0.35f || (abs(vx) > 1000f * density && sign(vx) == sign(x)))
     scope.launch {
         frame.swipe.snapTo(x)
         frame.swipeDrag = null

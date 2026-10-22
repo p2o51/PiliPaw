@@ -30,6 +30,21 @@ class MiniGesturesTest {
         assertEquals(Offset(350f, 25f), MiniGestures.restingCenter(Offset(900f, -300f), 100f, 50f, area))
     }
 
+    @Test fun aWindowSwipedOrThrownSidewaysOnlyMovesToACorner() {
+        // A sideways drag on a window moves it, it never swipes it away.
+        assertEquals(MiniDragIntent.MoveWindow, MiniGestures.dragIntent(Offset(60f, 2f), windowed = true, merged = false, onPicture = true))
+        assertEquals(MiniDragIntent.MoveWindow, MiniGestures.dragIntent(Offset(-60f, 2f), windowed = true, merged = false, onPicture = false))
+        val area = Rect(0f, 0f, 400f, 800f)
+        // Bottom left, thrown hard right (far off the screen): the bottom right corner.
+        assertEquals(3, MiniGestures.flungCorner(Offset(50f, 775f), Offset(9000f, 0f), 100f, 50f, area, bias = 625f))
+        // Bottom right, thrown hard left: the bottom left corner.
+        assertEquals(2, MiniGestures.flungCorner(Offset(350f, 775f), Offset(-9000f, 100f), 100f, 50f, area, bias = 625f))
+        // Top right, a light flick up and left that falls short still picks the top left.
+        assertEquals(0, MiniGestures.flungCorner(Offset(350f, 25f), Offset(-700f, -50f), 100f, 50f, area, bias = 625f))
+        // Let go still: where it is.
+        assertEquals(3, MiniGestures.flungCorner(Offset(330f, 760f), Offset.Zero, 100f, 50f, area, bias = 625f))
+    }
+
     @Test fun aDragUpOffThePicturePopsItOut() {
         fun intent(x: Float, y: Float, windowed: Boolean = false, merged: Boolean = false, onPicture: Boolean = true) =
             MiniGestures.dragIntent(Offset(x, y), windowed, merged, onPicture)

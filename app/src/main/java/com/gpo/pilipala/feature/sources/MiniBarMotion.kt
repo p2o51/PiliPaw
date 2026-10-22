@@ -271,6 +271,19 @@ internal object MiniGestures {
     fun restingCenter(projected: Offset, w: Float, h: Float, area: Rect): Offset =
         cornerCenter(nearestCorner(projected, w, h, area), w, h, area)
 
+    /**
+     * The corner a window let go at [center] moving at [velocity] goes to: a light flick carries
+     * far (a long, low-friction projection), and a flick that clearly goes one way (past [bias]
+     * px/s) picks that way's corner even if it falls short. Never anything but a corner: a
+     * window thrown hard off a side lands in that side's corner, it does not close.
+     */
+    fun flungCorner(center: Offset, velocity: Offset, w: Float, h: Float, area: Rect, bias: Float): Int {
+        var corner = nearestCorner(center + velocity * 0.38f, w, h, area)
+        if (kotlin.math.abs(velocity.y) > bias) corner = (corner and 1) or (if (velocity.y > 0f) 2 else 0)
+        if (kotlin.math.abs(velocity.x) > bias) corner = (corner and 2) or (if (velocity.x > 0f) 1 else 0)
+        return corner
+    }
+
     /** 0 top left, 1 top right, 2 bottom left, 3 bottom right. */
     fun nearestCorner(projected: Offset, w: Float, h: Float, area: Rect): Int {
         val left = area.left + w / 2f
