@@ -173,7 +173,7 @@ private fun <T> kotlinx.coroutines.flow.StateFlow<T>.collectAsStateCompat() = co
 /**
  * Home's account chips, inline right after the selected 推荐 / 关注 chip: each account as its
  * avatar alone; the picked one grows its label and fills (the feed narrows to it), the other
- * steps back; tapping the picked one again lets go (both sources).
+ * stays where it is as an avatar (tap it to switch); tapping the picked one again lets go (both sources).
  */
 @androidx.compose.runtime.Composable
 fun InlineSourceChips() {
@@ -186,11 +186,7 @@ fun InlineSourceChips() {
     ) {
         VideoSource.entries.forEach { source ->
             val picked = only == source
-            androidx.compose.animation.AnimatedVisibility(
-                visible = only == null || picked,
-                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
-                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally(),
-            ) {
+            run {
                 val bg by androidx.compose.animation.animateColorAsState(
                     if (picked) scheme.secondaryContainer else scheme.surfaceContainerHigh,
                     com.gpo.pilipala.ui.theme.YoinMotion.defaultEffectsSpec(),
