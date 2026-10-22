@@ -41,6 +41,8 @@ import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.account.UserInfo
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.core.source.Sources
+import com.gpo.pilipala.core.source.VideoSource
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.FameCount
@@ -118,9 +120,14 @@ private fun SettingsList(
     var confirmLogout by remember { mutableStateOf(false) }
     val twoPane = selected != null
     val linkState = rememberLinkHostState()
+    val sources by Sources.enabled.collectAsState()
+    // YouTube's block shows only when it is ticked; then each account is headed by its site.
+    val bothAccounts = VideoSource.YouTube in sources
+    val logoutLabel = if (bothAccounts) "退出${VideoSource.Bilibili.label}登录" else "退出登录"
 
     SettingsScaffold(title = "设置", pageColor = pageColor) {
         AccountBlock(
+            label = if (bothAccounts) VideoSource.Bilibili.label else null,
             user = user,
             onLogin = { nav.push(Route.Login) },
             onProfile = { u -> nav.push(Route.Member(u.mid, u.face, u.name)) },
@@ -191,7 +198,7 @@ private fun SettingsList(
             SettingsGroup(null) {
                 item {
                     SettingsItem(
-                        title = "退出登录",
+                        title = logoutLabel,
                         icon = PiliSymbols.Logout,
                         titleColor = MaterialTheme.colorScheme.error,
                         onClick = { confirmLogout = true },
@@ -205,7 +212,7 @@ private fun SettingsList(
         AlertDialog(
             onDismissRequest = { confirmLogout = false },
             icon = { Icon(PiliSymbols.Logout, null) },
-            title = { Text("退出登录") },
+            title = { Text(logoutLabel) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmLogout = false
@@ -220,22 +227,23 @@ private fun SettingsList(
 }
 
 /**
- * The YouTube account beside the Bilibili one, once YouTube is ticked: signed in, its avatar,
- * name and handle (opens its page: subscriptions, library, its own options); signed out, 登录.
+ * The YouTube account beside the Bilibili one, once YouTube is ticked, under its own heading:
+ * signed in, its avatar, name and handle (opens its page: subscriptions, library, its own
+ * options); signed out, 登录.
  */
 @Composable
 private fun YouTubeAccountBlock() {
-    val sources by com.gpo.pilipala.core.source.Sources.enabled.collectAsState()
-    if (com.gpo.pilipala.core.source.VideoSource.YouTube !in sources) return
+    val sources by Sources.enabled.collectAsState()
+    if (VideoSource.YouTube !in sources) return
     val profile by com.gpo.pilipala.yt.core.account.Accounts.youtube.collectAsState()
     val ytNav = com.gpo.pilipala.yt.navigation.LocalNavigator.current
     val p = profile as? com.gpo.pilipala.yt.core.account.Profile.SignedIn
     val circle = androidx.compose.foundation.shape.CircleShape
-    SettingsSegments {
+    SettingsGroup(VideoSource.YouTube.label) {
         item {
             SettingsItem(
-                title = p?.name?.ifEmpty { "YouTube" } ?: "登录 YouTube",
-                summary = p?.handle?.ifEmpty { null } ?: if (p == null) "未登录" else "YouTube",
+                title = p?.name?.ifEmpty { p.handle.ifEmpty { "已登录" } } ?: "登录",
+                summary = if (p == null) "未登录" else p.handle.takeIf { it.isNotEmpty() && p.name.isNotEmpty() },
                 onClick = { ytNav.push(if (p == null) com.gpo.pilipala.yt.navigation.Route.SignIn else com.gpo.pilipala.yt.navigation.Route.Settings) },
                 leading = {
                     if (p != null && p.avatar.isNotEmpty()) NetImage(p.avatar, Modifier.size(56.dp), shape = circle, thumbWidth = 112.dp)
@@ -271,46 +279,52 @@ private fun YouTubeAccountBlock() {
     }
 }
 
-/** Signed in: avatar (cookie-clipped), name, level and UID. Signed out: the login row. */
+/**
+ * Signed in: avatar (cookie-clipped), name, level and UID. Signed out: the login row. [label]
+ * heads it (the site's name) when another account sits beside it.
+ */
 @Composable
-private fun AccountBlock(user: UserInfo?, onLogin: () -> Unit, onProfile: (UserInfo) -> Unit) {
+private fun AccountBlock(label: String?, user: UserInfo?, onLogin: () -> Unit, onProfile: (UserInfo) -> Unit) {
     val cookie = MaterialShapes.Cookie12Sided.toShape()
-    AnimatedContent(
-        targetState = user,
-        contentKey = { it?.mid },
-        transitionSpec = { YoinMotion.fadeIn(YoinMotionRole.Standard) togetherWith YoinMotion.fadeOut(YoinMotionRole.Standard) },
-        label = "account",
-    ) { u ->
-        SettingsSegments {
-            item {
-                if (u == null) {
-                    SettingsItem(
-                        title = "登录",
-                        summary = "未登录",
-                        onClick = onLogin,
-                        leading = { GlyphTile(YoinSymbols.Person, cookie) },
-                        trailing = { Icon(YoinSymbols.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
-                    )
-                } else {
-                    SettingsItem(
-                        title = u.name,
-                        onClick = { onProfile(u) },
-                        summary = "UID ${u.mid}",
-                        leading = {
-                            NetImage(u.face, Modifier.size(56.dp), shape = cookie, thumbWidth = 112.dp)
-                        },
-                        trailing = {
-                            Tag("LV${u.level}", container = MaterialTheme.colorScheme.secondaryContainer, content = MaterialTheme.colorScheme.onSecondaryContainer)
-                            if (u.vipLabel.isNotEmpty()) {
-                                Tag(u.vipLabel, container = MaterialTheme.colorScheme.primaryContainer, content = MaterialTheme.colorScheme.onPrimaryContainer)
-                            }
-                            Icon(YoinSymbols.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                        },
-                    )
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (label != null) SettingsGroupLabel(label)
+        AnimatedContent(
+            targetState = user,
+            contentKey = { it?.mid },
+            transitionSpec = { YoinMotion.fadeIn(YoinMotionRole.Standard) togetherWith YoinMotion.fadeOut(YoinMotionRole.Standard) },
+            label = "account",
+        ) { u ->
+            SettingsSegments {
+                item {
+                    if (u == null) {
+                        SettingsItem(
+                            title = "登录",
+                            summary = "未登录",
+                            onClick = onLogin,
+                            leading = { GlyphTile(YoinSymbols.Person, cookie) },
+                            trailing = { Icon(YoinSymbols.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                        )
+                    } else {
+                        SettingsItem(
+                            title = u.name,
+                            onClick = { onProfile(u) },
+                            summary = "UID ${u.mid}",
+                            leading = {
+                                NetImage(u.face, Modifier.size(56.dp), shape = cookie, thumbWidth = 112.dp)
+                            },
+                            trailing = {
+                                Tag("LV${u.level}", container = MaterialTheme.colorScheme.secondaryContainer, content = MaterialTheme.colorScheme.onSecondaryContainer)
+                                if (u.vipLabel.isNotEmpty()) {
+                                    Tag(u.vipLabel, container = MaterialTheme.colorScheme.primaryContainer, content = MaterialTheme.colorScheme.onPrimaryContainer)
+                                }
+                                Icon(YoinSymbols.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                            },
+                        )
+                    }
                 }
-            }
-            if (u != null) {
-                item { AccountStats(u) }
+                if (u != null) {
+                    item { AccountStats(u) }
+                }
             }
         }
     }
