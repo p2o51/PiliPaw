@@ -373,6 +373,18 @@ fun BiliVideoPlayer(
     // Fullscreen predictive back (FullscreenBack.kt): the picture follows the finger home,
     // then lands in its inline slot; the landing scales a TextureView too.
     val back = remember { FullscreenBackState() }
+    // Into fullscreen in the same window (no turn of the display or the picture ahead): the
+    // picture grows out of its inline slot, the back's landing run the other way. Decided as
+    // the fullscreen layout composes, so its first frame already draws the picture in the slot.
+    val enterSeen = remember { booleanArrayOf(fullscreen) }
+    if (enterSeen[0] != fullscreen) {
+        enterSeen[0] = fullscreen
+        val sameWindow = !windowPortrait || portraitVideo
+        if (fullscreen && full && !inPip && !ctrl.pipForcedFullscreen && !back.busy && sameWindow) {
+            val root = LocalView.current.rootView
+            back.beginEnter(IntSize(root.width, root.height), ctrl.videoAspect)
+        }
+    }
     val landing by remember { derivedStateOf { back.landing } }
     // 画面 (PictureZoom.kt). Anything but 适应 lays the video view out bigger than its box
     // (填充) or stretches it, which only a TextureView clips and scales cleanly.
@@ -385,9 +397,16 @@ fun BiliVideoPlayer(
     val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
 
     LaunchedEffect(fullscreen) { if (!fullscreen) ctrl.fullscreenByRotation = false }
-    // Back into fullscreen mid-landing: the landing is over.
+    val enterSpec = YoinMotion.defaultSpatialSpec<Float>(YoinMotionRole.Standard)
     LaunchedEffect(fullscreen) {
-        if (fullscreen && back.settle.value != 0f) {
+        if (fullscreen && back.enterPending) {
+            // Grown out of the inline slot (see beginEnter above).
+            back.settle.snapTo(1f)
+            back.enterPending = false
+            back.settle.animateTo(0f, enterSpec)
+            back.release = null
+        } else if (fullscreen && back.settle.value != 0f) {
+            // Back into fullscreen mid-landing: the landing is over.
             back.settle.snapTo(0f)
             back.release = null
         }

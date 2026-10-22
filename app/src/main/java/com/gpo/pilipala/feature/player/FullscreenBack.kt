@@ -68,6 +68,15 @@ internal class FullscreenBackState {
     val settle = Animatable(0f)
 
     /**
+     * Fullscreen was just entered from the inline slot and the picture is to grow out of it:
+     * until [settle] has been set to run from there, it is drawn where it was ([settleNow] 1).
+     */
+    internal var enterPending by mutableStateOf(false)
+
+    /** [settle] as drawn ([enterPending] holds it at the start). */
+    internal val settleNow: Float get() = if (enterPending) 1f else settle.value
+
+    /**
      * Raised with the commit, before the progress drops back to 0: the chrome stays invisible
      * and its reveal snaps shut instead of folding up under the landing picture. The player
      * lowers it a couple of frames later, once the reveal has snapped.
@@ -76,11 +85,11 @@ internal class FullscreenBackState {
 
     /** From the commit until the picture rests in its slot: the controls stay hidden and uncomposed. */
     val landing: Boolean
-        get() = settle.isRunning || settle.value != 0f
+        get() = enterPending || settle.isRunning || settle.value != 0f
 
     /** True while the gesture is held or anything still moves (no bounds are trustworthy then). */
     val busy: Boolean
-        get() = progress.value != 0f || settle.value != 0f || progress.isRunning || settle.isRunning
+        get() = enterPending || progress.value != 0f || settle.value != 0f || progress.isRunning || settle.isRunning
 
     // Where the inline picture box last sat (window px), the window size then, and its corner.
     internal var inlineBox: Rect? = null
@@ -108,6 +117,20 @@ internal class FullscreenBackState {
     internal var frame: LayoutCoordinates? = null
     internal var spec: BackFrameSpec? = null
     internal var density: Density? = null
+
+    /**
+     * Fullscreen entered with the window as it was: the picture grows out of the inline slot
+     * it sat in ([inlineBox], the video fitted in it at [aspect]), the landing run the other
+     * way. False when the slot is not known for this [window] (the caller then simply cuts).
+     */
+    fun beginEnter(window: IntSize, aspect: Float): Boolean {
+        val box = inlineBox?.takeIf { inlineWindow == window && it.width > 1f && it.height > 1f } ?: return false
+        val a = aspect.takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
+        release = BackPose(centre = box.center, width = min(box.width, box.height * a), radius = inlineRadius)
+        restRadius = 0f
+        enterPending = true
+        return true
+    }
 
     fun captureInline(coords: LayoutCoordinates, radius: Float, window: IntSize) {
         if (!coords.isAttached) return
@@ -163,7 +186,7 @@ private class Solved(
  */
 private fun Density.solve(st: FullscreenBackState, spec: BackFrameSpec, frame: Size, origin: Offset): Solved {
     val g = st.progress.value.coerceAtLeast(0f)
-    val s = st.settle.value
+    val s = st.settleNow
     val w = frame.width
     val h = frame.height
     val fw = if (spec.swapped) h else w
@@ -293,7 +316,7 @@ internal fun Modifier.fullscreenBackFrame(st: FullscreenBackState, spec: BackFra
         p.placeWithLayer(0, 0) {
             // Read first so the layer follows both clocks even while it is idle.
             val g = st.progress.value
-            val s = st.settle.value
+            val s = st.settleNow
             val c = coords?.takeIf { it.isAttached }
             val solved = if (c != null && (g != 0f || s != 0f)) solve(st, spec, c.size.toSize(), c.positionInWindow()) else null
             if (solved == null || !solved.active) {
@@ -316,7 +339,7 @@ internal fun Modifier.fullscreenBackFrame(st: FullscreenBackState, spec: BackFra
 internal fun Modifier.fullscreenBackClip(st: FullscreenBackState, spec: BackFrameSpec): Modifier = graphicsLayer {
     val coords = st.frame?.takeIf { it.isAttached }
     val g = st.progress.value
-    val s = st.settle.value
+    val s = st.settleNow
     val solved = if (coords != null && (g != 0f || s != 0f)) solve(st, spec, coords.size.toSize(), coords.positionInWindow()) else null
     if (solved == null || !solved.active) {
         clip = false
@@ -390,13 +413,14 @@ internal fun FullscreenBackHandler(
             }
             throw c
         }
-        if (!moved) {
-            // A back with no gesture (3-button, keyboard, before Android 14): nothing was
-            // pulled, so nothing lands; the plain exit, as before.
+        if (!moved && inline == null) {
+            // A back with no gesture (3-button, keyboard, before Android 14) while the window
+            // is going to turn: the plain exit, the system's rotation carries it.
             state.progress.snapTo(0f)
             latestExit(false)
             return
         }
+        // No gesture but the same window: the full picture lands in its slot all the same.
         // Commit: the inline picture lands from exactly where it was let go. The chrome is
         // held invisible first, so no frame shows it back at full strength (the fade above
         // only follows the progress, which drops to 0 here).
