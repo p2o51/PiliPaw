@@ -1,9 +1,9 @@
 # PiliPala Compose — brief for feature agents
 
 We are porting the Flutter app **pilipala** (Bilibili third-party client, reference source
-at `/Users/gpo/Developer/pilipala/flutter-src/lib`, read-only) to **Jetpack Compose**, in the
-**Yoin design language** (the owner's music app at `/Users/gpo/Developer/Yoin`, read-only;
-its design doc is `/Users/gpo/Developer/Yoin/docs/design.md`). Speed > polish: ship
+at `flutter-src/lib` (git-ignored), read-only) to **Jetpack Compose**, in the
+**Yoin design language** ([Yoin](https://github.com/p2o51/Yoin), the owner's music app;
+its design doc is `docs/design.md` there). Speed > polish: ship
 working, good-looking UI now; tests/QA later. UI language is Chinese (keep pilipala's labels).
 
 ## Build
