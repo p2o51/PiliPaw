@@ -394,7 +394,13 @@ fun BiliVideoPlayer(
     val pictureFit = pictureFitOf(fitSetting)
     // A player handed over from a card's preview draws through a TextureView from the start, so
     // its picture flies in with the page (a SurfaceView only after landing) and never swaps view.
-    val surfaceType = if (ctrl.handedOver || turned || turning || cardFrame || landing || pictureFit != PictureFit.Fit) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
+    // Once a fullscreen exit has landed on a TextureView it stays one: swapping back to a
+    // SurfaceView as the landing ended left the inline picture black (the new SurfaceView never
+    // got its surface while the window settled, the decoder sat on a placeholder) and, after a
+    // pause in fullscreen, frozen on a still while the sound played on.
+    var landedOnTexture by remember { mutableStateOf(false) }
+    if (landing && !landedOnTexture) landedOnTexture = true
+    val surfaceType = if (ctrl.handedOver || turned || turning || cardFrame || landing || landedOnTexture || pictureFit != PictureFit.Fit) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
     val view = LocalView.current
     val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
 
