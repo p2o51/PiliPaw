@@ -227,3 +227,86 @@ internal fun miniGeo(
 }
 
 internal fun Rect.union(o: Rect) = Rect(minOf(left, o.left), minOf(top, o.top), maxOf(right, o.right), maxOf(bottom, o.bottom))
+
+/** What one gesture on the bar or the window was, once every finger is up. */
+internal enum class MiniGestureKind { Tap, Pinch, Drag, None }
+
+internal object MiniGestures {
+    /**
+     * A tap only when exactly one finger ever went down (on the bar or anywhere else on the
+     * screen), it moved less than [slop] and lifted within [tapTimeoutMs]. A second finger makes
+     * the whole gesture a pinch until every finger is up.
+     */
+    fun classify(maxPointers: Int, travel: Float, durationMs: Long, dragged: Boolean, slop: Float, tapTimeoutMs: Long): MiniGestureKind = when {
+        maxPointers >= 2 -> MiniGestureKind.Pinch
+        dragged -> MiniGestureKind.Drag
+        travel < slop && durationMs <= tapTimeoutMs -> MiniGestureKind.Tap
+        else -> MiniGestureKind.None
+    }
+
+    /**
+     * Where a flung window comes to rest: the corner of [area] (insets already taken off) nearest
+     * the point its centre was thrown to, as YouTube's does.
+     */
+    fun restingCenter(projected: Offset, w: Float, h: Float, area: Rect): Offset =
+        cornerCenter(nearestCorner(projected, w, h, area), w, h, area)
+
+    /** 0 top left, 1 top right, 2 bottom left, 3 bottom right. */
+    fun nearestCorner(projected: Offset, w: Float, h: Float, area: Rect): Int {
+        val left = area.left + w / 2f
+        val right = (area.right - w / 2f).coerceAtLeast(left)
+        val top = area.top + h / 2f
+        val bottom = (area.bottom - h / 2f).coerceAtLeast(top)
+        val r = if (projected.x - left < right - projected.x) 0 else 1
+        val b = if (projected.y - top < bottom - projected.y) 0 else 2
+        return r + b
+    }
+
+    /** A [w] × [h] window's centre resting in [corner] of [area] (centred where it does not fit). */
+    fun cornerCenter(corner: Int, w: Float, h: Float, area: Rect): Offset {
+        val left = area.left + w / 2f
+        val right = area.right - w / 2f
+        val top = area.top + h / 2f
+        val bottom = area.bottom - h / 2f
+        val x = if (right < left) area.center.x else if (corner and 1 == 0) left else right
+        val y = if (bottom < top) area.center.y else if (corner and 2 == 0) top else bottom
+        return Offset(x, y)
+    }
+
+    /** Scaling a window by [k] about [centroid] (the fingers' middle) moves its centre with them. */
+    fun scaleAbout(center: Offset, centroid: Offset, k: Float): Offset = centroid + (center - centroid) * k
+}
+
+/**
+ * Every finger on the screen, seen by the activity before any view: the bar learns of a second
+ * finger that landed outside it (a 56dp bar rarely holds both), so a pinch never ends as a tap,
+ * and the span can be read from both.
+ */
+internal object MiniTouch {
+    /** Fingers down now, and the most there were since the first went down. */
+    var count = 0
+        private set
+    var maxCount = 0
+        private set
+    private val xs = FloatArray(2)
+    private val ys = FloatArray(2)
+
+    fun observe(e: android.view.MotionEvent) {
+        when (e.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> maxCount = 1
+            android.view.MotionEvent.ACTION_CANCEL -> maxCount = 0
+        }
+        val up = e.actionMasked == android.view.MotionEvent.ACTION_UP || e.actionMasked == android.view.MotionEvent.ACTION_CANCEL
+        val lifting = if (e.actionMasked == android.view.MotionEvent.ACTION_POINTER_UP) 1 else 0
+        count = if (up) 0 else e.pointerCount - lifting
+        if (count > maxCount) maxCount = count
+        for (i in 0 until minOf(2, e.pointerCount)) {
+            xs[i] = e.getX(i)
+            ys[i] = e.getY(i)
+        }
+    }
+
+    /** The first two fingers' distance and middle (window px), while two are down. */
+    fun span(): Float = Offset(xs[0] - xs[1], ys[0] - ys[1]).getDistance()
+    fun centroid(): Offset = Offset((xs[0] + xs[1]) / 2f, (ys[0] + ys[1]) / 2f)
+}

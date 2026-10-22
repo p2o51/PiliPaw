@@ -89,6 +89,13 @@ class MainActivity : ComponentActivity() {
     private var handoff: SplashHandoff? = null
     private var giveUp: Runnable? = null
 
+    // Every finger, before any view: the mini bar tells a pinch from a tap even when the second
+    // finger lands outside it (feature/sources/MiniBarMotion.kt).
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        com.gpo.pilipala.feature.sources.MiniTouch.observe(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         enableEdgeToEdge(
