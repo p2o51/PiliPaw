@@ -259,6 +259,8 @@ internal class PiliPlayerController(
             isPlaying = playing
             mirror?.isPlaying = playing
             onPlayingChanged(playing)
+            // A page's player starting: the mini bar's other video steps aside (PlayerHost.kt).
+            if (playing && !preview) com.gpo.pilipala.feature.sources.PlayerHost.started(com.gpo.pilipala.feature.sources.PlayerSlot.Bili(this@PiliPlayerController))
             if (playing && !hostWanted) {
                 hostWanted = true
                 syncBackgroundHost()
@@ -851,6 +853,7 @@ internal class PiliPlayerController(
     private var cdnSession = -1L
 
     override fun release() {
+        com.gpo.pilipala.feature.sources.PlayerHost.released(com.gpo.pilipala.feature.sources.PlayerSlot.Bili(this))
         if (cdnSession >= 0 && com.gpo.pilipala.feature.player.cdn.CdnRouter.sessionId() == cdnSession) {
             com.gpo.pilipala.feature.player.cdn.CdnRouter.endSession()
         }

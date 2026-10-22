@@ -107,6 +107,13 @@ object KeepPlaying {
     var windowCenter by mutableStateOf(Offset.Unspecified)
         internal set
 
+    /** A video opened: the next dock starts again as the plain bar, unfolded. */
+    internal fun resetDock() {
+        level = 1f
+        windowCenter = Offset.Unspecified
+        compact = false
+    }
+
     /**
      * For the shell's content: scrolling down folds the bar into a circle beside the nav bar,
      * scrolling up opens it again.
@@ -156,6 +163,9 @@ internal object BiliKeeper {
         val t = ctrl.target ?: return false
         // Plain videos only (an episode or an offline file reopens through other pages).
         if (!ctrl.keepable || t.isPgc || t.bvid.isEmpty()) return false
+        if (KeepPlaying.mode.value == 1) return false
+        // A newer player came to the front meanwhile (the next video's page): this one goes.
+        if (!PlayerHost.dock(PlayerSlot.Bili(ctrl))) return false
         when (KeepPlaying.mode.value) {
             1 -> return false
             0 -> KeepPlaying.asking = true
@@ -178,8 +188,10 @@ internal object BiliKeeper {
     }
 
     fun close() {
-        held?.dispose()
+        val c = held ?: return
         held = null
+        PlayerHost.released(PlayerSlot.Bili(c))
+        c.dispose()
     }
 
     internal fun route(c: PiliPlayerController): Route? = c.target?.let { t ->

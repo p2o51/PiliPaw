@@ -169,6 +169,10 @@ fun rememberBiliPlayerState(adoptBvid: String = ""): BiliPlayerState {
         com.gpo.pilipala.feature.sources.BiliKeeper.take(adoptBvid)
             ?: PreviewHandoff.take(adoptBvid)?.also { it.adopt() }
             ?: PiliPlayerController(context)
+    }.also { ctrl ->
+        // Opening any video: the one docked in the mini bar (another video, or YouTube's) goes,
+        // exactly once per player this page holds (PlayerHost.kt).
+        remember(ctrl) { com.gpo.pilipala.feature.sources.PlayerHost.opened(com.gpo.pilipala.feature.sources.PlayerSlot.Bili(ctrl)) }
     }
 }
 

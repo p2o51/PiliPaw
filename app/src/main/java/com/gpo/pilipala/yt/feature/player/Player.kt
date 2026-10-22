@@ -15,6 +15,8 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
+import com.gpo.pilipala.feature.sources.PlayerHost
+import com.gpo.pilipala.feature.sources.PlayerSlot
 import com.gpo.pilipala.yt.core.extractor.VideoItem
 import com.gpo.pilipala.yt.core.extractor.toVideo
 import com.gpo.pilipala.yt.core.extractor.Yt
@@ -56,8 +58,20 @@ object Player {
     var session by mutableStateOf<Session?>(null)
         private set
 
-    /** The overlay's target: full player (true) or mini bar (false). */
-    var expanded by mutableStateOf(false)
+    /**
+     * The overlay's target: full player (true) or mini bar (false). Opening puts YouTube in
+     * front (a docked Bilibili video goes); collapsing docks it in the mini bar (PlayerHost.kt).
+     */
+    private var expandedState by mutableStateOf(false)
+    var expanded: Boolean
+        get() = expandedState
+        set(value) {
+            if (value == expandedState) return
+            expandedState = value
+            if (session == null) return
+            if (value) PlayerHost.opened(PlayerSlot.YouTube)
+            else if (!PlayerHost.dock(PlayerSlot.YouTube)) close()
+        }
 
     /** The picture fills the window ([FullscreenPlayer]); only while expanded. */
     var fullscreen by mutableStateOf(false)
@@ -272,6 +286,7 @@ object Player {
                 addListener(object : Media3Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         this@Player.isPlaying = playing
+                        if (playing) PlayerHost.started(PlayerSlot.YouTube)
                         // Paused (or ended): the resume point is exact.
                         if (!playing) savePosition()
                     }
@@ -374,7 +389,9 @@ object Player {
 
     /** Opens [url] in the player, expanded. Tapping the video that is already playing just expands it. */
     fun play(url: String, preview: VideoItem? = null) {
-        expanded = true
+        expandedState = true
+        // One player for the user: a docked Bilibili video (or YouTube's own bar) gives way.
+        PlayerHost.opened(PlayerSlot.YouTube)
         if (session?.url == url && session?.error == null) return
         savePosition()
         loadJob?.cancel()
@@ -458,10 +475,11 @@ object Player {
         loadJob?.cancel()
         exo.stop()
         exo.clearMediaItems()
-        expanded = false
+        expandedState = false
         fullscreen = false
         changeAudioOnly(false)
         session = null
+        PlayerHost.released(PlayerSlot.YouTube)
         syncBackgroundHost()
     }
 }
