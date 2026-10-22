@@ -2,14 +2,14 @@
 
 PiliPaw (霹雳啵) is a Jetpack Compose rewrite of PiliPala, the Flutter Bilibili client by guozhigq ([guozhigq/pilipala](https://github.com/guozhigq/pilipala)); it is not related to PiliPawa (噼哩啪哇).
 
-A third-party Bilibili client in the Yoin design language: Material 3 Expressive, system dynamic color with cover-driven palettes on detail pages, Google Sans Flex, continuous corners, spring motion, Yoin Symbols.
+A third-party Bilibili client, with YouTube alongside it (via PipePipeExtractor), in the Yoin design language: Material 3 Expressive, system dynamic color with cover-driven palettes on detail pages, Google Sans Flex, continuous corners, spring motion, Yoin Symbols.
 
 基于 [guozhigq/pilipala](https://github.com/guozhigq/pilipala)（PiliPala）重写。PiliPaw 以 GPL-3.0 发布，见 [LICENSE](LICENSE)。
 
 ## Build
 
 ```sh
-git clone --recursive https://github.com/p2o51/pilipala-compose.git   # PipePipeExtractor is a submodule
+git clone --recursive https://github.com/p2o51/PiliPaw.git            # PipePipeExtractor is a submodule
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :app:assembleDebug        # debug
 ./gradlew :app:assembleRelease      # release, signed with the debug key
