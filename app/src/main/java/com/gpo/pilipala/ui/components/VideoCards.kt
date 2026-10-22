@@ -88,7 +88,15 @@ data class VideoItem(
     val progress: Long = 0,
     /** Non-video targets (live / bangumi / article) — when set, cards open this instead of the video page. */
     val target: Route? = null,
+    /** A YouTube video in a mixed feed: its watch URL; the card plays it in the YouTube player. */
+    val youtubeUrl: String? = null,
 )
+
+/** A card's tap: a YouTube video plays over the page; anything else opens its page. */
+internal fun VideoItem.open(nav: com.gpo.pilipala.navigation.Navigator) {
+    val yt = youtubeUrl
+    if (yt != null) com.gpo.pilipala.yt.feature.player.Player.play(yt) else nav.push(route())
+}
 
 private val CoverShape = ContinuousRoundedCornerShape(12.dp)
 
@@ -98,7 +106,9 @@ private val CoverShape = ContinuousRoundedCornerShape(12.dp)
  */
 @Composable
 private fun cardLongClick(item: VideoItem, onLongClick: (() -> Unit)?): (() -> Unit)? {
-    if (onLongClick != null || !item.isPlainVideo) return onLongClick
+    if (onLongClick != null) return onLongClick
+    item.youtubeUrl?.let { url -> return youtubeLongClick(item, url) }
+    if (!item.isPlainVideo) return null
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
     if (menu) VideoCardMenu(item, onDismiss = { menu = false })
@@ -134,7 +144,7 @@ fun VideoCardV(
         modifier = modifier
             .pageSharedSource(item.route())
             .clip(YoinContainerShapes.Card)
-            .combinedClickable(onLongClick = longClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) }),
+            .combinedClickable(onLongClick = longClick, onClick = { onClick?.invoke() ?: item.open(nav) }),
     ) {
         // Cover, scrim and badge are one print for the seams; the labels on it lift out whole.
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).pageHeroCover(item.route()).seamGraphic()) {
@@ -197,7 +207,7 @@ fun VideoCardL(
                 onClick = {
                     // A playing preview goes on as the page's player; any other stops.
                     preview?.open(item.bvid)
-                    onClick?.invoke() ?: nav.push(item.route())
+                    onClick?.invoke() ?: item.open(nav)
                 },
             ),
     ) {
@@ -281,7 +291,7 @@ fun VideoCardH(
             .fillMaxWidth()
             .pageSharedSource(item.route())
             .clip(YoinContainerShapes.ListRow)
-            .combinedClickable(onLongClick = longClick, onClick = { onClick?.invoke() ?: nav.push(item.route()) })
+            .combinedClickable(onLongClick = longClick, onClick = { onClick?.invoke() ?: item.open(nav) })
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -512,5 +522,27 @@ fun rememberTagPlaceholder(text: String): Placeholder {
             val h = size.height + 2 * TagDefaults.VerticalPadding.toPx()
             Placeholder(w.toSp(), h.toSp(), PlaceholderVerticalAlign.TextCenter)
         }
+    }
+}
+
+
+/** A YouTube card in a mixed feed: the YouTube part's own video menu (加入到列表, 稍后再看…). */
+@Composable
+private fun youtubeLongClick(item: VideoItem, url: String): () -> Unit {
+    val haptics = LocalHapticFeedback.current
+    var menu by remember { mutableStateOf(false) }
+    if (menu) {
+        com.gpo.pilipala.yt.ui.components.VideoMenuSheet(
+            com.gpo.pilipala.yt.core.extractor.VideoItem(
+                url = url, title = item.title, thumbnail = item.cover, channelName = item.ownerName, channelUrl = "",
+                channelAvatar = item.ownerFace, durationSec = item.duration, views = item.views, uploaded = "",
+                uploadedAt = item.pubdate * 1000, isLive = false, isShort = false, channelVerified = false,
+            ),
+            onDismiss = { menu = false },
+        )
+    }
+    return {
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        menu = true
     }
 }

@@ -125,6 +125,7 @@ private fun SettingsList(
             onLogin = { nav.push(Route.Login) },
             onProfile = { u -> nav.push(Route.Member(u.mid, u.face, u.name)) },
         )
+        YouTubeAccountBlock()
         OpenLinksCard(linkState)
 
         SettingsGroup("偏好") {
@@ -215,6 +216,34 @@ private fun SettingsList(
             },
             dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("取消") } },
         )
+    }
+}
+
+/**
+ * The YouTube account beside the Bilibili one, once YouTube is ticked: signed in, its avatar,
+ * name and handle (opens its page: subscriptions, library, its own options); signed out, 登录.
+ */
+@Composable
+private fun YouTubeAccountBlock() {
+    val sources by com.gpo.pilipala.core.source.Sources.enabled.collectAsState()
+    if (com.gpo.pilipala.core.source.VideoSource.YouTube !in sources) return
+    val profile by com.gpo.pilipala.yt.core.account.Accounts.youtube.collectAsState()
+    val ytNav = com.gpo.pilipala.yt.navigation.LocalNavigator.current
+    val p = profile as? com.gpo.pilipala.yt.core.account.Profile.SignedIn
+    val circle = androidx.compose.foundation.shape.CircleShape
+    SettingsSegments {
+        item {
+            SettingsItem(
+                title = p?.name?.ifEmpty { "YouTube" } ?: "登录 YouTube",
+                summary = p?.handle?.ifEmpty { null } ?: if (p == null) "未登录" else "YouTube",
+                onClick = { ytNav.push(if (p == null) com.gpo.pilipala.yt.navigation.Route.SignIn else com.gpo.pilipala.yt.navigation.Route.Settings) },
+                leading = {
+                    if (p != null && p.avatar.isNotEmpty()) NetImage(p.avatar, Modifier.size(56.dp), shape = circle, thumbWidth = 112.dp)
+                    else GlyphTile(YoinSymbols.Person, circle)
+                },
+                trailing = { Icon(YoinSymbols.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+            )
+        }
     }
 }
 

@@ -39,7 +39,7 @@ fun VideoMenuSheet(video: VideoItem, onDismiss: () -> Unit) {
     val toast = rememberToast()
     var playlists by remember { mutableStateOf(false) }
     if (playlists) {
-        AddToPlaylistSheet(video, onDismiss = onDismiss)
+        com.gpo.pilipala.feature.sources.SaveToListSheet(com.gpo.pilipala.yt.feature.library.Library.itemOf(video), onDismiss = onDismiss)
         return
     }
     ModalBottomSheet(onDismissRequest = onDismiss, properties = rememberSheetProperties()) {
@@ -55,7 +55,7 @@ fun VideoMenuSheet(video: VideoItem, onDismiss: () -> Unit) {
                 toast(if (Library.toggleWatchLater(video)) "已加入稍后再看" else "已移出稍后再看")
                 onDismiss()
             }
-            MenuRow(YoinSymbols.Add, "加到 Mix") { playlists = true }
+            MenuRow(YoinSymbols.LibraryAdd, "加入到列表") { playlists = true }
             if (video.channelUrl.isNotEmpty()) {
                 MenuRow(YoinSymbols.VisibilityOff, "不看此频道「${video.channelName}」", MaterialTheme.colorScheme.error) {
                     Mutes.muteChannel(video.channelUrl, video.channelName, video.channelAvatar)

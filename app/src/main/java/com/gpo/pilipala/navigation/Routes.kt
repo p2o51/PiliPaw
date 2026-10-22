@@ -74,6 +74,8 @@ sealed interface Route : NavKey {
     @Serializable data class Fav(val mid: Long = 0) : Route
     @Serializable data class FavDetail(val mediaId: Long, val title: String = "", val cover: String = "") : Route
     @Serializable data object Later : Route
+    /** A YouTube playlist (the account's library, or a link), its videos in the YouTube player. */
+    @Serializable data class YtPlaylist(val url: String, val title: String = "", val cover: String = "") : Route
     /** A Mix list: Bilibili and YouTube videos in one local list (feature/sources). */
     @Serializable data class MixList(val id: String, val title: String = "") : Route
     @Serializable data object History : Route

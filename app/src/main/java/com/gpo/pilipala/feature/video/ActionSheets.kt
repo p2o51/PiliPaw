@@ -234,20 +234,22 @@ internal fun FavSheet(
     actions: ArchiveActions,
     onDismiss: () -> Unit,
     mixItem: com.gpo.pilipala.yt.feature.library.LibItem? = null,
+    /** Signed out: only the Mix lists (no account 收藏夹 to load). */
+    accountFolders: Boolean = true,
 ) {
     val haptic = LocalHapticFeedback.current
-    var mix by remember { mutableStateOf(false) }
-    // 加到 Mix replaces this sheet (local lists, nothing to save on 完成).
-    if (mix && mixItem != null) {
-        com.gpo.pilipala.feature.sources.MixPickerSheet(mixItem, onDismiss = onDismiss)
-        return
-    }
+    // Mix ticks, kept until 完成 like the 收藏夹 ones.
+    val mixTicks = remember { mutableStateMapOf<String, Boolean>() }
     var folders by remember { mutableStateOf<List<FavFolder>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
     val checked = remember { mutableStateMapOf<Long, Boolean>() }
     LaunchedEffect(attempt) {
         error = null
+        if (!accountFolders) {
+            folders = emptyList()
+            return@LaunchedEffect
+        }
         runCatching { actions.loadFolders() }
             .onSuccess { list ->
                 folders = list
@@ -262,10 +264,7 @@ internal fun FavSheet(
     ) {
         // The 新建收藏夹 row has a text field: the column clears the keyboard too.
         Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(bottom = 16.dp)) {
-            Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("收藏到", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                if (mixItem != null) androidx.compose.material3.TextButton(onClick = { mix = true }) { Text("加到 Mix") }
-            }
+            Text("收藏到", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp))
             Spacer(Modifier.height(12.dp))
             val list = folders
             val effects = YoinMotion.defaultEffectsSpec<Float>()
@@ -285,7 +284,10 @@ internal fun FavSheet(
                         Modifier.fillMaxWidth().heightIn(max = 420.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp),
                     ) {
-                        item(key = "new") {
+                        if (mixItem != null) {
+                            item(key = "mix") { com.gpo.pilipala.feature.sources.MixTickRows(mixItem, mixTicks) }
+                        }
+                        if (accountFolders) item(key = "new") {
                             NewFolderRow(
                                 onCreated = { folder ->
                                     folders = listOf(folder) + folders.orEmpty()
@@ -343,7 +345,8 @@ internal fun FavSheet(
                     val add = all.filter { checked[it.id] == true && !it.faved }.map { it.id }
                     val del = all.filter { checked[it.id] != true && it.faved }.map { it.id }
                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                    actions.saveFav(add, del, onDone = onDismiss)
+                    mixItem?.let { com.gpo.pilipala.feature.sources.applyMixTicks(it, mixTicks, add) }
+                    if (add.isEmpty() && del.isEmpty()) onDismiss() else actions.saveFav(add, del, onDone = onDismiss)
                 },
                 enabled = folders != null && !actions.busy,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).height(52.dp),

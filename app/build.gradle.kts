@@ -134,3 +134,8 @@ dependencies {
         implementation("androidx.room:room-runtime:2.8.4")
     }
 }
+
+// Unit tests that touch the extractor (Java 25 bytecode) run on a Java 25 launcher.
+tasks.withType<Test>().configureEach {
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(25)) })
+}

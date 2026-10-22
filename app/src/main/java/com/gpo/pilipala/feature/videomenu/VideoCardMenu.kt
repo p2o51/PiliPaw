@@ -148,11 +148,15 @@ internal fun VideoCardMenu(
         return
     }
 
-    // 加到 Mix likewise, once this sheet is down.
+    // 收藏 likewise, once this sheet is down: the account's 收藏夹 and the Mix lists in one sheet.
     if (mixOpen) {
-        com.gpo.pilipala.feature.sources.MixPickerSheet(
-            com.gpo.pilipala.feature.sources.MixItems.bili(item.bvid, item.title, item.cover, item.ownerName, item.ownerMid, item.duration),
+        val scope2 = rememberCoroutineScope()
+        val actions = remember { com.gpo.pilipala.feature.video.ArchiveActions(scope2).also { it.bind(item.aid, item.bvid, 0, 0, 0, 0) } }
+        com.gpo.pilipala.feature.video.FavSheet(
+            actions,
             onDismiss = onDismiss,
+            mixItem = com.gpo.pilipala.feature.sources.MixItems.bili(item.bvid, item.title, item.cover, item.ownerName, item.ownerMid, item.duration),
+            accountFolders = loggedIn,
         )
         return
     }
@@ -214,7 +218,7 @@ internal fun VideoCardMenu(
                             },
                         )
                     }
-                    add(MenuRow(YoinSymbols.Library, "加到 Mix") { hide { mixOpen = true } })
+                    add(MenuRow(YoinSymbols.Star, "收藏") { hide { mixOpen = true } })
                     add(MenuRow(YoinSymbols.Download, "缓存") { page = MenuPage.Cache })
                     if (url.isNotEmpty()) {
                         add(MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } })

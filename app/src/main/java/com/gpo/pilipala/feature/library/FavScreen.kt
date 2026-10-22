@@ -1,6 +1,7 @@
 package com.gpo.pilipala.feature.library
 
 import com.gpo.pilipala.feature.sources.mixSection
+import com.gpo.pilipala.feature.sources.youtubeSection
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -142,6 +143,12 @@ fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
     val sources by com.gpo.pilipala.core.source.Sources.enabled.collectAsState()
     val showMix = vm.isOwner && (mixLists.isNotEmpty() || com.gpo.pilipala.core.source.VideoSource.YouTube in sources)
     var namingMix by remember { mutableStateOf(false) }
+    val ytProfile by com.gpo.pilipala.yt.core.account.Accounts.youtube.collectAsState()
+    val ytSignedIn = ytProfile is com.gpo.pilipala.yt.core.account.Profile.SignedIn
+    var ytLists by remember { mutableStateOf<List<com.gpo.pilipala.yt.core.extractor.YtAccount.Playlist>>(emptyList()) }
+    LaunchedEffect(ytSignedIn) {
+        ytLists = if (ytSignedIn) runCatching { com.gpo.pilipala.yt.core.extractor.YtAccount.libraryPlaylists() }.getOrDefault(emptyList()) else emptyList()
+    }
     val gridState = rememberLazyGridState()
     LoadMoreEffect(gridState) { vm.created.loadMore() }
     val barInset = if (asTab) LocalBottomBarInset.current else 0.dp
@@ -181,6 +188,9 @@ fun FavScreen(route: Route.Fav, asTab: Boolean = false) {
             ) {
                 if (showMix) {
                     mixSection(mixLists, onOpen = { nav.push(Route.MixList(it.id, it.name)) }, onNew = { namingMix = true })
+                }
+                if (vm.isOwner && ytSignedIn) {
+                    youtubeSection(ytLists, onOpen = { pl -> nav.push(Route.YtPlaylist(pl.url, pl.title, pl.thumbnail)) })
                 }
                 sectionHeader("h_created", if (vm.isOwner) "我创建的" else "创建的收藏夹")
                 items(vm.created.items, key = { "c${it.id}" }) { folder ->

@@ -70,6 +70,77 @@ object YtAccount {
         post("browse/edit_playlist", body)
     }
 
+    /** One of the account's own playlists; [contains] only from [playlistOptions]. */
+    class Playlist(val id: String, val title: String, val thumbnail: String = "", val count: String = "", val contains: Boolean = false) {
+        val url: String get() = "https://www.youtube.com/playlist?list=$id"
+    }
+
+    /** The account's playlists that [videoId] can go in, each with whether it is there already (保存到…). */
+    suspend fun playlistOptions(videoId: String): List<Playlist> = withContext(Dispatchers.IO) {
+        val body = YoutubeParsingHelper.prepareDesktopJsonBuilder(Localization.DEFAULT, ContentCountry.DEFAULT)
+            .array("videoIds").value(videoId).end()
+            .value("excludeWatchLater", true)
+            .done()
+        val json = post("playlist/get_add_to_playlist", body)
+        val out = ArrayList<Playlist>()
+        YtFeeds.walk(json) { key, v ->
+            if (key == "playlistAddToOptionRenderer") {
+                val id = v.getString("playlistId") ?: return@walk
+                out += Playlist(id, v.getObject("title").text(), contains = v.getString("containsSelectedVideos") == "ALL")
+            }
+        }
+        out
+    }
+
+    /** Puts [videoId] in playlist [playlistId] or takes it out. A write: only through AccountWrites. */
+    suspend fun setInPlaylist(playlistId: String, videoId: String, add: Boolean) = withContext(Dispatchers.IO) {
+        val action = JsonObject().apply {
+            if (add) {
+                put("action", "ACTION_ADD_VIDEO")
+                put("addedVideoId", videoId)
+            } else {
+                put("action", "ACTION_REMOVE_VIDEO_BY_VIDEO_ID")
+                put("removedVideoId", videoId)
+            }
+        }
+        val body = YoutubeParsingHelper.prepareDesktopJsonBuilder(Localization.DEFAULT, ContentCountry.DEFAULT)
+            .value("playlistId", playlistId)
+            .array("actions").value(action).end()
+            .done()
+        post("browse/edit_playlist", body)
+    }
+
+    /** The playlists in the account's library (its own and the ones it saved), for 收藏. */
+    suspend fun libraryPlaylists(): List<Playlist> = withContext(Dispatchers.IO) {
+        val body = YoutubeParsingHelper.prepareDesktopJsonBuilder(Localization.DEFAULT, ContentCountry.DEFAULT)
+            .value("browseId", "FEplaylist_aggregation")
+            .done()
+        val json = post("browse", body)
+        val out = ArrayList<Playlist>()
+        YtFeeds.walk(json) { key, v ->
+            when (key) {
+                "lockupViewModel" -> if (v.getString("contentType") == "LOCKUP_CONTENT_TYPE_PLAYLIST") {
+                    val id = v.getString("contentId") ?: return@walk
+                    val meta = v.getObject("metadata").getObject("lockupMetadataViewModel")
+                    val title = meta.getObject("title").getString("content").orEmpty()
+                    var thumb = ""
+                    var count = ""
+                    YtFeeds.walk(v.getObject("contentImage")) { k2, v2 ->
+                        if (k2 == "image" && thumb.isEmpty()) thumb = v2.getArray("sources").let { a -> (a.lastOrNull() as? JsonObject)?.getString("url").orEmpty() }
+                        if (k2 == "thumbnailBadgeViewModel" && count.isEmpty()) count = v2.getString("text").orEmpty()
+                    }
+                    out += Playlist(id, title, thumb, count)
+                }
+                "gridPlaylistRenderer" -> {
+                    val id = v.getString("playlistId") ?: return@walk
+                    val thumb = v.getObject("thumbnail").getArray("thumbnails").let { a -> (a.lastOrNull() as? JsonObject)?.getString("url").orEmpty() }
+                    out += Playlist(id, v.getObject("title").text(), thumb, v.getObject("videoCountShortText").text())
+                }
+            }
+        }
+        out.distinctBy { it.id }
+    }
+
     /** A youtubei POST as the signed-in account. */
     internal fun post(endpoint: String, body: JsonObject): JsonObject {
         val headers = YoutubeParsingHelper.getYouTubeHeaders()

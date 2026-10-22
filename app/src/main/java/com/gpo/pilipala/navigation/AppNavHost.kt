@@ -205,6 +205,7 @@ private val appEntryProvider = entryProvider<NavKey> {
     entry<Route.Later> { LaterScreen() }
     entry<Route.MyHome> { com.gpo.pilipala.feature.mine.MineScreen(asPage = true) }
     entry<Route.MixList> { com.gpo.pilipala.feature.sources.MixListScreen(it) }
+    entry<Route.YtPlaylist> { com.gpo.pilipala.feature.sources.YtPlaylistScreen(it) }
     entry<Route.History> { HistoryScreen() }
     entry<Route.Downloads> { com.gpo.pilipala.feature.download.DownloadsScreen() }
     entry<Route.OfflinePlayer> { com.gpo.pilipala.feature.download.OfflinePlayerScreen(it) }
