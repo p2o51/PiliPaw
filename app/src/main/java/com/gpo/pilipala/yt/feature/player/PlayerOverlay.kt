@@ -194,6 +194,11 @@ fun PlayerOverlayHost() {
         if (!expanded) Player.fullscreen = false
         progress.animateTo(if (expanded) 1f else 0f, spatial)
     }
+    // The mini bar takes the picture only once this has landed on its tile (one surface at a time).
+    LaunchedEffect(progress) {
+        androidx.compose.runtime.snapshotFlow { progress.value > 0.001f || Player.expanded }.collect { Player.overlayUp = it }
+    }
+    DisposableEffect(Unit) { onDispose { Player.overlayUp = false } }
 
     // Open at all (expanded, or left part-way by a drag): a collapsed bar never blocks the
     // page's own back.
@@ -258,10 +263,19 @@ fun PlayerOverlayHost() {
             val miniBottom = if (onShell) navBottom + floatingBarInset() else navBottom + MiniMargin
             val twoPane = w >= 840.dp && h >= 480.dp
 
-            // Rects (dp): the container, and the picture inside it, at both ends.
-            val miniW = minOf(w - MiniMargin * 2, MiniMaxWidth)
-            val miniX = (w - miniW) / 2
-            val miniY = h - miniBottom - MiniHeight
+            // Rects (dp): the container, and the picture inside it, at both ends. Collapsed, the
+            // picture lands exactly on the mini bar's tile (feature/sources/KeepPlaying.kt), which
+            // takes over from there: the container is just the picture.
+            val dock = with(density) {
+                com.gpo.pilipala.feature.sources.KeepPlaying.dockTile(
+                    onShell, w.toPx(), (h - navBottom).toPx(),
+                    com.gpo.pilipala.ui.components.widthClass() != com.gpo.pilipala.ui.components.WidthClass.Compact, density,
+                )
+            }
+            val miniW = with(density) { dock.width.toDp() }
+            val miniH = with(density) { dock.height.toDp() }
+            val miniX = with(density) { dock.left.toDp() }
+            val miniY = with(density) { dock.top.toDp() }
             val leftW = if (twoPane) w - RelatedPaneWidth else w
             var fullVideoW = if (twoPane) leftW - 48.dp else w
             var fullVideoH = fullVideoW * 9f / 16f
@@ -272,19 +286,19 @@ fun PlayerOverlayHost() {
             }
             val fullVideoX = if (twoPane) 24.dp else (w - fullVideoW) / 2
             val fullVideoY = statusTop + if (twoPane) 16.dp else 0.dp
-            val miniVideoW = MiniHeight * 16f / 9f
+            val miniVideoW = miniW
 
             val p = progress.value
             val containerX = lerp(miniX, 0.dp, p)
             val containerY = lerp(miniY, 0.dp, p)
             val containerW = lerp(miniW, w, p)
-            val containerH = lerp(MiniHeight, h, p)
+            val containerH = lerp(miniH, h, p)
             val videoX = lerp(0.dp, fullVideoX, p)
             val videoY = lerp(0.dp, fullVideoY, p)
             val videoW = lerp(miniVideoW, fullVideoW, p)
-            val videoH = lerp(MiniHeight, fullVideoH, p)
-            val corner = lerp(16.dp, 0.dp, p)
-            val videoCorner = lerp(12.dp, if (twoPane) 16.dp else 0.dp, p)
+            val videoH = lerp(miniH, fullVideoH, p)
+            val corner = lerp(6.dp, 0.dp, p)
+            val videoCorner = lerp(6.dp, if (twoPane) 16.dp else 0.dp, p)
             val rangePx = with(density) { (miniY).toPx() }.coerceAtLeast(1f)
 
             val drag = rememberDraggableState { delta ->
@@ -356,7 +370,7 @@ fun PlayerOverlayHost() {
                         modifier = Modifier
                             .padding(start = miniVideoW)
                             .fillMaxWidth()
-                            .height(MiniHeight)
+                            .height(miniH)
                             .graphicsLayer { alpha = miniAlpha }
                             .clickable { Player.expanded = true }
                             .draggable(drag, Orientation.Vertical, onDragStarted = { dragging = true }, onDragStopped = { settle(it) }),

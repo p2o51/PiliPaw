@@ -103,7 +103,12 @@ private enum class VideoSheet { Coin, Fav, Pages, Season, Triple, Queue }
 fun VideoDetailScreen(route: Route.Video) {
     val vm = viewModel { VideoDetailViewModel(route) }
     CoverTheme(vm.cover) {
-        VideoDetailContent(vm)
+        // A swipe down on the inline picture leaves the page (into the mini bar with 继续播放).
+        androidx.compose.runtime.CompositionLocalProvider(
+            com.gpo.pilipala.feature.player.LocalPictureSwipeDown provides rememberVideoSwipeDown(),
+        ) {
+            VideoDetailContent(vm)
+        }
     }
 }
 

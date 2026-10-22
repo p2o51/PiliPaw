@@ -132,16 +132,19 @@ object KeepPlaying {
     internal var scrollWantsMerge by mutableStateOf(false)
 
     /** The frame the video page's swipe down carried into the bar's tile, and when it landed. */
-    private var arrival: androidx.compose.ui.graphics.ImageBitmap? = null
+    private var arrival: Arrival? = null
     private var arrivalAt = 0L
 
-    internal fun arrive(frame: androidx.compose.ui.graphics.ImageBitmap) {
-        arrival = frame
+    /** A flight landed on the bar's tile, carrying [frame] (null: the picture itself comes on). */
+    internal class Arrival(val frame: androidx.compose.ui.graphics.ImageBitmap?)
+
+    internal fun arrive(frame: androidx.compose.ui.graphics.ImageBitmap?) {
+        arrival = Arrival(frame)
         arrivalAt = android.os.SystemClock.uptimeMillis()
     }
 
     /** The bar appearing now takes over from a flight that just landed (good for a moment only). */
-    internal fun takeArrival(): androidx.compose.ui.graphics.ImageBitmap? {
+    internal fun takeArrival(): Arrival? {
         val a = arrival?.takeIf { android.os.SystemClock.uptimeMillis() - arrivalAt < 2_000 }
         arrival = null
         return a
@@ -252,6 +255,12 @@ internal object BiliKeeper {
         return true
     }
 
+    /** Whether [ctrl]'s page leaving now would keep it in the bar (what [offer] checks first). */
+    internal fun wouldKeep(ctrl: PiliPlayerController): Boolean {
+        val t = ctrl.target ?: return false
+        return ctrl.keepable && !t.isPgc && t.bvid.isNotEmpty() && KeepPlaying.mode.value != 1
+    }
+
     internal fun take(bvid: String): PiliPlayerController? {
         val c = held ?: return null
         if (bvid.isEmpty() || c.target?.bvid != bvid) return null
@@ -309,8 +318,10 @@ private fun currentPlaying(): Playing? {
     }
     // The YouTube player collapsed: this bar is its mini player.
     // A video that failed (or a live stream that ended) leaves the bar instead of sitting there blank.
-    val yt = Player.session?.takeIf { !Player.expanded && it.error == null }
+    val yt = Player.session?.takeIf { !Player.expanded && !Player.overlayUp && it.error == null }
     if (yt != null) {
+        // The overlay's picture just landed on the tile: carry on from it without a fade.
+        LaunchedEffect(yt.url) { KeepPlaying.arrive(null) }
         var position by remember { mutableStateOf(0L) }
         LaunchedEffect(yt) {
             while (true) {
@@ -404,6 +415,12 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
     var flingJob: Job? = null
     var gesturing = false
 
+    /** The side blocks growing in around a picture that flew in from its page (1: at rest). */
+    var sidesIn: Animatable<Float, *>? = null
+
+    /** That flight's last frame, shown in the tile until the video itself is up. */
+    var arrived by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+
     var dims by mutableStateOf(MiniDims(1f, 2f, 1f, 1f))
     var circle by mutableStateOf<Rect?>(null)
     var nav by mutableStateOf<Rect?>(null)
@@ -488,7 +505,27 @@ fun MiniBarHost() {
     // 继续播放 switched off in 设置 while a Bilibili video is docked: it stops now, not at the next video.
     LaunchedEffect(Unit) { KeepPlaying.mode.state.collect { if (it == 1) BiliKeeper.close() } }
     if (KeepPlaying.asking) KeepAskDialog()
-    val shown by animateFloatAsState(if (playing != null) 1f else 0f, YoinMotion.defaultEffectsSpec(), label = "miniShown")
+    // Coming and going fade; a picture that just flew in from its page is simply there (the
+    // flight left it in the tile), and only the side blocks grow in around it.
+    val shownA = remember { Animatable(0f) }
+    val sidesIn = remember { Animatable(1f) }
+    var arrived by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    val up = playing != null
+    val fadeSpec = YoinMotion.defaultEffectsSpec<Float>()
+    LaunchedEffect(up) {
+        if (up) {
+            val arrival = KeepPlaying.takeArrival()
+            if (arrival != null && shownA.value < 0.01f) {
+                arrived = arrival.frame
+                shownA.snapTo(1f)
+                sidesIn.snapTo(0f)
+                sidesIn.animateTo(1f, MiniSprings.def())
+                return@LaunchedEffect
+            }
+        }
+        shownA.animateTo(if (up) 1f else 0f, fadeSpec)
+    }
+    val shown = if (up && KeepPlaying.arriving) 1f else shownA.value
     var last by remember { mutableStateOf<Playing?>(null) }
     if (playing != null) last = playing
     val p = playing ?: last ?: return
@@ -527,6 +564,11 @@ fun MiniBarHost() {
             MiniFrame(restAxisOf(KeepPlaying.rest, dims, nav != null, maxAxis, density.density), barTarget)
         }
         frame.dims = dims
+        frame.sidesIn = sidesIn
+        arrived?.let {
+            frame.arrived = it
+            arrived = null
+        }
         frame.nav = nav
         if (circleTarget != null) frame.circle = circleTarget
         frame.aspect = aspect
@@ -807,7 +849,7 @@ private fun SideBlock(forward: Boolean, p: Playing, frame: MiniFrame) {
     }
     Box(
         Modifier
-            .graphicsLayer { alpha = frame.geo.sideAlpha }
+            .graphicsLayer { alpha = frame.geo.sideAlpha * (frame.sidesIn?.value ?: 1f) }
             .clip(shape)
             .background(MaterialTheme.colorScheme.secondaryContainer)
             .clickable { p.seekBy(if (forward) 15_000 else -15_000) },
@@ -820,7 +862,7 @@ private fun SideBlock(forward: Boolean, p: Playing, frame: MiniFrame) {
 private fun PauseBlock(p: Playing, frame: MiniFrame) {
     Box(
         Modifier
-            .graphicsLayer { alpha = frame.geo.sideAlpha }
+            .graphicsLayer { alpha = frame.geo.sideAlpha * (frame.sidesIn?.value ?: 1f) }
             .clip(RoundedCornerShape(InnerCorner))
             .background(MaterialTheme.colorScheme.primaryContainer)
             .clickable(onClick = p.toggle),
@@ -864,9 +906,17 @@ private fun Tile(p: Playing, frame: MiniFrame) {
             },
     ) {
         NetImage(p.cover, Modifier.fillMaxSize(), contentDescription = p.title, shape = androidx.compose.ui.graphics.RectangleShape, thumbWidth = 640.dp)
+        // The frame the page's flight landed with, until the video draws over it.
+        frame.arrived?.let { img ->
+            androidx.compose.foundation.Image(img, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            LaunchedEffect(img) {
+                kotlinx.coroutines.delay(1_200)
+                frame.arrived = null
+            }
+        }
         // The video itself over its cover. Attached a beat after the bar appears: the page that let
         // the player go detaches its own video view as it leaves, and that must not land after ours.
-        var ready by remember(p.player) { mutableStateOf(false) }
+        var ready by remember(p.player) { mutableStateOf(p.source == VideoSource.YouTube) }
         LaunchedEffect(p.player) {
             kotlinx.coroutines.delay(400)
             ready = true

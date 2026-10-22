@@ -73,6 +73,10 @@ object Player {
             else if (!PlayerHost.dock(PlayerSlot.YouTube)) close()
         }
 
+    /** The overlay is open or still on its way down; the mini bar shows the player only once it is not. */
+    var overlayUp by mutableStateOf(false)
+        internal set
+
     /** The picture fills the window ([FullscreenPlayer]); only while expanded. */
     var fullscreen by mutableStateOf(false)
 
