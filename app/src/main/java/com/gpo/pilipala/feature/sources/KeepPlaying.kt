@@ -1,75 +1,94 @@
 package com.gpo.pilipala.feature.sources
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.isSpecified
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.isSpecified
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.util.VelocityTracker1D
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import com.gpo.pilipala.core.settings.AppSettings
-import com.gpo.pilipala.core.source.Sources
 import com.gpo.pilipala.core.source.VideoSource
 import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.NetImage
+import com.gpo.pilipala.ui.components.WidthClass
+import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.yt.feature.player.Player
-import com.gpo.yoin.symbols.YoinSymbols
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.sign
+import kotlin.math.sin
 
 /**
  * 继续播放 (the "like YouTube" choice): leaving a video keeps it playing in a mini bar instead of
@@ -91,37 +110,57 @@ object KeepPlaying {
         if (!keep) BiliKeeper.close()
     }
 
-    /** Whether the bar has the screen to itself (scrolling down folds it into the nav bar's circle). */
-    var compact by mutableStateOf(false)
-        internal set
-
     /**
-     * Two-finger zoom, without steps: 1 is the bar, above 1 a floating window (1 → its smallest,
-     * 2 → nearly the screen's width). Pinching in past the bar folds it into the circle ([compact]);
-     * spreading past 2 opens the video.
+     * Where the bar rests on its one size axis (MiniBarMotion.kt): merged into the nav bar as a
+     * circle, the bar, or a floating window. Kept in memory only, and only while its video is
+     * docked ([resetDock]): nothing of a window outlives the player it showed.
      */
-    var level by mutableFloatStateOf(1f)
-        internal set
+    internal var rest by mutableStateOf<MiniRest>(MiniRest.Row)
 
-    /** The floating window's centre (window px), where it was dragged; unspecified: above the bar. */
+    /** The floating window's centre (window px), where it was dragged; unspecified: where it detached. */
     var windowCenter by mutableStateOf(Offset.Unspecified)
         internal set
 
-    /** A video opened: the next dock starts again as the plain bar, unfolded. */
+    /** How far the bar has merged into the nav bar (0..1), live while it moves. */
+    internal var mergeRaw by mutableFloatStateOf(0f)
+
+    /** The room the nav bar makes at its start for the merged circle (0..1 of it). */
+    val navRoom: Float
+        get() = if (BiliKeeper.held != null || (Player.session != null && !Player.expanded)) mergeRaw else 0f
+
+    /** Scrolling's ask (down: fold into the nav bar); the bar follows once it holds for a moment. */
+    internal var scrollWantsMerge by mutableStateOf(false)
+
+    /** A video opened, or the docked one went: the next dock starts again as the plain bar. */
     internal fun resetDock() {
-        level = 1f
+        rest = MiniRest.Row
         windowCenter = Offset.Unspecified
-        compact = false
+        scrollWantsMerge = false
     }
 
     /**
-     * For the shell's content: scrolling down folds the bar into a circle beside the nav bar,
-     * scrolling up opens it again.
+     * For the shell's content: scrolling down folds the bar into a circle in the nav bar,
+     * scrolling up opens it again; pulled at the very top it is always the bar.
      */
     val scroll = object : NestedScrollConnection {
         override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-            if (abs(available.y) > 2f) compact = available.y < 0
+            if (abs(available.y) > 2f) scrollWantsMerge = available.y < 0
             return Offset.Zero
+        }
+
+        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+            if (available.y > 0.5f) atTop()
+            return Offset.Zero
+        }
+
+        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+            if (available.y > 0f) atTop()
+            return Velocity.Zero
+        }
+
+        private fun atTop() {
+            scrollWantsMerge = false
+            if (rest == MiniRest.Merged) rest = MiniRest.Row
         }
     }
 }
@@ -261,31 +300,119 @@ private fun currentPlaying(): Playing? {
     return null
 }
 
-private val BarHeight = 56.dp
+private val BarHeightPhone = 56.dp
+private val BarHeightTablet = 52.dp
 private val CircleSize = 48.dp
-private val Gap = 8.dp
+private val BlockGap = 3.dp
+private val NavGap = 8.dp
 private val SideMargin = 16.dp
-private val BarMaxWidth = 440.dp
+private val BarMaxWidth = 480.dp
+private val InnerCorner = 6.dp
+private val WindowCorner = 16.dp
+private val ProgressStroke = 3.dp
+
+/** The nav bar's padding before its first tab: where the merged circle sits. */
+internal val NavLead = 10.dp
+
+/** What the nav bar opens at its start for the merged circle: the circle and the tabs' gap. */
+internal val NavRoom = CircleSize + 4.dp
 
 /** Extra bottom room a shell list needs while the bar sits above the nav bar (phones). */
 @Composable
-fun miniBarInset(): androidx.compose.ui.unit.Dp {
+fun miniBarInset(): Dp {
     val showing = BiliKeeper.held != null || Player.session != null
-    return if (showing) BarHeight + Gap else 0.dp
+    return if (showing) BarHeightPhone + NavGap else 0.dp
+}
+
+
+/**
+ * The bar's live state: the size axis (an override while two fingers hold it), the bar's place
+ * following the nav bar, the swipe, and the window's drag. Gestures and the layout read it in
+ * their own phases, so a pinch or a drag moves things without recomposing the bar.
+ */
+private class MiniFrame(initialAxis: Float, initialBar: Rect) {
+    val axis = Animatable(initialAxis)
+    var pinchAxis by mutableStateOf<Float?>(null)
+    val axisNow: Float get() = pinchAxis ?: axis.value
+
+    val anchor = Animatable(initialBar, Rect.VectorConverter)
+    val swipe = Animatable(0f)
+    var swipeDrag by mutableStateOf<Float?>(null)
+    val swipeNow: Float get() = swipeDrag ?: swipe.value
+
+    /** The window's centre under the finger (window px); null when not dragged. */
+    var dragCenter by mutableStateOf<Offset?>(null)
+    var flingJob: Job? = null
+    var gesturing = false
+
+    var dims by mutableStateOf(MiniDims(1f, 2f, 1f, 1f))
+    var circle by mutableStateOf<Rect?>(null)
+    var nav by mutableStateOf<Rect?>(null)
+    var aspect by mutableFloatStateOf(16f / 9f)
+    var maxAxis by mutableFloatStateOf(1f)
+    var bounds by mutableStateOf(Rect.Zero)
+    var px by mutableStateOf(MiniPx(0f, 0f, 0f, 0f, 0f))
+
+    val canMerge: Boolean get() = nav != null
+
+    val geo by derivedStateOf {
+        miniGeo(
+            axis = axisNow,
+            d = dims,
+            bar = anchor.value,
+            circle = circle,
+            aspect = aspect,
+            windowCenter = dragCenter ?: KeepPlaying.windowCenter,
+            bounds = bounds,
+            nav = nav,
+            px = px,
+        )
+    }
+
+    fun restAxis(rest: MiniRest, density: Float): Float = restAxisOf(rest, dims, canMerge, maxAxis, density)
+}
+
+/** The axis (px) a rest stands for; a window's size is kept in dp so it survives a rotation. */
+private fun restAxisOf(rest: MiniRest, dims: MiniDims, canMerge: Boolean, maxAxis: Float, density: Float): Float = when (rest) {
+    MiniRest.Merged -> if (canMerge) dims.circle else dims.row
+    MiniRest.Row -> dims.row
+    is MiniRest.Window -> (rest.axisDp * density).coerceIn(dims.detach, maxAxis.coerceAtLeast(dims.detach))
+}
+
+/** The picture's shape, as the player reports it (16:9 until it says, or with no picture). */
+@Composable
+private fun rememberVideoAspect(player: androidx.media3.common.Player?): Float {
+    var aspect by remember(player) { mutableFloatStateOf(16f / 9f) }
+    DisposableEffect(player) {
+        if (player == null) return@DisposableEffect onDispose { }
+        fun read(v: androidx.media3.common.VideoSize) {
+            if (v.width > 0 && v.height > 0) aspect = (v.width * v.pixelWidthHeightRatio / v.height).coerceIn(0.4f, 2.5f)
+        }
+        read(player.videoSize)
+        val l = object : androidx.media3.common.Player.Listener {
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) = read(videoSize)
+        }
+        player.addListener(l)
+        onDispose { player.removeListener(l) }
+    }
+    return aspect
 }
 
 /**
- * The mini bar, over both parts of the app: [−15s][picture with a progress line][pause][+15s],
- * joined blocks with no title and no ×; a sideways swipe closes it. Above the nav bar on a
- * phone, beside it on a tablet; scrolling down folds it into a 48dp circle with a progress ring
- * next to the nav bar. Tapping the picture (or the circle) reopens the video.
+ * The mini bar, over both parts of the app: [−15s][picture][pause][+15s], joined blocks with no
+ * title and no ×; a sideways swipe closes it. Stacked 8dp above the nav bar on a phone, left of it
+ * on a tablet. Scrolling down pours the picture into a 48dp circle at the nav bar's start, with a
+ * progress ring; scrolling up brings it out again. Two fingers run one size axis: circle ← bar →
+ * a floating window of the video's own shape (drag it, fling it, drop it on the nav bar to dock)
+ * → the video page. Tapping the picture opens the video.
  */
+@OptIn(FlowPreview::class)
 @Composable
 fun MiniBarHost() {
     val playing = currentPlaying()
     // The app goes away: a kept Bilibili player drops its picture (sound only), and takes it back on return.
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    androidx.compose.runtime.DisposableEffect(owner) {
+    DisposableEffect(owner) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
             when (e) {
                 androidx.lifecycle.Lifecycle.Event.ON_STOP -> BiliKeeper.held?.setBackground(true)
@@ -296,19 +423,12 @@ fun MiniBarHost() {
         owner.lifecycle.addObserver(obs)
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
+    // A YouTube video that failed while collapsed: its player goes, not just its bar.
+    val failed = Player.session?.takeIf { !Player.expanded && it.error != null }
+    LaunchedEffect(failed) { if (failed != null) Player.close() }
+    // 继续播放 switched off in 设置 while a Bilibili video is docked: it stops now, not at the next video.
+    LaunchedEffect(Unit) { KeepPlaying.mode.state.collect { if (it == 1) BiliKeeper.close() } }
     if (KeepPlaying.asking) KeepAskDialog()
-    val nav = NavSpot.bounds
-    val density = LocalDensity.current
-    // Live level while two fingers are down; at rest: the circle (scrolled), the bar, or the window's size.
-    var pinch by remember { mutableStateOf<Float?>(null) }
-    val restLevel = when {
-        KeepPlaying.level > 1f -> KeepPlaying.level
-        playing != null && KeepPlaying.compact && nav != null -> 0f
-        else -> 1f
-    }
-    val settled by animateFloatAsState(restLevel, YoinMotion.defaultSpatialSpec(), label = "miniLevel")
-    val level = pinch ?: settled
-    val fold = (1f - level).coerceIn(0f, 1f)
     val shown by animateFloatAsState(if (playing != null) 1f else 0f, YoinMotion.defaultEffectsSpec(), label = "miniShown")
     var last by remember { mutableStateOf<Playing?>(null) }
     if (playing != null) last = playing
@@ -316,364 +436,427 @@ fun MiniBarHost() {
     if (shown <= 0.001f && playing == null) return
     // Playing is rebuilt with every tick of progress; gestures read the latest one instead of
     // restarting (a restart cut every pinch and swipe short).
-    val latest by androidx.compose.runtime.rememberUpdatedState(p)
-    val latestLevel by androidx.compose.runtime.rememberUpdatedState(level)
+    val latest by rememberUpdatedState(p)
+    val aspect = if (p.player != null) rememberVideoAspect(p.player) else 16f / 9f
 
     BoxWithConstraints(Modifier.fillMaxSize().navigationBarsPadding()) {
-        val w = with(density) { maxWidth.toPx() }
-        val h = with(density) { maxHeight.toPx() }
-        val barH = with(density) { BarHeight.toPx() }
-        val gap = with(density) { Gap.toPx() }
+        val density = LocalDensity.current
+        val tablet = widthClass() != WidthClass.Compact
+        val w = constraints.maxWidth.toFloat()
+        val h = constraints.maxHeight.toFloat()
+        val statusTop = WindowInsets.statusBars.getTop(density).toFloat()
+        val barH = with(density) { (if (tablet) BarHeightTablet else BarHeightPhone).toPx() }
+        val navGap = with(density) { NavGap.toPx() }
         val side = with(density) { SideMargin.toPx() }
-        val circle = with(density) { CircleSize.toPx() }
         val maxBar = with(density) { BarMaxWidth.toPx() }
-        // The nav bar in this box's coordinates (the box starts at the window's top).
-        val navRect = nav
-        val barRect: Rect
-        val circleRect: Rect
-        if (navRect != null) {
-            val wide = navRect.left - side - gap >= maxBar * 0.8f
-            barRect = if (wide) {
-                // Tablet: the bar to the left of the nav bar, in its row.
-                val bw = minOf(maxBar, navRect.left - side - gap)
-                val top = navRect.center.y - barH / 2
-                Rect(navRect.left - gap - bw, top, navRect.left - gap, top + barH)
-            } else {
-                val bw = minOf(maxBar, w - side * 2)
-                val left = (w - bw) / 2
-                Rect(left, navRect.top - gap - barH, left + bw, navRect.top - gap)
+        val dims = with(density) { MiniDims(circle = CircleSize.toPx(), row = barH * 16f / 9f, detachExtra = 40.dp.toPx(), openPast = 36.dp.toPx()) }
+        val nav = NavSpot.bounds
+        // Where the bar rests: over the nav bar (phone), left of it in its row (tablet, when there
+        // is room), or at the bottom on a page without one.
+        val barTarget: Rect = when {
+            nav != null && tablet && nav.left - navGap - side >= with(density) { 280.dp.toPx() } -> {
+                val bw = minOf(maxBar, nav.left - navGap - side)
+                val top = nav.center.y - barH / 2f
+                Rect(nav.left - navGap - bw, top, nav.left - navGap, top + barH)
             }
-            val cy = navRect.center.y
-            circleRect = Rect(navRect.left - gap - circle, cy - circle / 2, navRect.left - gap, cy + circle / 2)
-        } else {
-            val bw = minOf(maxBar, w - side * 2)
-            val left = (w - bw) / 2
-            barRect = Rect(left, h - gap - barH, left + bw, h - gap)
-            circleRect = barRect
+            else -> {
+                val bw = minOf(maxBar, w - side * 2f)
+                val left = (w - bw) / 2f
+                val bottom = nav?.top?.minus(navGap) ?: (h - side)
+                Rect(left, bottom - barH, left + bw, bottom)
+            }
         }
-        val rect = Rect(
-            lerp(barRect.left, circleRect.left, fold),
-            lerp(barRect.top, circleRect.top, fold),
-            lerp(barRect.right, circleRect.right, fold),
-            lerp(barRect.bottom, circleRect.bottom, fold),
-        )
+        // The merged circle at the nav bar's start; kept after the nav bar goes so the picture
+        // can fly back out of it.
+        val circleTarget = nav?.let {
+            val c = with(density) { CircleSize.toPx() }
+            val lead = with(density) { NavLead.toPx() }
+            Rect(it.left + lead, it.center.y - c / 2f, it.left + lead + c, it.center.y + c / 2f)
+        }
+        val widthCap = if (tablet) minOf(with(density) { 520.dp.toPx() }, w - with(density) { 24.dp.toPx() }) else w - with(density) { 24.dp.toPx() }
+        val maxAxis = MiniAxis.maxAxis(widthCap, (h - statusTop) * 0.6f, aspect).coerceAtLeast(dims.detach)
+        val margin = with(density) { 12.dp.toPx() }
+        // Back on screen (rotation, a new window): straight to where it rests, no flight.
+        val frame = remember {
+            MiniFrame(restAxisOf(KeepPlaying.rest, dims, nav != null, maxAxis, density.density), barTarget)
+        }
+        frame.dims = dims
+        frame.nav = nav
+        if (circleTarget != null) frame.circle = circleTarget
+        frame.aspect = aspect
+        frame.maxAxis = maxAxis
+        frame.bounds = Rect(margin, statusTop + margin, w - margin, h - margin)
+        frame.px = with(density) { MiniPx(BlockGap.toPx(), InnerCorner.toPx(), WindowCorner.toPx(), margin, 8.dp.toPx()) }
+
+        // The bar follows the nav bar (a page opening hides it, coming back shows it) on a spring.
+        LaunchedEffect(barTarget) {
+            if (frame.anchor.targetValue != barTarget) frame.anchor.animateTo(barTarget, MiniSprings.def())
+        }
+        // Rest changes from outside a gesture (scrolling, a new video, the nav bar going): spring there.
+        val restAxis = frame.restAxis(KeepPlaying.rest, density.density)
+        LaunchedEffect(restAxis) {
+            if (frame.pinchAxis != null) return@LaunchedEffect
+            if (frame.axis.isRunning && frame.axis.targetValue == restAxis) return@LaunchedEffect
+            frame.axis.animateTo(restAxis, MiniSprings.liq())
+        }
+        // Scrolling: the direction must hold ~130ms, then the bar merges or splits (the spring
+        // carries on from whatever it was doing).
+        LaunchedEffect(frame) {
+            snapshotFlow { KeepPlaying.scrollWantsMerge }.drop(1).debounce(130).collect { want ->
+                if (frame.gesturing || KeepPlaying.rest is MiniRest.Window) return@collect
+                KeepPlaying.rest = if (want && frame.canMerge) MiniRest.Merged else MiniRest.Row
+            }
+        }
+        // The nav bar opens room for the circle as the picture pours in; a window dropped back
+        // into the bar forgets its place once it lands.
+        LaunchedEffect(frame) {
+            snapshotFlow { frame.geo.merge }.distinctUntilChanged().collect { KeepPlaying.mergeRaw = it }
+        }
+        LaunchedEffect(frame) {
+            snapshotFlow { frame.pinchAxis == null && KeepPlaying.rest !is MiniRest.Window && frame.axisNow <= frame.dims.row + 0.5f }
+                .distinctUntilChanged()
+                .collect { if (it) KeepPlaying.windowCenter = Offset.Unspecified }
+        }
+
         val scope = rememberCoroutineScope()
-        val swipe = remember { Animatable(0f) }
-        val springBack = YoinMotion.defaultSpatialSpec<Float>()
-        // Where a pinch lands: open the video, a window of that size, the bar, or the circle.
-        val settle: (Float) -> Unit = { l ->
-            when {
-                l > 2.15f -> {
-                    KeepPlaying.level = 1f
-                    KeepPlaying.compact = false
-                    latest.open()
-                }
-                l > 1.2f -> KeepPlaying.level = l.coerceAtMost(2f)
-                l > 0.5f -> {
-                    KeepPlaying.level = 1f
-                    KeepPlaying.compact = false
-                }
-                else -> {
-                    KeepPlaying.level = 1f
-                    KeepPlaying.compact = true
-                }
-            }
-        }
-        // Two fingers: the level follows how far apart they are against where they started (a
-        // doubled span adds one whole step), so the bar grows with the fingers, without steps.
-        val minSpan = with(density) { 48.dp.toPx() }
-        // Read on the Initial pass: the picture inside is an Android view that takes the touches first.
-        val pinchInput = Modifier.pointerInput(Unit) {
-            awaitEachGesture {
-                awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
-                var startSpan = 0f
-                var startLevel = latestLevel
-                do {
-                    val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
-                    val down = event.changes.filter { it.pressed }
-                    if (down.size >= 2) {
-                        val span = (down[0].position - down[1].position).getDistance().coerceAtLeast(minSpan)
-                        if (startSpan == 0f) {
-                            startSpan = span
-                            startLevel = latestLevel
-                        }
-                        pinch = (startLevel + (span / startSpan - 1f)).coerceIn(-0.2f, 2.6f)
-                        if ((pinch ?: 0f) > 1f && KeepPlaying.windowCenter.isSpecified) {
-                            KeepPlaying.windowCenter += event.calculatePan()
-                        }
-                        event.changes.forEach { it.consume() }
-                    }
-                } while (event.changes.any { it.pressed })
-                pinch?.let { l ->
-                    pinch = null
-                    settle(l)
-                }
-            }
-        }
-        // Grown past the bar: the floating window. The bar's own node stays (empty, invisible) so a
-        // pinch that began on it keeps running while it turns into the window.
-        val windowed = level > 1f
+        val navColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        // The goo, under the blocks.
         Box(
-            Modifier
-                .offset { IntOffset((rect.left + swipe.value).roundToInt(), rect.top.roundToInt()) }
-                .size(with(density) { rect.width.toDp() }, with(density) { rect.height.toDp() })
-                // After offset and size: the pinch is read where the bar is.
-                .then(pinchInput)
-                .graphicsLayer {
-                    alpha = shown * (1f - (abs(swipe.value) / (barRect.width * 0.6f)).coerceIn(0f, 1f))
-                    translationY = (1f - shown) * barH
+            Modifier.fillMaxSize().drawBehind {
+                val n = frame.geo.neck ?: return@drawBehind
+                val span = n.bottom - n.top
+                val path = Path().apply {
+                    moveTo(n.cx - n.halfTop, n.top)
+                    cubicTo(n.cx - n.pinch, n.top + span * 0.55f, n.cx - n.pinch, n.bottom - span * 0.3f, n.cx - n.flare, n.bottom)
+                    lineTo(n.cx + n.flare, n.bottom)
+                    cubicTo(n.cx + n.pinch, n.bottom - span * 0.3f, n.cx + n.pinch, n.top + span * 0.55f, n.cx + n.halfTop, n.top)
+                    close()
                 }
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            scope.launch {
-                                if (abs(swipe.value) > size.width * 0.35f) {
-                                    swipe.animateTo(if (swipe.value > 0) size.width.toFloat() else -size.width.toFloat())
-                                    latest.close()
-                                    swipe.snapTo(0f)
-                                } else {
-                                    swipe.animateTo(0f, springBack)
-                                }
-                            }
-                        },
-                        onHorizontalDrag = { change, d ->
-                            change.consume()
-                            scope.launch { swipe.snapTo(swipe.value + d) }
-                        },
-                    )
+                drawPath(path, navColor, alpha = shown)
+            },
+        )
+        Layout(
+            content = {
+                SideBlock(forward = false, p = p, frame = frame)
+                Tile(p = p, frame = frame)
+                PauseBlock(p = p, frame = frame)
+                SideBlock(forward = true, p = p, frame = frame)
+            },
+            modifier = Modifier
+                .offset { frame.geo.hit.let { IntOffset(it.left.roundToInt(), it.top.roundToInt()) } }
+                // The system's back gesture must not take a swipe that starts on the bar near an edge.
+                .systemGestureExclusion()
+                .pointerInput(Unit) { miniGestures(frame, scope, density.density) { latest } }
+                .graphicsLayer {
+                    translationX = frame.swipeNow
+                    alpha = shown * (1f - (abs(frame.swipeNow) / (frame.anchor.value.width * 0.6f).coerceAtLeast(1f))).coerceIn(0f, 1f)
+                    translationY = (1f - shown) * barH
                 },
-        ) {
-            if (!windowed && fold < 0.999f) {
-                BarContent(p, Modifier.fillMaxSize().graphicsLayer { alpha = 1f - fold })
+        ) { measurables, _ ->
+            val g = frame.geo
+            val rects = listOf(g.left, g.tile, g.pause, g.right)
+            val placeables = measurables.mapIndexed { i, m ->
+                val r = rects[i]
+                m.measure(Constraints.fixed(r.width.roundToInt().coerceAtLeast(0), r.height.roundToInt().coerceAtLeast(0)))
             }
-            if (!windowed && fold > 0.001f) {
-                CircleContent(p, Modifier.fillMaxSize().graphicsLayer { alpha = fold })
+            layout(g.hit.width.roundToInt().coerceAtLeast(0), g.hit.height.roundToInt().coerceAtLeast(0)) {
+                placeables.forEachIndexed { i, pl ->
+                    pl.place((rects[i].left - g.hit.left).roundToInt(), (rects[i].top - g.hit.top).roundToInt())
+                }
             }
-        }
-        if (windowed) {
-            FloatingWindow(
-                p = p,
-                t = (level - 1f).coerceIn(0f, 1.3f),
-                areaW = w,
-                areaH = h,
-                barRect = barRect,
-                pinchInput = pinchInput,
-                shown = shown,
-            )
         }
     }
 }
 
-/** What the window's drag reads at any moment. */
-private data class WindowLive(val cx: Float, val cy: Float, val width: Float, val height: Float, val dockY: Float, val areaW: Float, val areaH: Float)
-
 /**
- * The floating window: the picture alone, as wide as the pinch made it (16:9). Drag it anywhere;
- * let it go near the bar's place and it docks back into the bar. A tap plays or pauses.
+ * Every touch on the bar, the circle and the window, in one place so they cannot fight: two
+ * fingers run the size axis (read before the picture's own view sees them); one finger swipes
+ * the bar away sideways or drags the window, with momentum. Taps fall through to the blocks.
  */
-@Composable
-private fun FloatingWindow(
-    p: Playing,
-    t: Float,
-    areaW: Float,
-    areaH: Float,
-    barRect: Rect,
-    pinchInput: Modifier,
-    shown: Float,
+private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGestures(
+    frame: MiniFrame,
+    scope: CoroutineScope,
+    density: Float,
+    latest: () -> Playing,
 ) {
-    val density = LocalDensity.current
-    val side = with(density) { SideMargin.toPx() }
-    val minW = with(density) { 240.dp.toPx() }.coerceAtMost(areaW - side * 2)
-    val maxW = areaW - side * 2
-    // Past the largest size (on the way to opening the video) it swells a little more, never past the screen.
-    val width = (lerp(minW, maxW, t.coerceIn(0f, 1f)) * (1f + (t - 1f).coerceAtLeast(0f) * 0.15f)).coerceAtMost(areaW)
-    val height = (width * 9f / 16f).coerceAtMost(areaH)
-    val gap = with(density) { Gap.toPx() }
-    if (!KeepPlaying.windowCenter.isSpecified) {
-        KeepPlaying.windowCenter = Offset(areaW / 2f, barRect.top - gap - height / 2f)
+    val minSpan = 48f * density
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        frame.flingJob?.cancel()
+        val g0 = frame.geo
+        val windowAtDown = g0.windowed
+        val mergedAtDown = g0.merge > 0.5f
+        var pinching = false
+        var dragging = false
+        var giveUp = false
+        var startSpan = 0f
+        var startAxis = 0f
+        var raw = 0f
+        val axisVelocity = VelocityTracker1D(isDataDifferential = false)
+        val velocity = VelocityTracker()
+        var travel = Offset.Zero
+        var finger = Offset.Zero
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val pressed = event.changes.filter { it.pressed }
+            if (pressed.isEmpty()) break
+            if (pressed.size >= 2) {
+                val span = (pressed[0].position - pressed[1].position).getDistance().coerceAtLeast(minSpan)
+                if (!pinching) {
+                    pinching = true
+                    frame.gesturing = true
+                    // A drag that became a pinch: it stays where it got to.
+                    frame.dragCenter?.let { KeepPlaying.windowCenter = it }
+                    frame.dragCenter = null
+                    frame.swipeDrag?.let { x -> scope.launch { frame.swipe.snapTo(x); frame.swipe.animateTo(0f, MiniSprings.def()) } }
+                    frame.swipeDrag = null
+                    dragging = false
+                    startSpan = span
+                    startAxis = frame.axisNow
+                    frame.pinchAxis = startAxis
+                    scope.launch { frame.axis.stop() }
+                }
+                // The size follows the fingers 1:1 (the picture's side scales with their span).
+                raw = startAxis * span / startSpan
+                val min = if (frame.canMerge) frame.dims.circle else frame.dims.row
+                val now = MiniAxis.rubber(raw, min, frame.maxAxis)
+                frame.pinchAxis = now
+                axisVelocity.addDataPoint(event.changes[0].uptimeMillis, raw)
+                if (now >= frame.dims.detach) {
+                    // A window: it starts where the picture detached, and two fingers also move it.
+                    val c = if (KeepPlaying.windowCenter.isSpecified) KeepPlaying.windowCenter else frame.geo.tile.center
+                    KeepPlaying.windowCenter = c + event.calculatePan()
+                }
+                event.changes.forEach { it.consume() }
+                continue
+            }
+            // One finger left after a pinch: nothing more until it lifts.
+            if (pinching) continue
+            val c = pressed[0]
+            val delta = c.positionChange()
+            travel += delta
+            finger += delta
+            if (!dragging && !giveUp && travel.getDistance() > viewConfiguration.touchSlop) {
+                when {
+                    windowAtDown -> dragging = true
+                    !mergedAtDown && abs(travel.x) > abs(travel.y) -> dragging = true
+                    else -> giveUp = true
+                }
+                if (dragging) frame.gesturing = true
+            }
+            if (dragging) {
+                velocity.addPosition(c.uptimeMillis, finger)
+                if (windowAtDown) {
+                    frame.dragCenter = (frame.dragCenter ?: frame.geo.tile.center) + delta
+                } else {
+                    frame.swipeDrag = (frame.swipeDrag ?: frame.swipe.value) + delta.x
+                }
+                c.consume()
+            }
+        }
+        when {
+            pinching -> releasePinch(frame, scope, raw, axisVelocity.calculateVelocity().takeIf { it.isFinite() } ?: 0f, density, latest)
+            dragging && windowAtDown -> releaseWindow(frame, scope, velocity.calculateVelocity(), density, latest)
+            dragging -> releaseSwipe(frame, scope, velocity.calculateVelocity().x, density, latest)
+            else -> frame.gesturing = false
+        }
     }
-    // Kept on screen whatever the size.
-    val c = KeepPlaying.windowCenter
-    val cx = c.x.coerceIn(-width / 2f, areaW + width / 2f)
-    val cy = c.y.coerceIn(height / 2f, (areaH - height / 2f).coerceAtLeast(height / 2f))
-    val dockY = barRect.top - with(density) { 24.dp.toPx() }
-    // The drag reads these live: a gesture outlives the composition it started in.
-    val live by androidx.compose.runtime.rememberUpdatedState(WindowLive(cx, cy, width, height, dockY, areaW, areaH))
-    val latestP by androidx.compose.runtime.rememberUpdatedState(p)
+}
+
+private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v: Float, density: Float, latest: () -> Playing) {
+    val d = frame.dims
+    val target: Float
+    when (val r = MiniAxis.release(raw, v, d, frame.maxAxis, frame.canMerge)) {
+        MiniRelease.Open -> {
+            latest().open()
+            KeepPlaying.rest = MiniRest.Row
+            target = d.row
+        }
+        is MiniRelease.Rest -> {
+            val rest = r.rest
+            if (rest is MiniRest.Window) {
+                // The release works in px; the rest keeps dp. Kept where it is drawn (the stored
+                // centre may lie outside the screen's bounds).
+                val (w, h) = MiniAxis.pictureSize(rest.axisDp, frame.aspect)
+                KeepPlaying.windowCenter = clampCenter(frame.geo.tile.center, w, h, frame.bounds)
+                KeepPlaying.rest = MiniRest.Window(rest.axisDp / density)
+            } else {
+                KeepPlaying.rest = rest
+            }
+            target = frame.restAxis(KeepPlaying.rest, density)
+        }
+    }
+    scope.launch {
+        frame.axis.snapTo(frame.pinchAxis ?: raw)
+        frame.pinchAxis = null
+        frame.gesturing = false
+        // Past an end the fingers moved only a third of their speed into the size.
+        val inside = raw in (if (frame.canMerge) d.circle else d.row)..frame.maxAxis
+        frame.axis.animateTo(target, MiniSprings.liq(), initialVelocity = if (inside) v else v * MiniAxis.RubberBand)
+    }
+}
+
+private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, density: Float, latest: () -> Playing) {
+    val g = frame.geo
+    val center = g.tile.center
+    frame.dragCenter = null
+    frame.gesturing = false
+    val vel = Offset(v.x, v.y)
+    val projected = center + vel * 0.2f
+    val h = g.tile.height
+    val w = g.tile.width
+    // Thrown hard off a side: closed (a window always has a way out).
+    if (abs(v.x) > 2500f * density && (projected.x < 0f || projected.x > frame.bounds.right + frame.bounds.left)) {
+        KeepPlaying.windowCenter = center
+        latest().close()
+        return
+    }
+    val dockLine = frame.nav?.top ?: frame.anchor.value.top
+    if (MiniAxis.docks(g.tile.bottom, projected.y + h / 2f, v.y, dockLine, 24f * density, 30f * density, 200f * density)) {
+        // Back into the bar: the picture flies from where it was let go (the axis carries it).
+        KeepPlaying.windowCenter = center
+        KeepPlaying.rest = MiniRest.Row
+        scope.launch { frame.axis.animateTo(frame.dims.row, MiniSprings.liq()) }
+        return
+    }
+    val from = clampCenter(center, w, h, frame.bounds)
+    val to = clampCenter(projected, w, h, frame.bounds)
+    KeepPlaying.windowCenter = from
+    frame.flingJob = scope.launch {
+        animate(Offset.VectorConverter, from, to, initialVelocity = vel, animationSpec = MiniSprings.def()) { value, _ ->
+            KeepPlaying.windowCenter = value
+        }
+    }
+}
+
+private fun releaseSwipe(frame: MiniFrame, scope: CoroutineScope, vx: Float, density: Float, latest: () -> Playing) {
+    val x = frame.swipeDrag ?: 0f
+    val width = frame.anchor.value.width
+    val away = abs(x) > width * 0.35f || (abs(vx) > 1000f * density && sign(vx) == sign(x))
+    scope.launch {
+        frame.swipe.snapTo(x)
+        frame.swipeDrag = null
+        frame.gesturing = false
+        if (away) {
+            val dir = if (x != 0f) sign(x) else sign(vx)
+            frame.swipe.animateTo(dir * (width + 200f * density), MiniSprings.fast(), initialVelocity = vx)
+            latest().close()
+            frame.swipe.snapTo(0f)
+        } else {
+            frame.swipe.animateTo(0f, MiniSprings.def(), initialVelocity = vx)
+        }
+    }
+}
+
+/** −15 s / +15 s: the outer side fully round, the inner one a small corner. */
+@Composable
+private fun SideBlock(forward: Boolean, p: Playing, frame: MiniFrame) {
+    val inner = InnerCorner
+    val small = androidx.compose.foundation.shape.CornerSize(inner)
+    val round = androidx.compose.foundation.shape.CornerSize(50)
+    val shape = if (forward) {
+        RoundedCornerShape(topStart = small, topEnd = round, bottomEnd = round, bottomStart = small)
+    } else {
+        RoundedCornerShape(topStart = round, topEnd = small, bottomEnd = small, bottomStart = round)
+    }
     Box(
         Modifier
-            .offset { IntOffset((cx - width / 2f).roundToInt(), (cy - height / 2f).roundToInt()) }
-            .size(with(density) { width.toDp() }, with(density) { height.toDp() })
-            .graphicsLayer { alpha = shown }
-            .shadow(12.dp, RoundedCornerShape(24.dp))
-            .clip(RoundedCornerShape(24.dp))
-            .background(androidx.compose.ui.graphics.Color.Black)
-            .then(pinchInput)
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    // Start from where it is drawn (the kept centre may lie outside the screen's bounds).
-                    onDragStart = { KeepPlaying.windowCenter = Offset(live.cx, live.cy) },
-                    onDragEnd = {
-                        val l = live
-                        val c = KeepPlaying.windowCenter
-                        when {
-                            // Pushed half off the screen sideways: closed.
-                            c.x < 0f || c.x > l.areaW -> {
-                                KeepPlaying.resetDock()
-                                latestP.close()
-                            }
-                            // Dropped over the bar's place: back into the bar.
-                            c.y + l.height / 2f > l.dockY + l.height * 0.5f -> {
-                                KeepPlaying.level = 1f
-                                KeepPlaying.windowCenter = Offset.Unspecified
-                            }
-                            // Anywhere else: kept on screen.
-                            else -> KeepPlaying.windowCenter = Offset(l.cx, l.cy)
-                        }
-                    },
-                ) { change, drag ->
-                    change.consume()
-                    // Free sideways (off the edge closes it), kept on screen up and down.
-                    val c = KeepPlaying.windowCenter + drag
-                    KeepPlaying.windowCenter = Offset(c.x, c.y.coerceIn(0f, live.areaH))
-                }
-            }
+            .graphicsLayer { alpha = frame.geo.sideAlpha }
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .clickable { p.seekBy(if (forward) 15_000 else -15_000) },
+        contentAlignment = Alignment.Center,
+    ) { SeekGlyph(forward = forward, tint = MaterialTheme.colorScheme.onSecondaryContainer) }
+}
+
+/** Pause / play: the bare symbol on its block. */
+@Composable
+private fun PauseBlock(p: Playing, frame: MiniFrame) {
+    Box(
+        Modifier
+            .graphicsLayer { alpha = frame.geo.sideAlpha }
+            .clip(RoundedCornerShape(InnerCorner))
+            .background(MaterialTheme.colorScheme.primaryContainer)
             .clickable(onClick = p.toggle),
+        contentAlignment = Alignment.Center,
     ) {
-        NetImage(p.cover, Modifier.fillMaxSize(), contentDescription = p.title, thumbWidth = 640.dp)
+        Icon(
+            com.gpo.yoin.symbols.rememberPlayPauseSymbolPainter(p.isPlaying),
+            contentDescription = if (p.isPlaying) "暂停" else "播放",
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+    }
+}
+
+/**
+ * The picture: the bar's tile, the circle and the floating window are this one view (one
+ * surface), reshaped. Its progress is a thin line tracing the inner rounded edge from the top
+ * centre, clockwise; in the circle that is the ring.
+ */
+@Composable
+private fun Tile(p: Playing, frame: MiniFrame) {
+    val primary = MaterialTheme.colorScheme.primary
+    val track = MaterialTheme.colorScheme.surfaceContainerHighest
+    val latestProgress by rememberUpdatedState(p.progress)
+    Box(
+        Modifier
+            .graphicsLayer {
+                shape = RoundedCornerShape(frame.geo.tileCorner)
+                clip = true
+            }
+            .background(track)
+            .clickable(onClick = p.open)
+            .drawWithContent {
+                drawContent()
+                val stroke = ProgressStroke.toPx()
+                val path = edgePath(size, frame.geo.tileCorner, stroke / 2f)
+                drawPath(path, primary.copy(alpha = 0.25f), style = Stroke(stroke))
+                val measure = PathMeasure().apply { setPath(path, false) }
+                val seg = Path()
+                measure.getSegment(0f, measure.length * latestProgress.coerceIn(0f, 1f), seg, true)
+                drawPath(seg, primary, style = Stroke(stroke, cap = StrokeCap.Round))
+            },
+    ) {
+        NetImage(p.cover, Modifier.fillMaxSize(), contentDescription = p.title, shape = androidx.compose.ui.graphics.RectangleShape, thumbWidth = 640.dp)
+        // The video itself over its cover. Attached a beat after the bar appears: the page that let
+        // the player go detaches its own video view as it leaves, and that must not land after ours.
         var ready by remember(p.player) { mutableStateOf(false) }
         LaunchedEffect(p.player) {
-            kotlinx.coroutines.delay(300)
+            kotlinx.coroutines.delay(400)
             ready = true
         }
         p.player?.takeIf { ready }?.let { player ->
+            // Cropped only while the bar's 16:9 tile turns into the video's own shape; in the
+            // window the shapes match and nothing is cut or stretched.
             androidx.media3.ui.compose.ContentFrame(
                 player = player,
                 modifier = Modifier.fillMaxSize(),
                 surfaceType = androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW,
-                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 shutter = {},
             )
         }
-        // Paused: the play key grows in over the picture (the same morphing symbol as the bar's).
-        val pausedK by animateFloatAsState(if (p.isPlaying) 0f else 1f, YoinMotion.defaultSpatialSpec(), label = "windowPaused")
-        if (pausedK > 0.01f) {
-            Box(
-                Modifier
-                    .align(Alignment.Center)
-                    .graphicsLayer {
-                        scaleX = 0.6f + 0.4f * pausedK
-                        scaleY = 0.6f + 0.4f * pausedK
-                        alpha = pausedK.coerceIn(0f, 1f)
-                    }
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    com.gpo.yoin.symbols.rememberPlayPauseSymbolPainter(p.isPlaying),
-                    contentDescription = "播放",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
-        }
-        val primary = MaterialTheme.colorScheme.primary
-        Box(
-            Modifier.fillMaxSize().drawWithContent {
-                drawContent()
-                val y = size.height - 2.dp.toPx()
-                drawLine(primary, Offset(0f, y), Offset(size.width * p.progress.coerceIn(0f, 1f), y), 4.dp.toPx())
-            },
-        )
     }
 }
 
-@Composable
-private fun BarContent(p: Playing, modifier: Modifier) {
-    val outer = 28.dp
-    val inner = 6.dp
-    val tone = MaterialTheme.colorScheme.secondaryContainer
-    val onTone = MaterialTheme.colorScheme.onSecondaryContainer
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        Box(
-            Modifier
-                .width(56.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(topStart = outer, bottomStart = outer, topEnd = inner, bottomEnd = inner))
-                .background(tone)
-                .clickable { p.seekBy(-15_000) },
-            contentAlignment = Alignment.Center,
-        ) { SeekGlyph(forward = false, tint = onTone) }
-        Box(
-            Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(inner))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                .clickable(onClick = p.open),
-        ) {
-            NetImage(p.cover, Modifier.fillMaxSize(), contentDescription = p.title, thumbWidth = 320.dp)
-            // The video itself over its cover (a TextureView: it follows the bar's fold and swipe).
-            // Attached a beat after the bar appears: the page that let the player go detaches its own
-            // video view as it leaves, and that must not land after ours.
-            var ready by remember(p.player) { mutableStateOf(false) }
-            LaunchedEffect(p.player) {
-                kotlinx.coroutines.delay(400)
-                ready = true
-            }
-            p.player?.takeIf { ready }?.let { player ->
-                androidx.media3.ui.compose.ContentFrame(
-                    player = player,
-                    modifier = Modifier.fillMaxSize(),
-                    surfaceType = androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW,
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    shutter = {},
-                )
-            }
-            // The progress line on the picture's inner (bottom) edge.
-            val primary = MaterialTheme.colorScheme.primary
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .drawWithContent {
-                        drawContent()
-                        val y = size.height - 1.5.dp.toPx()
-                        drawLine(primary.copy(alpha = 0.25f), Offset(0f, y), Offset(size.width, y), 3.dp.toPx())
-                        drawLine(primary, Offset(0f, y), Offset(size.width * p.progress.coerceIn(0f, 1f), y), 3.dp.toPx())
-                    },
-            )
-        }
-        // Paused, the block rounds into a circle (56 × 56): the play key stands apart.
-        val playCorner by androidx.compose.animation.core.animateDpAsState(
-            if (p.isPlaying) inner else outer,
-            YoinMotion.defaultSpatialSpec(),
-            label = "playCorner",
-        )
-        Box(
-            Modifier
-                .width(56.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(playCorner))
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .clickable(onClick = p.toggle),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                com.gpo.yoin.symbols.rememberPlayPauseSymbolPainter(p.isPlaying),
-                contentDescription = if (p.isPlaying) "暂停" else "播放",
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-        Box(
-            Modifier
-                .width(56.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(topStart = inner, bottomStart = inner, topEnd = outer, bottomEnd = outer))
-                .background(tone)
-                .clickable { p.seekBy(15_000) },
-            contentAlignment = Alignment.Center,
-        ) { SeekGlyph(forward = true, tint = onTone) }
+/** A rounded rectangle's edge, [inset] in, starting at the top centre and running clockwise. */
+private fun edgePath(size: Size, corner: Float, inset: Float): Path {
+    val l = inset
+    val t = inset
+    val r = size.width - inset
+    val b = size.height - inset
+    val rad = (corner - inset).coerceIn(0f, minOf(r - l, b - t) / 2f)
+    return Path().apply {
+        moveTo((l + r) / 2f, t)
+        lineTo(r - rad, t)
+        arcTo(Rect(r - 2 * rad, t, r, t + 2 * rad), -90f, 90f, false)
+        lineTo(r, b - rad)
+        arcTo(Rect(r - 2 * rad, b - 2 * rad, r, b), 0f, 90f, false)
+        lineTo(l + rad, b)
+        arcTo(Rect(l, b - 2 * rad, l + 2 * rad, b), 90f, 90f, false)
+        lineTo(l, t + rad)
+        arcTo(Rect(l, t, l + 2 * rad, t + 2 * rad), 180f, 90f, false)
+        close()
     }
 }
 
@@ -693,27 +876,6 @@ private fun SeekGlyph(forward: Boolean, tint: androidx.compose.ui.graphics.Color
             color = tint,
             modifier = Modifier.padding(top = 2.dp),
         )
-    }
-}
-
-@Composable
-private fun CircleContent(p: Playing, modifier: Modifier) {
-    val ring = MaterialTheme.colorScheme.primary
-    val track = MaterialTheme.colorScheme.surfaceContainerHighest
-    Box(
-        modifier
-            .clip(CircleShape)
-            .clickable(onClick = p.open)
-            .drawWithContent {
-                drawContent()
-                val stroke = 3.dp.toPx()
-                val inset = stroke / 2
-                drawArc(track, 0f, 360f, false, topLeft = Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke), style = Stroke(stroke))
-                drawArc(ring, -90f, 360f * p.progress.coerceIn(0f, 1f), false, topLeft = Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke), style = Stroke(stroke, cap = StrokeCap.Round))
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        NetImage(p.cover, Modifier.fillMaxSize().padding(5.dp).clip(CircleShape), contentDescription = p.title, shape = CircleShape, thumbWidth = 96.dp)
     }
 }
 

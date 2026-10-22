@@ -41,6 +41,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.offset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.combinedClickable
 import com.gpo.pilipala.ui.components.WidthClass
 import com.gpo.pilipala.ui.components.seam.seamBarSource
@@ -97,7 +100,15 @@ fun FloatingNavBar(
             Row(
                 modifier = Modifier
                     .height(rowHeight)
-                    .padding(horizontal = 10.dp),
+                    .padding(horizontal = 10.dp)
+                    // 继续播放: the mini bar's picture merges into the nav bar's start as a circle;
+                    // the bar opens room for it as it pours in (read while laying out, every frame).
+                    .layout { measurable, constraints ->
+                        val room = (com.gpo.pilipala.feature.sources.KeepPlaying.navRoom *
+                            com.gpo.pilipala.feature.sources.NavRoom.toPx()).roundToInt()
+                        val placeable = measurable.measure(constraints.offset(horizontal = -room))
+                        layout(placeable.width + room, placeable.height) { placeable.place(room, 0) }
+                    },
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
