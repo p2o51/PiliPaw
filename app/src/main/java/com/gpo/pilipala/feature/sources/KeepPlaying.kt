@@ -212,8 +212,37 @@ object KeepPlaying {
         return miniGeo(barH * 16f / 9f, MiniDims(1f, barH * 16f / 9f, 1f), bar, null, 16f / 9f, Offset.Unspecified, Rect(0f, 0f, w, h), null, MiniPx(gap, 0f, 0f, 0f, 0f)).tile
     }
 
+    /**
+     * The bar's picture was tapped open: its page grows out of it where it is, so the bar steps
+     * aside at once (no fade over the growing page) and keeps its form until it is gone.
+     */
+    internal var openingFromDock = false
+
+    // While the bar is on screen (shown or still fading), a reset waits until it is gone: done at
+    // once it laid a window out as the plain bar at the bottom for the frames it was fading.
+    internal var barOnScreen = false
+    private var resetPending = false
+
     /** A video opened, or the docked one went: the next dock starts again as the plain bar. */
     internal fun resetDock() {
+        if (barOnScreen) {
+            resetPending = true
+            MiniLog.event("reset waits", "the bar is still on screen")
+            return
+        }
+        resetNow()
+    }
+
+    /** The bar is gone: a reset that waited for it happens now. */
+    internal fun barGone() {
+        barOnScreen = false
+        if (resetPending) {
+            resetPending = false
+            resetNow()
+        }
+    }
+
+    private fun resetNow() {
         rest = MiniRest.Row
         windowCenter = Offset.Unspecified
         windowCorner = null
@@ -613,6 +642,7 @@ fun MiniBarHost() {
     val fadeSpec = YoinMotion.defaultEffectsSpec<Float>()
     LaunchedEffect(up) {
         if (up) {
+            KeepPlaying.barOnScreen = true
             val arrival = KeepPlaying.takeArrival()
             KeepPlaying.landing = null
             if (arrival != null && shownA.value < 0.01f) {
@@ -626,9 +656,17 @@ fun MiniBarHost() {
             sidesIn.snapTo(1f)
             shownA.animateTo(1f, fadeSpec)
         } else {
-            MiniLog.event("bar fades out", "")
-            shownA.animateTo(0f, fadeSpec)
+            if (KeepPlaying.openingFromDock) {
+                // Its page is growing out of the picture right where it is: gone this frame.
+                KeepPlaying.openingFromDock = false
+                MiniLog.event("bar steps aside", "opened from ${KeepPlaying.rest}")
+                shownA.snapTo(0f)
+            } else {
+                MiniLog.event("bar fades out", "")
+                shownA.animateTo(0f, fadeSpec)
+            }
             sidesIn.snapTo(0f)
+            KeepPlaying.barGone()
         }
     }
     val shown = if (up && KeepPlaying.arriving) 1f else shownA.value
@@ -1023,6 +1061,8 @@ private fun tapAt(frame: MiniFrame, at: Offset, p: Playing) {
             // Its page goes back to this form (the window at its size and corner, the circle, the bar).
             PlayerHost.openingFromDock(DockForm(KeepPlaying.rest, KeepPlaying.windowCorner, KeepPlaying.windowCenter, g.tile))
             if (p.source == VideoSource.YouTube) KeepPlaying.openFrom = g.tile
+            KeepPlaying.openingFromDock = true
+            MiniLog.event("open from dock", "${KeepPlaying.rest} at ${g.tile}")
             p.open()
         }
         sides && g.left.contains(at) -> p.seekBy(-15_000)
