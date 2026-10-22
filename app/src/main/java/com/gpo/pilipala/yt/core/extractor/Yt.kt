@@ -136,7 +136,30 @@ object Yt {
     suspend fun channel(url: String): ChannelInfo = io { ChannelInfo.getInfo(service, url) }
 
     /** A playlist's title and its videos in order, every page (up to [maxPages]). */
-    suspend fun playlist(url: String, maxPages: Int = 20): Pair<String, List<VideoItem>> = io {
+    suspend fun playlist(url: String, maxPages: Int = 20): Pair<String, List<VideoItem>> {
+        // The account's 赞过 (LL) and 稍后再看 (WL) are private lists the extractor refuses by URL
+        // ("URL not accepted"); they load as the signed-in account's browse feeds instead.
+        val special = when (android.net.Uri.parse(url).getQueryParameter("list")) {
+            "LL" -> YtFeeds.Feed.Liked to "赞过的视频"
+            "WL" -> YtFeeds.Feed.WatchLater to "稍后再看"
+            else -> null
+        }
+        if (special != null) {
+            val all = ArrayList<VideoItem>()
+            var cursor: String? = null
+            var pages = 0
+            do {
+                val page = YtFeeds.videos(special.first, cursor)
+                all += page.items
+                cursor = page.nextCursor.takeIf { page.hasMore }
+                pages++
+            } while (cursor != null && pages < maxPages)
+            return special.second to all.distinctBy { it.url }
+        }
+        return publicPlaylist(url, maxPages)
+    }
+
+    private suspend fun publicPlaylist(url: String, maxPages: Int): Pair<String, List<VideoItem>> = io {
         val info = org.schabi.newpipe.extractor.playlist.PlaylistInfo.getInfo(service, url)
         val all = info.relatedItems.filterIsInstance<StreamInfoItem>().map { it.toVideo() }.toMutableList()
         var next = info.nextPage
