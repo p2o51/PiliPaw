@@ -57,19 +57,27 @@ object Yt {
     private val accountScope = MainScope()
 
     /**
-     * The device language as YouTube's `hl`. A locale without a region (中文 set as just
-     * "简体中文") made Localization.fromLocale send "zh-", which signed-in youtubei calls reject
-     * outright (400 INVALID_ARGUMENT); the region comes from the script then, or is left out.
+     * The device language as YouTube's `hl`. youtubei refuses (400 INVALID_ARGUMENT, on every
+     * signed-in browse) a language-region pair it has no variant for: "en-JP", "zh-JP", "zh-SG",
+     * and "zh-" from a region-less locale. A bare language is always accepted, so that is sent
+     * unless the region picks one of YouTube's own variants.
      */
     internal fun localization(locale: Locale): Localization {
-        val region = locale.country.ifEmpty {
-            when {
-                locale.language != "zh" -> ""
-                locale.script == "Hant" -> "TW"
+        val lang = locale.language
+        val region = locale.country
+        val variant = when (lang) {
+            "zh" -> when {
+                region == "HK" || region == "MO" -> "HK"
+                region == "TW" || locale.script == "Hant" -> "TW"
                 else -> "CN"
             }
+            "en" -> region.takeIf { it == "GB" || it == "IN" }
+            "pt" -> if (region == "BR") "BR" else "PT"
+            "es" -> if (region.isEmpty() || region == "ES") null else "419"
+            "fr" -> region.takeIf { it == "CA" }
+            else -> null
         }
-        return if (region.isEmpty()) Localization(locale.language) else Localization(locale.language, region)
+        return if (variant == null) Localization(lang) else Localization(lang, variant)
     }
 
     // ── Streams ─────────────────────────────────────────────────────────────
