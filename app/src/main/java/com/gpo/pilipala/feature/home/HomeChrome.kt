@@ -51,9 +51,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -152,16 +154,21 @@ internal fun SegmentTabs(
     // from rest every frame (that stuttered the whole row, the chips on the right most).
     val centring = remember { Animatable(0f) }
     // Also waits for a chip that is not measured yet (a feed tab created and selected at once).
-    LaunchedEffect(selected) {
-        snapshotFlow { bounds[selected] to viewport }.collectLatest { (b, vp) ->
-            val (x, w) = b ?: return@collectLatest
-            if (vp == 0) return@collectLatest
-            val target = (x + w / 2 - vp / 2).coerceIn(0, scroll.maxValue).toFloat()
-            // A finger moved the row since: carry on from where it is.
-            if (abs(centring.value - scroll.value) > 1f) centring.snapTo(scroll.value.toFloat())
-            if (abs(target - centring.targetValue) < 1f && centring.isRunning) return@collectLatest
-            centring.animateTo(target, spec, initialVelocity = centring.velocity) {
-                scroll.dispatchRawDelta(value - scroll.value)
+    val currentSelection by rememberUpdatedState(selected)
+    LaunchedEffect(Unit) {
+        snapshotFlow {
+            val b = bounds[currentSelection]
+            if (b == null || viewport == 0) null
+            else (b.first + b.second / 2 - viewport / 2).coerceIn(0, scroll.maxValue)
+        }.distinctUntilChanged().collect { target ->
+            if (target != null) launch {
+                // Let Animatable interrupt its own previous ride: collectLatest would cancel
+                // it first and clear its velocity before the new destination could use it.
+                val velocity = centring.velocity
+                if (abs(centring.value - scroll.value) > 1f) centring.snapTo(scroll.value.toFloat())
+                centring.animateTo(target.toFloat(), spec, initialVelocity = velocity) {
+                    scroll.dispatchRawDelta(value - scroll.value)
+                }
             }
         }
     }
@@ -176,22 +183,25 @@ internal fun SegmentTabs(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         labels.forEachIndexed { i, label ->
-            SegmentChip(
-                label = label,
-                selected = i == selected,
-                onClick = {
-                    if (i != selected) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    onSelect(i)
+            Row(
+                modifier = Modifier.clip(RoundedCornerShape(ChipCorner)).onPlaced { c ->
+                    bounds[i] = c.positionInParent().x.roundToInt() to c.size.width
                 },
-                onLongClick = if (onLongClick != null && longClickable(i)) ({ onLongClick(i) }) else null,
-                showAction = onLongClick != null && i == selected && longClickable(i),
-                modifier = Modifier
-                    .onPlaced { c ->
-                        bounds[i] = c.positionInParent().x.roundToInt() to c.size.width
-                    }
-                    .splashReveal(),
-            )
-            afterChip?.invoke(i)
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SegmentChip(
+                    label = label,
+                    selected = i == selected,
+                    onClick = {
+                        if (i != selected) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onSelect(i)
+                    },
+                    onLongClick = if (onLongClick != null && longClickable(i)) ({ onLongClick(i) }) else null,
+                    showAction = onLongClick != null && i == selected && longClickable(i),
+                    modifier = Modifier.splashReveal(),
+                )
+                afterChip?.invoke(i)
+            }
         }
         trailing?.invoke()
     }

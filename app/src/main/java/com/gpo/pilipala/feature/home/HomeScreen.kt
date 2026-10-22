@@ -221,15 +221,19 @@ fun HomeScreen() {
             afterChip = { i ->
                 val key = tabs.getOrNull(i)?.key
                 androidx.compose.animation.AnimatedVisibility(
-            visible = mixed && i == pagerState.targetPage && key in splittable,
-            // Behind the chip it tucks under, and unclipped so the tuck shows while it grows.
-            modifier = Modifier.zIndex(-1f),
-            // One standard spring both ways: going between 推荐 and 关注 one tail folds exactly as
-            // the other unfolds, so the row's width holds and the chips to the right stay put
-            // (a bouncy grow against a quicker fold made them wobble).
-            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + androidx.compose.animation.expandHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), clip = false),
-            exit = fadeOut(YoinMotion.fastEffectsSpec()) + androidx.compose.animation.shrinkHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), clip = false),
-                ) { com.gpo.pilipala.feature.sources.InlineSourceChips() }
+                    visible = mixed && i == pagerState.targetPage && key in splittable,
+                    // Behind the chip it tucks under, and unclipped so the tuck shows while it grows.
+                    modifier = Modifier.zIndex(-1f),
+                    // One standard spring both ways: going between 推荐 and 关注 one tail folds exactly as
+                    // the other unfolds, so the row's width holds and the chips to the right stay put
+                    // (a bouncy grow against a quicker fold made them wobble).
+                    enter = fadeIn(YoinMotion.defaultEffectsSpec()) + androidx.compose.animation.expandHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), expandFrom = Alignment.Start, clip = false),
+                    exit = fadeOut(YoinMotion.fastEffectsSpec()) + androidx.compose.animation.shrinkHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), shrinkTowards = Alignment.Start, clip = false),
+                ) {
+                    Box(Modifier.padding(start = 8.dp)) {
+                        com.gpo.pilipala.feature.sources.InlineSourceChips()
+                    }
+                }
             },
         )
         HorizontalPager(
