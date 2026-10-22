@@ -95,6 +95,7 @@ fun AppNavHost(navigator: Navigator) {
     val configuration = LocalConfiguration.current
     SideEffect {
         navigator.transitions = transitions
+        com.gpo.pilipala.navigation.transition.PageTransitionsHost.current = transitions
         transitions.configStamp = configuration.uiMode * 31 + configuration.densityDpi
     }
     val density = LocalDensity.current

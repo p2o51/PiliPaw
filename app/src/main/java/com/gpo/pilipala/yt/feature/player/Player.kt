@@ -394,6 +394,8 @@ object Player {
     /** Opens [url] in the player, expanded. Tapping the video that is already playing just expands it. */
     fun play(url: String, preview: VideoItem? = null) {
         expandedState = true
+        // Opened from a card: the player grows from its own place, not from where the bar was.
+        com.gpo.pilipala.feature.sources.KeepPlaying.openFrom = null
         // One player for the user: a docked Bilibili video (or YouTube's own bar) gives way.
         PlayerHost.opened(PlayerSlot.YouTube)
         if (session?.url == url && session?.error == null) return

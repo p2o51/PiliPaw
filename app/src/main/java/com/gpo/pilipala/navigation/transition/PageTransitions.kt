@@ -164,10 +164,19 @@ class PageTransitions internal constructor(
     private val pushedCovers = HashMap<String, Rect>()
 
     /**
-     * Set by a page whose back docks its picture somewhere else than the card it came from (the
-     * video page into 继续播放's mini bar): the hero flies there instead. Read once per commit.
+     * Pages whose back may dock their picture somewhere else than the card they came from (the
+     * video page into 继续播放's mini bar), by entry key: when [HeroDock.enabled] at the commit,
+     * the hero flies there instead, whichever back it is (gesture, button, the picture's swipe).
      */
-    internal var heroDock: HeroDock? = null
+    private val heroDocks = HashMap<String, HeroDock>()
+
+    internal fun registerHeroDock(dock: HeroDock) {
+        heroDocks[dock.key] = dock
+    }
+
+    internal fun unregisterHeroDock(dock: HeroDock) {
+        if (heroDocks[dock.key] === dock) heroDocks.remove(dock.key)
+    }
     private val heroes = HashMap<String, PageHeroCapture>()
 
     internal fun registerCover(key: String, node: HeroCoverNode) {
@@ -568,8 +577,7 @@ class PageTransitions internal constructor(
         hero = null
         heroProgress.snapTo(0f)
         val top = backStack.lastOrNull() as? Route ?: return
-        val dock = heroDock?.takeIf { it.key == top.toString() }
-        heroDock = null
+        val dock = heroDocks[top.toString()]?.takeIf { it.enabled() }
         if (dock != null) {
             val to = dock.target() ?: return
             val capture = top.sharedKey()?.let { heroes[it] } ?: return
@@ -654,8 +662,17 @@ fun Route.sharedKey(): String? = when (this) {
     else -> null
 }
 
-/** Where a docking hero lands (host px), and the frame it carries there, for whoever takes over. */
-internal class HeroDock(val key: String, val target: () -> Rect?, val landing: (ImageBitmap) -> Unit)
+/**
+ * Where a docking hero lands (host px) when [enabled] at the commit, and the frame it carries
+ * there, for whoever takes over.
+ */
+internal class HeroDock(val key: String, val enabled: () -> Boolean, val target: () -> Rect?, val landing: (ImageBitmap) -> Unit)
+
+/** The app's page transitions, for what draws outside the page host (the mini bar). */
+object PageTransitionsHost {
+    var current: PageTransitions? = null
+        internal set
+}
 
 /** A page-driven back ([PageTransitions.startSwipeBack]). */
 internal class SwipeBack(private val events: kotlinx.coroutines.channels.Channel<BackEventCompat>) {

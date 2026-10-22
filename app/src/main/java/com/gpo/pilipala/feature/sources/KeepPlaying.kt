@@ -75,6 +75,7 @@ import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.source.VideoSource
 import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.navigation.transition.pageSharedSource
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.WidthClass
 import com.gpo.pilipala.ui.components.widthClass
@@ -124,6 +125,12 @@ object KeepPlaying {
     /** The floating window's centre (window px), where it was dragged; unspecified: where it detached. */
     var windowCenter by mutableStateOf(Offset.Unspecified)
         internal set
+
+    /**
+     * Where the picture was on screen (window px) when the bar or window opened its video:
+     * YouTube's player grows from there instead of from the bar's place.
+     */
+    internal var openFrom by mutableStateOf<Rect?>(null)
 
     /** The corner a resting window keeps through resizes (0 top left … 3 bottom right); null: none yet. */
     internal var windowCorner: Int? = null
@@ -302,6 +309,8 @@ private class Playing(
     val close: () -> Unit,
     /** The live picture for the bar, when there is one (not in 仅听声音, not before it loads). */
     val player: androidx.media3.common.Player? = null,
+    /** A Bilibili video's page: it grows out of the picture where it is (a shared source). */
+    val route: Route? = null,
 )
 
 @Composable
@@ -322,6 +331,7 @@ private fun currentPlaying(): Playing? {
             open = { BiliKeeper.route(bili)?.let(BiliLinks::open) },
             close = { BiliKeeper.close() },
             player = bili.player.takeIf { !bili.audioOnly },
+            route = BiliKeeper.route(bili),
         )
     }
     // The YouTube player collapsed: this bar is its mini player.
@@ -590,7 +600,7 @@ fun MiniBarHost() {
         frame.bounds = Rect(margin, statusTop + margin, w - margin, h - margin)
         // A window resting at a bottom corner stays clear of the dock line (or a later nudge would dock it).
         frame.restArea = Rect(margin, statusTop + margin, w - margin, (nav?.top ?: barTarget.top) - with(density) { 32.dp.toPx() })
-        frame.px = with(density) { MiniPx(BlockGap.toPx(), InnerCorner.toPx(), WindowCorner.toPx(), margin, 8.dp.toPx()) }
+        frame.px = with(density) { MiniPx(BlockGap.toPx(), InnerCorner.toPx(), WindowCorner.toPx(), margin, 8.dp.toPx(), 32.dp.toPx(), 8.dp.toPx()) }
 
         // The bar follows the nav bar (a page opening hides it, coming back shows it) on a spring.
         LaunchedEffect(barTarget) {
@@ -647,10 +657,17 @@ fun MiniBarHost() {
         )
         Layout(
             content = {
-                SideBlock(forward = false, p = p, frame = frame)
-                Tile(p = p, frame = frame)
-                PauseBlock(p = p, frame = frame)
-                SideBlock(forward = true, p = p, frame = frame)
+                // The page transitions reach the bar too: a Bilibili page grows out of its picture.
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.gpo.pilipala.navigation.transition.LocalPageTransitions provides com.gpo.pilipala.navigation.transition.PageTransitionsHost.current,
+                ) {
+                    SideBlock(forward = false, p = p, frame = frame)
+                    Tile(p = p, frame = frame)
+                    PauseBlock(p = p, frame = frame)
+                    SideBlock(forward = true, p = p, frame = frame)
+                    WindowKey(close = false, p = p, frame = frame)
+                    WindowKey(close = true, p = p, frame = frame)
+                }
             },
             modifier = Modifier
                 .offset { frame.geo.hit.let { IntOffset(it.left.roundToInt(), it.top.roundToInt()) } }
@@ -660,15 +677,20 @@ fun MiniBarHost() {
                 .graphicsLayer {
                     translationX = frame.swipeNow
                     alpha = shown * (1f - (abs(frame.swipeNow) / (frame.anchor.value.width * 0.6f).coerceAtLeast(1f))).coerceIn(0f, 1f)
-                    translationY = (1f - shown) * barH
+                    // Closing shrinks as it fades (the window where it is, the bar sinking a little).
+                    val going = 0.85f + 0.15f * shown
                     if (frame.geo.windowed) {
-                        scaleX = frame.press.value
-                        scaleY = frame.press.value
+                        scaleX = frame.press.value * going
+                        scaleY = frame.press.value * going
+                    } else {
+                        translationY = (1f - shown) * barH
+                        scaleX = going
+                        scaleY = going
                     }
                 },
         ) { measurables, _ ->
             val g = frame.geo
-            val rects = listOf(g.left, g.tile, g.pause, g.right)
+            val rects = listOf(g.left, g.tile, g.pause, g.right, g.play, g.close)
             val placeables = measurables.mapIndexed { i, m ->
                 val r = rects[i]
                 m.measure(Constraints.fixed(r.width.roundToInt().coerceAtLeast(0), r.height.roundToInt().coerceAtLeast(0)))
@@ -704,6 +726,29 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
         val mergedAtDown = g0.merge > 0.5f
         // Window px: the node moves with the window, the finger's place must not.
         val downAt = down.position + g0.hit.topLeft
+        // The window's keys: their press is theirs alone (no drag, no open, no pinch).
+        val key = when {
+            !windowAtDown || g0.buttonsAlpha < 0.5f -> null
+            g0.play.inflate(6f * density).contains(downAt) -> false
+            g0.close.inflate(6f * density).contains(downAt) -> true
+            else -> null
+        }
+        if (key != null) {
+            down.consume()
+            var off = false
+            while (true) {
+                val e = awaitPointerEvent(PointerEventPass.Initial)
+                e.changes.forEach { it.consume() }
+                if (MiniTouch.count >= 2) off = true
+                val c = e.changes.firstOrNull { it.id == down.id } ?: break
+                if ((c.position - down.position).getDistance() > viewConfiguration.touchSlop) off = true
+                if (!c.pressed) break
+            }
+            if (!off) {
+                if (key) latest().close() else latest().toggle()
+            }
+            return@awaitEachGesture
+        }
         if (windowAtDown) scope.launch { frame.press.animateTo(PressScale, MiniSprings.fast()) }
         var pinching = false
         var dragging = false
@@ -824,7 +869,10 @@ private fun tapAt(frame: MiniFrame, at: Offset, p: Playing) {
     val g = frame.geo
     val sides = g.sideAlpha > 0.5f && !g.windowed
     when {
-        g.tile.contains(at) -> p.open()
+        g.tile.contains(at) -> {
+            if (p.source == VideoSource.YouTube) KeepPlaying.openFrom = g.tile
+            p.open()
+        }
         sides && g.left.contains(at) -> p.seekBy(-15_000)
         sides && g.pause.contains(at) -> p.toggle()
         sides && g.right.contains(at) -> p.seekBy(15_000)
@@ -853,6 +901,7 @@ private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v:
     var window = false
     when (val r = MiniAxis.release(raw, v, d, frame.maxAxis, frame.canMerge)) {
         MiniRelease.Open -> {
+            if (latest().source == VideoSource.YouTube) KeepPlaying.openFrom = frame.geo.tile
             latest().open()
             KeepPlaying.rest = MiniRest.Row
             target = d.row
@@ -928,6 +977,33 @@ private fun releaseSwipe(frame: MiniFrame, scope: CoroutineScope, vx: Float, den
     }
 }
 
+/**
+ * The floating window's keys: play / pause bottom left, close bottom right. Small circles on a
+ * scrim so they read on any frame; they grow and shrink with the window (the detector owns
+ * their presses).
+ */
+@Composable
+private fun WindowKey(close: Boolean, p: Playing, frame: MiniFrame) {
+    Box(
+        Modifier
+            .graphicsLayer {
+                alpha = frame.geo.buttonsAlpha
+                shape = androidx.compose.foundation.shape.CircleShape
+                clip = true
+            }
+            .background(Color.Black.copy(alpha = 0.45f))
+            .a11yClick(if (close) "关闭" else if (p.isPlaying) "暂停" else "播放") { if (close) p.close() else p.toggle() },
+        contentAlignment = Alignment.Center,
+    ) {
+        val m = Modifier.fillMaxSize(0.6f)
+        if (close) {
+            Icon(com.gpo.yoin.symbols.YoinSymbols.Close, contentDescription = null, tint = Color.White, modifier = m)
+        } else {
+            Icon(com.gpo.yoin.symbols.rememberPlayPauseSymbolPainter(p.isPlaying), contentDescription = null, tint = Color.White, modifier = m)
+        }
+    }
+}
+
 /** −15 s / +15 s: the outer side fully round, the inner one a small corner. */
 @Composable
 private fun SideBlock(forward: Boolean, p: Playing, frame: MiniFrame) {
@@ -986,6 +1062,7 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                 clip = true
             }
             .background(track)
+            .then(p.route?.let { Modifier.pageSharedSource(it) } ?: Modifier)
             .a11yClick(p.title.ifEmpty { "打开视频" }, p.open)
             .drawWithContent {
                 drawContent()

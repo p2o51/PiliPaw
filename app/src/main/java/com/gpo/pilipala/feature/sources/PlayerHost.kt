@@ -80,6 +80,9 @@ internal object PlayerHost {
 
     val docked: PlayerSlot? get() = machine.docked
 
+    /** The player on a page (or YouTube's, open) right now. */
+    val front: PlayerSlot? get() = machine.front
+
     fun opened(slot: PlayerSlot) = apply(machine.opened(slot))
 
     fun started(slot: PlayerSlot) = apply(machine.started(slot))

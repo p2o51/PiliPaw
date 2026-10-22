@@ -124,13 +124,26 @@ internal class MiniGeo(
     val merge: Float,
     val windowed: Boolean,
     val neck: Neck?,
+    /** The floating window's play / pause (bottom left) and close (bottom right) keys; empty otherwise. */
+    val play: Rect = Rect.Zero,
+    val close: Rect = Rect.Zero,
+    val buttonsAlpha: Float = 0f,
 )
 
 /** The liquid bridge between the shrinking picture and the nav bar it merges into. */
 internal class Neck(val cx: Float, val top: Float, val bottom: Float, val halfTop: Float, val pinch: Float, val flare: Float)
 
 /** Lengths the geometry needs, in px. */
-internal data class MiniPx(val gap: Float, val inner: Float, val windowCorner: Float, val margin: Float, val neckInset: Float)
+internal data class MiniPx(
+    val gap: Float,
+    val inner: Float,
+    val windowCorner: Float,
+    val margin: Float,
+    val neckInset: Float,
+    /** The window's keys at a ~280dp wide window, and their inset from its corners. */
+    val button: Float = 0f,
+    val buttonInset: Float = 0f,
+)
 
 internal fun lerpRect(a: Rect, b: Rect, t: Float) = Rect(lerp(a.left, b.left, t), lerp(a.top, b.top, t), lerp(a.right, b.right, t), lerp(a.bottom, b.bottom, t))
 
@@ -223,7 +236,14 @@ internal fun miniGeo(
             flare = halfTop * 1.5f,
         )
     } else null
-    return MiniGeo(left, tile, pause, right, sideAlpha, corner, hit, m, windowed, neck)
+    // The window's two keys grow and shrink with it, and come on just after it detaches.
+    val k = if (px.button > 0f) (tile.width / (px.button * 9f)).coerceIn(0.75f, 1.15f) else 0f
+    val bs = px.button * k
+    val inset = px.buttonInset * k
+    val play = if (windowed) Rect(tile.left + inset, tile.bottom - inset - bs, tile.left + inset + bs, tile.bottom - inset) else Rect.Zero
+    val close = if (windowed) Rect(tile.right - inset - bs, tile.bottom - inset - bs, tile.right - inset, tile.bottom - inset) else Rect.Zero
+    val buttonsAlpha = if (windowed) ((axis - d.detach) / (d.detachExtra * 0.25f)).coerceIn(0f, 1f) else 0f
+    return MiniGeo(left, tile, pause, right, sideAlpha, corner, hit, m, windowed, neck, play, close, buttonsAlpha)
 }
 
 internal fun Rect.union(o: Rect) = Rect(minOf(left, o.left), minOf(top, o.top), maxOf(right, o.right), maxOf(bottom, o.bottom))

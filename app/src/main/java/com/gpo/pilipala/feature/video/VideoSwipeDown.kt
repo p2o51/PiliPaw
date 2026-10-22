@@ -13,6 +13,8 @@ import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.feature.player.PictureSwipeDown
 import com.gpo.pilipala.feature.sources.BiliKeeper
 import com.gpo.pilipala.feature.sources.KeepPlaying
+import com.gpo.pilipala.feature.sources.PlayerHost
+import com.gpo.pilipala.feature.sources.PlayerSlot
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.transition.HeroDock
 import com.gpo.pilipala.navigation.transition.LocalPageTransitions
@@ -23,8 +25,8 @@ import com.gpo.pilipala.ui.components.widthClass
 /**
  * The video page's swipe down on its picture: the page closes under the finger as a back gesture
  * does (it scales down over the page beneath), and on release goes or settles. With 继续播放
- * keeping the video, the picture's last frame flies into the mini bar's tile, where the bar takes
- * over; otherwise it flies home to its card like any back.
+ * keeping the video, every back of the page flies the picture's last frame into the mini bar's
+ * tile, where the bar takes over; otherwise it flies home to its card.
  */
 @Composable
 internal fun rememberVideoSwipeDown(): PictureSwipeDown? {
@@ -35,24 +37,36 @@ internal fun rememberVideoSwipeDown(): PictureSwipeDown? {
     val navBottom = WindowInsets.navigationBars.getBottom(density)
     val tablet = widthClass() != WidthClass.Compact
     val metrics by rememberUpdatedState(Metrics(window.width.toFloat(), (window.height - navBottom).toFloat(), tablet))
+    // Any back of this page (gesture, button, the picture's swipe) whose video 继续播放 keeps: the
+    // picture's last frame flies into the bar's tile, where the bar takes over in place.
+    val key = remember { nav.backStack.lastOrNull()?.toString() }
+    if (key != null) {
+        androidx.compose.runtime.DisposableEffect(transitions, key) {
+            val stack = nav.backStack
+            val dock = HeroDock(
+                key = key,
+                enabled = {
+                    val c = (PlayerHost.front as? PlayerSlot.Bili)?.player as? PiliPlayerController
+                    c != null && BiliKeeper.wouldKeep(c)
+                },
+                target = {
+                    val i = stack.indexOfLast { it.toString() == key }
+                    val beneath = stack.getOrNull(i - 1)
+                    val shell = beneath == com.gpo.pilipala.navigation.Route.Main || beneath == com.gpo.pilipala.yt.navigation.Route.Main
+                    metrics.let { m -> KeepPlaying.dockTile(shell, m.w, m.h, m.tablet, density) }
+                },
+                landing = { KeepPlaying.arrive(it) },
+            )
+            transitions.registerHeroDock(dock)
+            onDispose { transitions.unregisterHeroDock(dock) }
+        }
+    }
     return remember(transitions, nav, density) {
         object : PictureSwipeDown {
             private var back: SwipeBack? = null
 
             override fun start(ctrl: PiliPlayerController): Boolean {
-                val b = transitions.startSwipeBack() ?: return false
-                back = b
-                val stack = nav.backStack
-                val top = stack.lastOrNull()?.toString() ?: return true
-                if (BiliKeeper.wouldKeep(ctrl)) {
-                    val beneath = stack.getOrNull(stack.lastIndex - 1)
-                    val shell = beneath == com.gpo.pilipala.navigation.Route.Main || beneath == com.gpo.pilipala.yt.navigation.Route.Main
-                    transitions.heroDock = HeroDock(
-                        key = top,
-                        target = { metrics.let { m -> KeepPlaying.dockTile(shell, m.w, m.h, m.tablet, density) } },
-                        landing = { KeepPlaying.arrive(it) },
-                    )
-                }
+                back = transitions.startSwipeBack() ?: return false
                 return true
             }
 
@@ -68,7 +82,6 @@ internal fun rememberVideoSwipeDown(): PictureSwipeDown? {
                 if (goes) {
                     b.commit()
                 } else {
-                    transitions.heroDock = null
                     b.cancel()
                 }
             }
