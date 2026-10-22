@@ -43,20 +43,31 @@ class MiniGesturesTest {
         assertEquals(MiniDragIntent.None, intent(12f, 0f, merged = true))
     }
 
-    @Test fun onlyAThrowAtTheNavBarDocks() {
-        val nav = Rect(16f, 760f, 376f, 828f)
-        val fast = 1000f
-        // Thrown down hard so its centre lands in the nav bar: docks.
-        assertEquals(true, MiniGestures.docksOnNav(Offset(190f, 800f), Offset(100f, 1500f), nav, fast))
-        // Dragged slowly down to the bottom and let go, even right over the nav bar: stays a window.
-        assertEquals(false, MiniGestures.docksOnNav(Offset(200f, 795f), Offset(0f, 300f), nav, fast))
-        assertEquals(false, MiniGestures.docksOnNav(Offset(200f, 795f), Offset(0f, 0f), nav, fast))
-        // A fast flick toward a bottom corner above the nav bar: a corner.
-        assertEquals(false, MiniGestures.docksOnNav(Offset(320f, 720f), Offset(200f, 1800f), nav, fast))
-        // Fast but mostly sideways: no.
-        assertEquals(false, MiniGestures.docksOnNav(Offset(300f, 790f), Offset(2500f, 1200f), nav, fast))
-        // No nav bar on this page: never.
-        assertEquals(false, MiniGestures.docksOnNav(Offset(200f, 790f), Offset(0f, 3000f), null, fast))
+    @Test fun onlyADownwardDragFromABottomCornerMerges() {
+        assertEquals(true, MiniGestures.startsMerge(3, Offset(2f, 12f)))
+        assertEquals(true, MiniGestures.startsMerge(2, Offset(-3f, 10f)))
+        // From a top corner a downward drag only moves the window.
+        assertEquals(false, MiniGestures.startsMerge(1, Offset(0f, 12f)))
+        assertEquals(false, MiniGestures.startsMerge(0, Offset(0f, 12f)))
+        // Sideways or upward from a bottom corner: a plain drag.
+        assertEquals(false, MiniGestures.startsMerge(3, Offset(12f, 4f)))
+        assertEquals(false, MiniGestures.startsMerge(3, Offset(0f, -12f)))
+        assertEquals(false, MiniGestures.startsMerge(null, Offset(0f, 12f)))
+    }
+
+    @Test fun theMergeFollowsTheFingerAndReverses() {
+        assertEquals(0.5f, MiniGestures.mergeProgress(50f, 100f), 0f)
+        assertEquals(1f, MiniGestures.mergeProgress(250f, 100f), 0f)
+        // Dragged back up past where it started: undone.
+        assertEquals(0f, MiniGestures.mergeProgress(-30f, 100f), 0f)
+    }
+
+    @Test fun letGoItDocksPastFortyPercentOrMovingDown() {
+        assertEquals(true, MiniGestures.mergeCompletes(0.45f, 0f, 500f))
+        assertEquals(false, MiniGestures.mergeCompletes(0.3f, 100f, 500f))
+        assertEquals(true, MiniGestures.mergeCompletes(0.2f, 600f, 500f))
+        // Moving up at the end: back to the corner.
+        assertEquals(false, MiniGestures.mergeCompletes(0.35f, -800f, 500f))
     }
 
     @Test fun flungDownOntoTheNavItRestsInABottomCornerAboveIt() {

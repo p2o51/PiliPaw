@@ -502,6 +502,9 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
     }
 
     fun restAxis(rest: MiniRest, density: Float): Float = restAxisOf(rest, dims, canMerge, maxAxis, density)
+
+    /** Where the bar's picture sits at rest (a merging window travels there). */
+    fun rowTile(): Rect = miniGeo(dims.row, dims, anchor.value, circle, aspect, Offset.Unspecified, bounds, nav, px).tile
 }
 
 /** The axis (px) a rest stands for; a window's size is kept in dp so it survives a rotation. */
@@ -763,8 +766,8 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
         // The window's keys: their press is theirs alone (no drag, no open, no pinch).
         val key = when {
             !windowAtDown || g0.buttonsAlpha < 0.5f -> null
-            g0.play.inflate(6f * density).contains(downAt) -> false
-            g0.close.inflate(6f * density).contains(downAt) -> true
+            g0.play.inflate(8f * density).contains(downAt) -> false
+            g0.close.inflate(8f * density).contains(downAt) -> true
             else -> null
         }
         if (key != null) {
@@ -789,6 +792,13 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
         var giveUp = false
         // Dragged up off the bar's picture: a window under the finger from here on.
         var popped = false
+        // Dragged down from a bottom corner: merging back into the bar as the finger goes.
+        var merging = false
+        var mergeFromAxis = 0f
+        var mergeFrom = Offset.Zero
+        var mergeTo = Offset.Zero
+        var mergeRange = 1f
+        var mergeProgress = 0f
         var maxPointers = 1
         var startSpan = 0f
         var startAxis = 0f
@@ -858,6 +868,21 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             val delta = c.positionChange()
             travel += delta
             finger += delta
+            if (!dragging && !giveUp && travel.getDistance() > viewConfiguration.touchSlop &&
+                windowAtDown && MiniGestures.startsMerge(KeepPlaying.windowCorner, travel)
+            ) {
+                dragging = true
+                merging = true
+                frame.gesturing = true
+                frame.flingJob?.cancel()
+                mergeFromAxis = frame.axisNow
+                mergeFrom = frame.geo.tile.center
+                mergeTo = frame.rowTile().center
+                // The window's way down to the nav bar (or the bar's place) is the whole merge.
+                val navY = frame.nav?.center?.y ?: frame.anchor.value.center.y
+                mergeRange = (navY - frame.geo.tile.bottom).coerceIn(80f * density, 120f * density)
+                frame.pinchAxis = mergeFromAxis
+            }
             if (!dragging && !giveUp && travel.getDistance() > viewConfiguration.touchSlop) {
                 when (MiniGestures.dragIntent(travel, windowAtDown, mergedAtDown, g0.tile.contains(downAt))) {
                     MiniDragIntent.MoveWindow, MiniDragIntent.SwipeAway -> dragging = true
@@ -882,7 +907,15 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                 }
                 if (dragging) frame.gesturing = true
             }
-            if (dragging) {
+            if (dragging && merging) {
+                velocity.addPosition(c.uptimeMillis, finger)
+                // 1:1 with the finger: it shrinks and travels to the bar's picture, the side
+                // blocks unfold around it; back up undoes it.
+                mergeProgress = MiniGestures.mergeProgress(travel.y, mergeRange)
+                frame.pinchAxis = lerp(mergeFromAxis, frame.dims.row, mergeProgress)
+                frame.dragCenter = lerpOffset(mergeFrom, mergeTo, mergeProgress)
+                c.consume()
+            } else if (dragging) {
                 velocity.addPosition(c.uptimeMillis, finger)
                 if (windowAtDown || popped) {
                     frame.dragCenter = (frame.dragCenter ?: frame.geo.tile.center) + delta
@@ -902,6 +935,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             tapTimeoutMs = viewConfiguration.longPressTimeoutMillis,
         )
         when {
+            merging && !pinching -> releaseMerge(frame, scope, mergeProgress, velocity.calculateVelocity().y, mergeFromAxis, mergeRange, density)
             pinching -> releasePinch(frame, scope, raw, axisVelocity.calculateVelocity().takeIf { it.isFinite() } ?: 0f, density, latest)
             kind == MiniGestureKind.Drag && (windowAtDown || popped) -> releaseWindow(frame, scope, velocity.calculateVelocity(), density, latest)
             kind == MiniGestureKind.Drag -> releaseSwipe(frame, scope, velocity.calculateVelocity().x, density, latest)
@@ -989,6 +1023,37 @@ private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v:
     }
 }
 
+/** A merge from a bottom corner let go: into the bar, or back to its corner. */
+private fun releaseMerge(frame: MiniFrame, scope: CoroutineScope, progress: Float, vy: Float, fromAxis: Float, range: Float, density: Float) {
+    val at = frame.dragCenter ?: frame.geo.tile.center
+    KeepPlaying.windowCenter = at
+    val now = frame.pinchAxis ?: frame.axisNow
+    if (MiniGestures.mergeCompletes(progress, vy, 500f * density)) {
+        KeepPlaying.windowCorner = null
+        KeepPlaying.rest = MiniRest.Row
+        frame.haptic(dock = true)
+        // The finger's speed carries on into the size.
+        val axisSpeed = vy / range * (frame.dims.row - fromAxis)
+        scope.launch {
+            frame.axis.snapTo(now)
+            frame.pinchAxis = null
+            frame.dragCenter = null
+            frame.gesturing = false
+            frame.axis.animateTo(frame.dims.row, MiniSprings.liq(), initialVelocity = axisSpeed)
+        }
+    } else {
+        val corner = KeepPlaying.windowCorner
+        scope.launch {
+            frame.axis.snapTo(now)
+            frame.pinchAxis = null
+            frame.dragCenter = null
+            frame.gesturing = false
+            frame.axis.animateTo(fromAxis, MiniSprings.liq())
+        }
+        snapWindow(frame, scope, fromAxis, corner, at, Offset.Zero)
+    }
+}
+
 private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, density: Float, latest: () -> Playing) {
     val g = frame.geo
     val center = g.tile.center
@@ -1004,18 +1069,8 @@ private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, 
         latest().close()
         return
     }
-    // Thrown at the nav bar (fast, down, landing in it): back into the bar, flying from where it
-    // was let go (the axis carries it).
-    if (MiniGestures.docksOnNav(center + vel * 0.2f, vel, frame.nav, 1000f * density)) {
-        frame.popping = false
-        KeepPlaying.windowCenter = center
-        KeepPlaying.windowCorner = null
-        KeepPlaying.rest = MiniRest.Row
-        frame.haptic(dock = true)
-        scope.launch { frame.axis.animateTo(frame.dims.row, MiniSprings.liq()) }
-        return
-    }
-    // Otherwise a corner (the bottom ones rest above the nav bar), however it is dragged or flung.
+    // A corner (the bottom ones rest above the nav bar), however it is dragged or flung: only a
+    // drag down from a bottom corner, or a pinch, takes it back into the bar.
     frame.haptic(dock = false)
     // A light flick carries far (a long, low-friction projection), and a flick that clearly goes
     // one way picks that way's corner even if it falls a little short.

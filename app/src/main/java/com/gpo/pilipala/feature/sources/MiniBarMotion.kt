@@ -129,7 +129,7 @@ internal data class MiniPx(
     val windowCorner: Float,
     val margin: Float,
     val neckInset: Float,
-    /** The window's keys at a ~280dp wide window, and their inset from its corners. */
+    /** The window's keys (never smaller than this), and their inset from its corners. */
     val button: Float = 0f,
     val buttonInset: Float = 0f,
 )
@@ -230,12 +230,13 @@ internal fun miniGeo(
         )
     } else null
     // The window's two keys grow and shrink with it, and come on just after it detaches.
-    val k = if (px.button > 0f) (tile.width / (px.button * 9f)).coerceIn(0.75f, 1.15f) else 0f
+    val k = if (px.button > 0f) (tile.width / (px.button * 9f)).coerceIn(1f, 1.15f) else 0f
     val bs = px.button * k
     val inset = px.buttonInset * k
     val play = if (windowed) Rect(tile.left + inset, tile.bottom - inset - bs, tile.left + inset + bs, tile.bottom - inset) else Rect.Zero
     val close = if (windowed) Rect(tile.right - inset - bs, tile.bottom - inset - bs, tile.right - inset, tile.bottom - inset) else Rect.Zero
-    val buttonsAlpha = if (windowed) ((axis - d.detach) / (d.detachExtra * 0.25f)).coerceIn(0f, 1f) else 0f
+    // Always there on a window, the smallest included (they may reach over its edge).
+    val buttonsAlpha = if (windowed) 1f else 0f
     return MiniGeo(left, tile, pause, right, sideAlpha, corner, hit, m, windowed, neck, play, close, buttonsAlpha)
 }
 
@@ -303,15 +304,18 @@ internal object MiniGestures {
     }
 
     /**
-     * A window let go of docks into the bar only when it is thrown at the nav bar: moving down
-     * faster than [minSpeed], mostly downward, so that its centre would land inside the nav bar.
-     * A slow drag to the bottom (even over the nav bar) stays a window and goes to a corner.
+     * A drag that merges a window back into the bar: only from a bottom corner (2, 3), once it
+     * goes mostly down past slop. From a top corner a downward drag just moves the window.
      */
-    fun docksOnNav(projectedCenter: Offset, velocity: Offset, nav: Rect?, minSpeed: Float): Boolean {
-        if (nav == null) return false
-        val thrownDown = velocity.y > minSpeed && kotlin.math.abs(velocity.y) > kotlin.math.abs(velocity.x)
-        return thrownDown && nav.contains(projectedCenter)
-    }
+    fun startsMerge(corner: Int?, travel: Offset): Boolean =
+        corner != null && corner and 2 != 0 && travel.y > 0f && travel.y > kotlin.math.abs(travel.x)
+
+    /** How far the merge has gone: the finger's way down against [range] (window bottom → nav bar). */
+    fun mergeProgress(dy: Float, range: Float): Float = (dy / range.coerceAtLeast(1f)).coerceIn(0f, 1f)
+
+    /** Let go: past [threshold] of the way, or still moving down faster than [minSpeed], it docks. */
+    fun mergeCompletes(progress: Float, velocityY: Float, minSpeed: Float, threshold: Float = 0.4f): Boolean =
+        progress > threshold || velocityY > minSpeed
 
     /** Scaling a window by [k] about [centroid] (the fingers' middle) moves its centre with them. */
     fun scaleAbout(center: Offset, centroid: Offset, k: Float): Offset = centroid + (center - centroid) * k
