@@ -17,6 +17,9 @@ internal sealed interface HostAction {
 
     /** The mini bar's size, place and fold go back to the plain bar. */
     data object ResetDock : HostAction
+
+    /** Dock in the form the video's page was opened from (the window at its size and corner …). */
+    data class Restore(val form: Any) : HostAction
 }
 
 /**
@@ -32,9 +35,23 @@ internal class PlayerHostMachine {
     var docked: PlayerSlot? = null
         private set
 
+    /** The form the docked picture had when tapped open: the video's page goes back to it. */
+    var remembered: Pair<PlayerSlot, Any>? = null
+        private set
+    private var pendingForm: Any? = null
+
+    /** The docked picture was tapped to open its video, in [form]; the open that follows keeps it. */
+    fun openingFromDock(form: Any) {
+        pendingForm = form
+    }
+
     /** A page made or took back a player, or YouTube's player opened. */
     fun opened(slot: PlayerSlot): List<HostAction> {
         val out = mutableListOf<HostAction>(HostAction.ResetDock)
+        // Opened from its own docked picture: remembered for its return; any other open forgets.
+        val form = pendingForm
+        pendingForm = null
+        remembered = if (form != null && docked == slot) slot to form else null
         docked?.let { if (it != slot) out += HostAction.Release(it) }
         docked = null
         // YouTube's player is an overlay over any page: a Bilibili page opening replaces it. A
@@ -62,6 +79,8 @@ internal class PlayerHostMachine {
         if (front != slot) return null
         val out = mutableListOf<HostAction>()
         docked?.let { if (it != slot) out += HostAction.Release(it) }
+        remembered?.let { (s, form) -> if (s == slot) out += HostAction.Restore(form) }
+        remembered = null
         docked = slot
         front = null
         return out
@@ -71,6 +90,7 @@ internal class PlayerHostMachine {
     fun released(slot: PlayerSlot) {
         if (docked == slot) docked = null
         if (front == slot) front = null
+        if (remembered?.first == slot) remembered = null
     }
 }
 
@@ -93,6 +113,11 @@ internal object PlayerHost {
         return true
     }
 
+    /** The form [slot]'s page was opened from, while it is open (where its return lands). */
+    fun remembered(slot: PlayerSlot): Any? = machine.remembered?.takeIf { it.first == slot }?.second
+
+    fun openingFromDock(form: Any) = machine.openingFromDock(form)
+
     fun released(slot: PlayerSlot) {
         // The bar's video went: nothing of its window (size, place) outlives it.
         if (machine.docked == slot) KeepPlaying.resetDock()
@@ -102,6 +127,7 @@ internal object PlayerHost {
     private fun apply(actions: List<HostAction>) {
         for (a in actions) when (a) {
             HostAction.ResetDock -> KeepPlaying.resetDock()
+            is HostAction.Restore -> (a.form as? DockForm)?.let(KeepPlaying::restore)
             is HostAction.Release -> when (val s = a.slot) {
                 PlayerSlot.YouTube -> if (Player.session != null) Player.close()
                 is PlayerSlot.Bili -> {

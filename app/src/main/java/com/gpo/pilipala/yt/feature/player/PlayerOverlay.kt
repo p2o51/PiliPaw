@@ -193,11 +193,10 @@ fun PlayerOverlayHost() {
     val frames = remember(session.info) { pickFrameset(session.info?.previewFrames.orEmpty(), PreviewMinWidthPx) }
 
     LaunchedEffect(expanded) {
-        if (!expanded) {
-            Player.fullscreen = false
-            com.gpo.pilipala.feature.sources.KeepPlaying.openFrom = null
-        }
+        if (!expanded) Player.fullscreen = false
         progress.animateTo(if (expanded) 1f else 0f, spatial)
+        // Landed back on the bar or window: where it opened from is spent.
+        if (!expanded) com.gpo.pilipala.feature.sources.KeepPlaying.openFrom = null
     }
     // The mini bar takes the picture only once this has landed on its tile (one surface at a time).
     LaunchedEffect(progress) {
@@ -272,8 +271,9 @@ fun PlayerOverlayHost() {
             // picture lands exactly on the mini bar's tile (feature/sources/KeepPlaying.kt), which
             // takes over from there: the container is just the picture.
             // Opened from the bar, its circle or a floating window: it grows from where the picture
-            // was (and collapses back onto the bar's tile).
-            val dock = com.gpo.pilipala.feature.sources.KeepPlaying.openFrom ?: with(density) {
+            // was, and goes back there (the window at its size and corner) when it collapses.
+            val keep = com.gpo.pilipala.feature.sources.KeepPlaying
+            val dock = (if (expanded) keep.openFrom else keep.landing ?: keep.openFrom) ?: with(density) {
                 com.gpo.pilipala.feature.sources.KeepPlaying.dockTile(
                     onShell, w.toPx(), (h - navBottom).toPx(),
                     com.gpo.pilipala.ui.components.widthClass() != com.gpo.pilipala.ui.components.WidthClass.Compact, density,

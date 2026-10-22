@@ -111,4 +111,49 @@ class PlayerHostMachineTest {
         val p = Any()
         assertEquals(PlayerSlot.Bili(p), PlayerSlot.Bili(p))
     }
+
+    @Test fun openedFromTheWindowGoesBackToIt() {
+        val m = PlayerHostMachine()
+        m.opened(a); m.dock(a)
+        m.openingFromDock("window, bottom right")
+        m.opened(a) // the page takes the docked player back
+        assertEquals(listOf<HostAction>(HostAction.Restore("window, bottom right")), m.dock(a))
+        // Once only: the next time it docks as the plain bar.
+        m.opened(a)
+        assertEquals(emptyList<HostAction>(), m.dock(a))
+    }
+
+    @Test fun youtubeOpenedFromItsWindowGoesBackToIt() {
+        val m = PlayerHostMachine()
+        m.opened(YouTube); m.dock(YouTube)
+        m.openingFromDock("circle")
+        m.opened(YouTube)
+        assertEquals(listOf<HostAction>(HostAction.Restore("circle")), m.dock(YouTube))
+    }
+
+    @Test fun aFreshOpenFromACardDocksAsTheBar() {
+        val m = PlayerHostMachine()
+        m.opened(a); m.dock(a)
+        // No tap on the docked picture: a card opened the same video.
+        m.opened(a)
+        assertEquals(emptyList<HostAction>(), m.dock(a))
+    }
+
+    @Test fun anotherVideoForgetsTheForm() {
+        val m = PlayerHostMachine()
+        m.opened(a); m.dock(a)
+        m.openingFromDock("window")
+        m.opened(b) // a different video opened meanwhile
+        assertNull(m.remembered)
+        assertEquals(emptyList<HostAction>(), m.dock(b))
+    }
+
+    @Test fun releasingForgetsTheForm() {
+        val m = PlayerHostMachine()
+        m.opened(a); m.dock(a)
+        m.openingFromDock("window")
+        m.opened(a)
+        m.released(a)
+        assertNull(m.remembered)
+    }
 }

@@ -132,6 +132,17 @@ object KeepPlaying {
      */
     internal var openFrom by mutableStateOf<Rect?>(null)
 
+    /** Where a video's page that was opened from the bar's picture lands back (window px). */
+    internal var landing by mutableStateOf<Rect?>(null)
+
+    /** The page opened from the docked picture leaves: back in the form it was opened from. */
+    internal fun restore(form: DockForm) {
+        rest = form.rest
+        windowCorner = form.corner
+        windowCenter = form.center
+        landing = form.rect
+    }
+
     /** The corner a resting window keeps through resizes (0 top left … 3 bottom right); null: none yet. */
     internal var windowCorner: Int? = null
 
@@ -182,6 +193,7 @@ object KeepPlaying {
         rest = MiniRest.Row
         windowCenter = Offset.Unspecified
         windowCorner = null
+        landing = null
         scrollWantsMerge = false
     }
 
@@ -211,6 +223,9 @@ object KeepPlaying {
         }
     }
 }
+
+/** The docked picture's form when it was tapped open: its rest, its corner and centre, its rect. */
+internal class DockForm(val rest: MiniRest, val corner: Int?, val center: Offset, val rect: Rect)
 
 /**
  * Where the shell's nav bar sits on screen (window px), reported by the shell on screen; null
@@ -539,6 +554,7 @@ fun MiniBarHost() {
     LaunchedEffect(up) {
         if (up) {
             val arrival = KeepPlaying.takeArrival()
+            KeepPlaying.landing = null
             if (arrival != null && shownA.value < 0.01f) {
                 arrived = arrival.frame
                 shownA.snapTo(1f)
@@ -873,6 +889,8 @@ private fun tapAt(frame: MiniFrame, at: Offset, p: Playing) {
     val sides = g.sideAlpha > 0.5f && !g.windowed
     when {
         g.tile.contains(at) -> {
+            // Its page goes back to this form (the window at its size and corner, the circle, the bar).
+            PlayerHost.openingFromDock(DockForm(KeepPlaying.rest, KeepPlaying.windowCorner, KeepPlaying.windowCenter, g.tile))
             if (p.source == VideoSource.YouTube) KeepPlaying.openFrom = g.tile
             p.open()
         }
@@ -944,7 +962,9 @@ private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, 
         return
     }
     val dockLine = frame.nav?.top ?: frame.anchor.value.top
-    if (MiniAxis.docks(g.tile.bottom, projected.y + h / 2f, v.y, dockLine, 24f * density, 30f * density, 200f * density)) {
+    val navSpan = frame.nav ?: frame.anchor.value
+    val aimed = projected.x in navSpan.left..navSpan.right
+    if (aimed && MiniAxis.docks(g.tile.bottom, projected.y + h / 2f, v.y, dockLine, 24f * density, 30f * density, 200f * density)) {
         // Back into the bar: the picture flies from where it was let go (the axis carries it).
         KeepPlaying.windowCenter = center
         KeepPlaying.windowCorner = null
@@ -952,8 +972,15 @@ private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, 
         scope.launch { frame.axis.animateTo(frame.dims.row, MiniSprings.liq()) }
         return
     }
-    // Anywhere else: the corner nearest where it was thrown, overshooting a little as it lands.
-    snapWindow(frame, scope, frame.axisNow, null, center, vel)
+    // Anywhere else: a corner. A light flick carries far (a long, low-friction projection), and a
+    // flick that clearly goes one way picks that way's corner even if it falls a little short.
+    val far = center + vel * 0.38f
+    val w = g.tile.width
+    var corner = MiniGestures.nearestCorner(far, w, h, frame.restArea)
+    val bias = 250f * density
+    if (abs(v.y) > bias) corner = (corner and 1) or (if (v.y > 0f) 2 else 0)
+    if (abs(v.x) > bias) corner = (corner and 2) or (if (v.x > 0f) 1 else 0)
+    snapWindow(frame, scope, frame.axisNow, corner, center, vel)
 }
 
 private fun releaseSwipe(frame: MiniFrame, scope: CoroutineScope, vx: Float, density: Float, latest: () -> Playing) {
