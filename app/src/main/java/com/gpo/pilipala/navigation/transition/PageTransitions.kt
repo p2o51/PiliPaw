@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.lerp
@@ -44,6 +45,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
@@ -148,6 +150,17 @@ class PageTransitions internal constructor(
 
     private var pendingPops = 0
     private var generation = 0L
+
+    /**
+     * After the pop, while the live page draws hidden: the pixels beneath are drawn over
+     * everything too (BeneathPage over), so the page that left — a video page's SurfaceView
+     * hole above all, still composed for a frame — cannot show through.
+     */
+    internal var holding by mutableStateOf(false)
+        private set
+
+    /** The page a commit removed, until its frame has left composition. */
+    private var leaving by mutableStateOf<String?>(null)
 
     // ── Hero (PageHero.kt) ──────────────────────────────────────────────────
 
@@ -319,6 +332,7 @@ class PageTransitions internal constructor(
 
     internal fun detachLayer(key: Any, layer: GraphicsLayer) {
         if (layers[key] === layer) layers.remove(key)
+        if (leaving == key.toString()) leaving = null
     }
 
     /** The entry left the back stack: its pixels can go. */
@@ -539,6 +553,8 @@ class PageTransitions internal constructor(
                 closing.snapTo(0f)
                 exit.snapTo(0f)
                 touchYDelta = 0f
+                holding = false
+                leaving = null
                 beneath = null
                 hero = null
                 heroProgress.snapTo(0f)
@@ -548,11 +564,30 @@ class PageTransitions internal constructor(
                 return@launch
             }
             val revealedKey = backStack[closingIndex - 1].toString()
+            val rideEnd = android.os.SystemClock.uptimeMillis()
+            com.gpo.pilipala.feature.sources.MiniLog.landed(closingEntry.toString(), hero != null)
+            holding = true
+            leaving = closingEntry.toString()
             backStack.removeAt(closingIndex)
             closing.snapTo(0f)
             exit.snapTo(0f)
             touchYDelta = 0f
+            // The live page draws hidden under the pixels it replaces until it is really there:
+            // a few frames, the page that left gone from composition, and its covers in (one
+            // fading in from an empty tile over the snapshot read as a flash). A slow line
+            // goes after a moment.
             repeat(RevealHoldFrames) { withFrameNanos { } }
+            withTimeoutOrNull(RevealWaitMs) {
+                snapshotFlow { leaving == null }.first { it }
+                com.gpo.pilipala.ui.components.ImageLoads.inFlight.first { it == 0 }
+            }
+            leaving = null
+            holding = false
+            com.gpo.pilipala.feature.sources.MiniLog.event(
+                "page beneath shows",
+                "after ${android.os.SystemClock.uptimeMillis() - rideEnd} ms (images still loading ${com.gpo.pilipala.ui.components.ImageLoads.inFlight.value})",
+            )
+            if (generation != owner) return@launch
             reveal.animateTo(1f, revealSpec)
             if (generation != owner) return@launch
 
@@ -616,6 +651,9 @@ class PageTransitions internal constructor(
 
         /** Frames the live page draws, hidden, before it fades over its snapshot. */
         const val RevealHoldFrames = 3
+
+        /** The most the live page waits (past those frames) for its covers and the old page to go. */
+        const val RevealWaitMs = 450L
 
         /** How long a commit waits for the hero's frame before it goes without one. */
         const val HeroCaptureTimeoutMs = 60L

@@ -6,7 +6,7 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.gif.AnimatedImageDecoder
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
-import coil3.request.crossfade
+import coil3.request.transitionFactory
 import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
@@ -56,6 +56,8 @@ class PiliApp : Application(), SingletonImageLoader.Factory {
                 add(OkHttpNetworkFetcherFactory(callFactory = { imageHttp }))
                 add(AnimatedImageDecoder.Factory())
             }
-            .crossfade(true)
+            // Fades in only what came over the network; counts what is still loading.
+            .transitionFactory(com.gpo.pilipala.ui.components.NetworkCrossfade)
+            .eventListener(com.gpo.pilipala.ui.components.ImageLoads)
             .build()
 }

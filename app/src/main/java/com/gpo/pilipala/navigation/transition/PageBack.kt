@@ -71,7 +71,9 @@ internal fun Modifier.pageClosingTransform(t: PageTransitions): Modifier = graph
  * A video page's SurfaceView ignores layer alpha (its hole punch stays clear
  * through the fade), so without this cover its picture would float over the
  * revealed page until the pop; opaque window pixels drawn above bury it.
- * [fill] stands in when there is no snapshot.
+ * [fill] stands in when there is no snapshot. It is drawn again, whole and still, while the
+ * live page draws hidden after the pop ([PageTransitions.holding]): the page that left may
+ * still be composed for a frame, its SurfaceView hole open whatever its alpha.
  */
 @Composable
 internal fun BeneathPage(t: PageTransitions, fill: Color, over: Boolean = false) {
@@ -81,8 +83,13 @@ internal fun BeneathPage(t: PageTransitions, fill: Color, over: Boolean = false)
             .graphicsLayer {
                 if (t.phase == BackPhase.Idle) return@graphicsLayer
                 if (over) {
-                    if (t.phase != BackPhase.Committing) return@graphicsLayer
-                    alpha = min(5f * t.exit.value, 1f)
+                    if (t.phase == BackPhase.Revealing) {
+                        // Holding: the pixels at rest, opaque (beneathPose is at rest by now).
+                        alpha = if (t.holding) 1f else 0f
+                    } else {
+                        if (t.phase != BackPhase.Committing) return@graphicsLayer
+                        alpha = min(5f * t.exit.value, 1f)
+                    }
                 }
                 val pose = beneathPose(t, size)
                 scaleX = pose.scale
@@ -92,7 +99,7 @@ internal fun BeneathPage(t: PageTransitions, fill: Color, over: Boolean = false)
             }
             .drawBehind {
                 if (t.phase == BackPhase.Idle) return@drawBehind
-                if (over && (t.phase != BackPhase.Committing || t.exit.value <= 0f)) return@drawBehind
+                if (over && !t.holding && (t.phase != BackPhase.Committing || t.exit.value <= 0f)) return@drawBehind
                 val snap = t.beneath
                 if (snap == null) {
                     if (over) drawRect(fill)

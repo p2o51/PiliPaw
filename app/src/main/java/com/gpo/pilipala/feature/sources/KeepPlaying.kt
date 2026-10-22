@@ -157,34 +157,46 @@ object KeepPlaying {
     internal var scrollWantsMerge by mutableStateOf(false)
 
     /** The frame the video page's swipe down carried into the bar's tile, and when it landed. */
-    private var arrival: Arrival? = null
+    // Snapshot state, and expired by the clock on the main thread: the bar reads both while it
+    // composes, and a deadline only a later read would notice left it held or shown too long.
+    private var arrival by mutableStateOf<Arrival?>(null)
     private var arrivalAt = 0L
+    private val clock = android.os.Handler(android.os.Looper.getMainLooper())
 
     /** A flight landed on the bar's tile, carrying [frame] (null: the picture itself comes on). */
     internal class Arrival(val frame: androidx.compose.ui.graphics.ImageBitmap?)
 
     internal fun arrive(frame: androidx.compose.ui.graphics.ImageBitmap?, shell: Boolean = false) {
-        arrival = Arrival(frame)
+        val a = Arrival(frame)
+        arrival = a
         arrivalAt = android.os.SystemClock.uptimeMillis()
+        clock.postDelayed({ if (arrival === a) arrival = null }, ArrivalMs)
         // Landing over the shell: hold the bar where the nav bar was until the shell reports it
         // again (or the bar would drop to the bottom for a frame and spring back up: a second move).
-        if (shell) navHoldUntil = arrivalAt + 1_500
+        if (shell) {
+            navHeld = true
+            clock.removeCallbacks(releaseNav)
+            clock.postDelayed(releaseNav, 1_500)
+        }
         MiniLog.event("arrive", if (frame != null) "frame" else "in place")
     }
 
-    private var navHoldUntil = 0L
+    private var navHeld by mutableStateOf(false)
+    private val releaseNav = Runnable { navHeld = false }
 
     /** Where the nav bar is, or was a moment ago while a flight lands over the shell. */
-    internal fun navForBar(): Rect? = NavSpot.bounds ?: NavSpot.last?.takeIf { android.os.SystemClock.uptimeMillis() < navHoldUntil }
+    internal fun navForBar(): Rect? = NavSpot.bounds ?: NavSpot.last?.takeIf { navHeld }
 
     /** The bar appearing now takes over from a flight that just landed (good for a moment only). */
     internal fun takeArrival(): Arrival? {
-        val a = arrival?.takeIf { android.os.SystemClock.uptimeMillis() - arrivalAt < 2_000 }
+        val a = arrival?.takeIf { android.os.SystemClock.uptimeMillis() - arrivalAt < ArrivalMs }
         arrival = null
         return a
     }
 
-    internal val arriving: Boolean get() = arrival != null && android.os.SystemClock.uptimeMillis() - arrivalAt < 2_000
+    internal val arriving: Boolean get() = arrival != null
+
+    private const val ArrivalMs = 2_000L
 
     /**
      * Where the bar's picture will rest (window px) once the page over [shell] goes: for a flight
@@ -1270,23 +1282,32 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                 drawPath(seg, primary, style = Stroke(stroke, cap = StrokeCap.Round))
             },
     ) {
-        NetImage(p.cover, Modifier.fillMaxSize(), contentDescription = p.title, shape = androidx.compose.ui.graphics.RectangleShape, thumbWidth = 640.dp)
-        // The frame the page's flight landed with, until the video draws over it.
-        frame.arrived?.let { img ->
-            androidx.compose.foundation.Image(img, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-            LaunchedEffect(img) {
-                kotlinx.coroutines.delay(1_200)
-                frame.arrived = null
-            }
-        }
-        // The video itself over its cover. Attached a beat after the bar appears: the page that let
-        // the player go detaches its own video view as it leaves, and that must not land after ours.
+        // The video itself. Attached a beat after the bar appears: the page that let the player go
+        // detaches its own video view as it leaves, and that must not land after ours.
         var ready by remember(p.player) { mutableStateOf(p.source == VideoSource.YouTube) }
         LaunchedEffect(p.player) {
             kotlinx.coroutines.delay(400)
             ready = true
         }
-        p.player?.takeIf { ready }?.let { player ->
+        // Until the video has drawn a frame into this tile, what stood for it stays on top: the
+        // frame the page's flight landed with, else the cover. Swapped in one frame once the
+        // picture is really there (a fixed delay showed the cover, or an empty view, first).
+        var drawn by remember(p.player) { mutableStateOf(false) }
+        val player = p.player?.takeIf { ready }
+        if (player != null) {
+            androidx.compose.runtime.DisposableEffect(player) {
+                val l = object : androidx.media3.common.Player.Listener {
+                    override fun onRenderedFirstFrame() {
+                        drawn = true
+                        MiniLog.tileDrawn()
+                    }
+                }
+                player.addListener(l)
+                onDispose { player.removeListener(l) }
+            }
+        }
+        LaunchedEffect(drawn) { if (drawn) frame.arrived = null }
+        player?.let { player ->
             // Cropped only while the bar's 16:9 tile turns into the video's own shape; in the
             // window the shapes match and nothing is cut or stretched.
             androidx.media3.ui.compose.ContentFrame(
@@ -1296,6 +1317,14 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 shutter = {},
             )
+        }
+        if (!drawn) {
+            val still = frame.arrived
+            if (still != null) {
+                androidx.compose.foundation.Image(still, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            } else {
+                NetImage(p.cover, Modifier.fillMaxSize(), contentDescription = p.title, shape = androidx.compose.ui.graphics.RectangleShape, thumbWidth = 640.dp)
+            }
         }
     }
 }
@@ -1367,6 +1396,24 @@ private fun KeepAskDialog() {
  */
 internal object MiniLog {
     private var id = 0
+    private var flight = 0
+    private var landedAt = 0L
+
+    /** A page's back ride ended (the hero, if any, on its target): the gap to the tile's first frame is timed from here. */
+    fun landed(page: String, hero: Boolean) {
+        if (!com.gpo.pilipala.BuildConfig.DEBUG) return
+        flight++
+        landedAt = android.os.SystemClock.uptimeMillis()
+        event("flight #$flight lands", "${page.substringBefore('(')} hero=$hero")
+    }
+
+    /** The bar's tile drew its first video frame. */
+    fun tileDrawn() {
+        if (!com.gpo.pilipala.BuildConfig.DEBUG) return
+        val gap = if (landedAt > 0L) "${android.os.SystemClock.uptimeMillis() - landedAt} ms after flight #$flight landed" else "no flight"
+        event("tile first frame", gap)
+        landedAt = 0L
+    }
 
     fun event(what: String, detail: String) {
         if (!com.gpo.pilipala.BuildConfig.DEBUG) return
