@@ -25,14 +25,29 @@ object YtAccount {
             .getObject("multiPageMenuRenderer").getObject("header")
             .getObject("activeAccountHeaderRenderer")
         if (header.isEmpty()) return@withContext null
+        val handle = header.getObject("channelHandle").text()
+        val named = header.getObject("accountName").text().trim()
+        // The header's name line has come back as a stats line ("0 个人想看"); then the
+        // account's own channel, found by its handle, says who it is.
+        val name = if (named.isEmpty() || StatsLine.containsMatchIn(named)) {
+            handle.takeIf { it.startsWith("@") }
+                ?.let { h -> runCatching { Yt.channel("https://www.youtube.com/$h").name }.getOrNull() }
+                ?.takeIf { it.isNotBlank() }
+                ?: ""
+        } else {
+            named
+        }
         Me(
-            name = header.getObject("accountName").text(),
-            handle = header.getObject("channelHandle").text(),
+            name = name,
+            handle = handle,
             avatar = header.getObject("accountPhoto").getArray("thumbnails")
                 .mapNotNull { (it as? JsonObject)?.getString("url") }
                 .lastOrNull().orEmpty(),
         )
     }
+
+    /** A count line rather than a name: "0 个人想看", "1.2万 位订阅者", "12 subscribers". */
+    private val StatsLine = Regex("""^[\d.,]+\s*(万|亿|[KMB])?\s*(个|位|人|次|subscriber|view|video|watching)""", RegexOption.IGNORE_CASE)
 
     /** Subscribes the account to [channelIds] (UC… ids). A write: call only through AccountWrites. */
     suspend fun subscribe(channelIds: List<String>) = withContext(Dispatchers.IO) {

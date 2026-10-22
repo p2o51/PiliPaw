@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,7 +35,12 @@ import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.feature.settings.GlyphTile
 import com.gpo.pilipala.feature.settings.SettingsGroupScope
 import com.gpo.pilipala.feature.settings.SettingsItem
+import com.gpo.pilipala.ui.components.FameCount
 import com.gpo.pilipala.ui.components.NetImage
+import com.gpo.pilipala.ui.theme.YoinContainerShapes
+import com.gpo.pilipala.yt.core.account.AccountSubscriptions
+import com.gpo.pilipala.yt.core.util.Fmt
+import com.gpo.pilipala.yt.feature.library.Library
 import com.gpo.pilipala.ui.components.SheetInsets
 import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.sheetBottomPadding
@@ -121,9 +130,9 @@ fun AccountPanel(onDismiss: () -> Unit) {
 }
 
 /**
- * 设置's account block, as PiliPaw's: signed out a 登录 row with the cookie glyph; signed in the
- * account (cookie avatar, name, handle) and 退出登录 in the error colour, which asks first.
- * Items of the enclosing settings group.
+ * 设置's account block, as PiliPaw's: signed out a 登录 row with the cookie glyph; signed in two
+ * connected blocks, the account (cookie avatar, name, @handle) and a stats row (订阅 / 历史 /
+ * Mix, each opening its list; 订阅 is a line under 名声模式). Items of the enclosing group.
  */
 internal fun SettingsGroupScope.accountItems(profile: Profile, onSignIn: () -> Unit) {
     val cookie = MaterialShapes.Cookie12Sided
@@ -140,30 +149,73 @@ internal fun SettingsGroupScope.accountItems(profile: Profile, onSignIn: () -> U
         is Profile.SignedIn -> {
             item {
                 SettingsItem(
-                    title = profile.name.ifEmpty { "已登录" },
-                    summary = profile.handle.ifEmpty { null },
+                    title = profile.name.ifEmpty { profile.handle.ifEmpty { "已登录" } },
+                    summary = profile.handle.takeIf { it.isNotEmpty() && profile.name.isNotEmpty() },
                     leading = { NetImage(profile.avatar.ifEmpty { null }, Modifier.size(56.dp), shape = cookie.toShape(), thumbWidth = 112.dp) },
                 )
             }
-            item {
-                var confirm by remember { mutableStateOf(false) }
-                SettingsItem(
-                    title = "退出登录",
-                    icon = PiliSymbols.Logout,
-                    titleColor = MaterialTheme.colorScheme.error,
-                    onClick = { confirm = true },
-                )
-                if (confirm) {
-                    SignOutDialog(
-                        onConfirm = {
-                            confirm = false
-                            SignIn.signOut()
-                        },
-                        onDismiss = { confirm = false },
-                    )
-                }
-            }
+            item { AccountStats() }
         }
+    }
+}
+
+/** 退出登录 in the error colour; asks first. An item of the enclosing group, signed in only. */
+internal fun SettingsGroupScope.signOutItem() {
+    item {
+        var confirm by remember { mutableStateOf(false) }
+        SettingsItem(
+            title = "退出登录",
+            icon = PiliSymbols.Logout,
+            titleColor = MaterialTheme.colorScheme.error,
+            onClick = { confirm = true },
+        )
+        if (confirm) {
+            SignOutDialog(
+                onConfirm = {
+                    confirm = false
+                    SignIn.signOut()
+                },
+                onDismiss = { confirm = false },
+            )
+        }
+    }
+}
+
+/** 订阅 / 历史 / Mix as PiliPaw's account stats: a number over its label, each opening its list. */
+@Composable
+private fun AccountStats() {
+    val nav = LocalNavigator.current
+    val subs by AccountSubscriptions.ids.collectAsState()
+    val history by Library.history.collectAsState()
+    val mixes by Library.playlists.collectAsState()
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatCell(Fmt.count(subs.size.toLong()), "订阅", fame = true) { nav.push(Route.Subscriptions) }
+        StatCell(Fmt.count(history.size.toLong()), "历史") { nav.push(Route.LocalList("History")) }
+        StatCell(Fmt.count(mixes.size.toLong()), "Mix") { nav.push(Route.Playlists) }
+    }
+}
+
+@Composable
+private fun StatCell(value: String, label: String, fame: Boolean = false, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .width(80.dp)
+            .clip(YoinContainerShapes.ListRow)
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        if (fame) {
+            FameCount(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, revealable = false, self = true)
+        } else {
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

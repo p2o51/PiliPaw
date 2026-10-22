@@ -18,11 +18,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.BuildConfig
 import com.gpo.pilipala.yt.feature.account.accountItems
+import com.gpo.pilipala.yt.feature.account.signOutItem
 import com.gpo.pilipala.yt.core.util.CrashLog
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.yt.core.settings.AppSettings
-import com.gpo.pilipala.yt.ui.components.FameMode
-import com.gpo.pilipala.yt.ui.components.FameScope
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
@@ -48,16 +47,18 @@ fun SettingsList(title: String, showBack: Boolean = false, bottom: Dp = 0.dp) {
     val backgroundPlay by AppSettings.backgroundPlay.state.collectAsState()
     val autoPip by AppSettings.autoPip.state.collectAsState()
     val height by AppSettings.preferredHeight.state.collectAsState()
-    val fame by FameMode.scopeKey.state.collectAsState()
     val sbEnabled by com.gpo.pilipala.yt.feature.player.Segments.enabled.state.collectAsState()
     val profile = com.gpo.pilipala.yt.core.account.Accounts.youtube.collectAsState().value
     val signedIn = profile is com.gpo.pilipala.yt.core.account.Profile.SignedIn
     val nav = com.gpo.pilipala.yt.navigation.LocalNavigator.current
 
     SettingsScaffold(title = title, showBack = showBack) {
-        SettingsGroup("账号") {
+        // The account as its own connected blocks (PiliPaw's 设置 header), then its lists.
+        SettingsGroup(null) {
             accountItems(profile) { nav.push(com.gpo.pilipala.yt.navigation.Route.SignIn) }
-            if (signedIn) {
+        }
+        if (signedIn) SettingsGroup("账号") {
+            run {
                 com.gpo.pilipala.yt.feature.account.AccountList.entries.forEach { list ->
                     item {
                         SettingsItem(
@@ -68,6 +69,7 @@ fun SettingsList(title: String, showBack: Boolean = false, bottom: Dp = 0.dp) {
                     }
                 }
             }
+            signOutItem()
         }
         SettingsGroup("本机") {
             item {
@@ -87,15 +89,6 @@ fun SettingsList(title: String, showBack: Boolean = false, bottom: Dp = 0.dp) {
         SettingsGroup("内容") {
             item { SettingsSwitchItem("隐藏 Shorts", hideShorts, { AppSettings.set(AppSettings.hideShorts, it) }, icon = PiliSymbols.Video) }
             item { SettingsItem(title = "屏蔽", icon = YoinSymbols.VisibilityOff, onClick = { nav.push(com.gpo.pilipala.yt.navigation.Route.Mutes) }) }
-            item {
-                SettingsToggleItem(
-                    title = "名声模式",
-                    icon = YoinSymbols.VisibilityOff,
-                    choices = FameScope.entries.filter { it != FameScope.Self }.map { Choice(it.key, it.label) },
-                    selected = FameScope.of(fame).let { if (it == FameScope.Self) FameScope.Off else it }.key,
-                    onSelect = { FameMode.select(FameScope.of(it)) },
-                )
-            }
         }
         SettingsGroup("播放") {
             item { SettingsSwitchItem("自动播放", autoPlay, { AppSettings.set(AppSettings.autoPlay, it) }, icon = YoinSymbols.PlayCircle) }

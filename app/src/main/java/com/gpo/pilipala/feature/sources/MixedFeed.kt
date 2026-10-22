@@ -225,26 +225,15 @@ internal fun MixedFollowTab(
         header = if (only == VideoSource.YouTube) {
             {
                 item(key = "yt_actions", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                    // YouTube's own pages from Bilibili's Home: its search and its subscriptions.
-                    androidx.compose.foundation.layout.Row(
-                        androidx.compose.ui.Modifier.padding(bottom = 8.dp),
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                    ) {
-                        androidx.compose.material3.FilledTonalButton(
-                            onClick = { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Search()) },
-                            shapes = androidx.compose.material3.ButtonDefaults.shapes(),
-                        ) {
-                            androidx.compose.material3.Icon(com.gpo.yoin.symbols.YoinSymbols.Search, null, androidx.compose.ui.Modifier.padding(end = 6.dp))
-                            androidx.compose.material3.Text("搜索")
-                        }
-                        androidx.compose.material3.FilledTonalButton(
-                            onClick = { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Subscriptions) },
-                            shapes = androidx.compose.material3.ButtonDefaults.shapes(),
-                        ) {
-                            androidx.compose.material3.Icon(com.gpo.yoin.symbols.YoinSymbols.Library, null, androidx.compose.ui.Modifier.padding(end = 6.dp))
-                            androidx.compose.material3.Text("订阅")
-                        }
-                    }
+                    // YouTube's subscriptions from Bilibili's Home, as one of Home's own chips (the
+                    // search bar above already searches YouTube).
+                    com.gpo.pilipala.feature.home.SegmentIconChip(
+                        icon = com.gpo.yoin.symbols.YoinSymbols.Library,
+                        contentDescription = "订阅",
+                        onClick = { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Subscriptions) },
+                        modifier = androidx.compose.ui.Modifier.padding(bottom = 8.dp),
+                        label = "订阅",
+                    )
                 }
             }
         } else {
