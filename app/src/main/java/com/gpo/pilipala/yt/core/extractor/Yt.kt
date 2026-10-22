@@ -44,7 +44,7 @@ object Yt {
         downloader = PawDownloader(http)
         val locale = context.resources.configuration.locales[0] ?: Locale.getDefault()
         val country = AppSettings.contentCountry.value.ifEmpty { locale.country.ifEmpty { "US" } }
-        NewPipe.init(downloader, Localization.fromLocale(locale), ContentCountry(country))
+        NewPipe.init(downloader, localization(locale), ContentCountry(country))
         // Signed out: the client PipePipe defaults to (plain stream URLs, no SABR, no PO token).
         NewPipe.setYoutubePlayerClient("visionos")
         // The signed-in account's cookies go with the extractor's account calls (it builds the
@@ -55,6 +55,22 @@ object Yt {
     }
 
     private val accountScope = MainScope()
+
+    /**
+     * The device language as YouTube's `hl`. A locale without a region (中文 set as just
+     * "简体中文") made Localization.fromLocale send "zh-", which signed-in youtubei calls reject
+     * outright (400 INVALID_ARGUMENT); the region comes from the script then, or is left out.
+     */
+    internal fun localization(locale: Locale): Localization {
+        val region = locale.country.ifEmpty {
+            when {
+                locale.language != "zh" -> ""
+                locale.script == "Hant" -> "TW"
+                else -> "CN"
+            }
+        }
+        return if (region.isEmpty()) Localization(locale.language) else Localization(locale.language, region)
+    }
 
     // ── Streams ─────────────────────────────────────────────────────────────
 
