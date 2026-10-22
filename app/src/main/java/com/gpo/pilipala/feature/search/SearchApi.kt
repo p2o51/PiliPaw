@@ -31,6 +31,12 @@ internal enum class SearchTab(val type: String, val label: String) {
     Live("live_room", "直播"),
     User("bili_user", "用户"),
     Article("article", "专栏"),
+
+    /** YouTube's channels for the keyword (a tab while YouTube is searched). */
+    YtChannel("yt_channel", "频道"),
+    ;
+
+    val isBilibili: Boolean get() = this != YtChannel
 }
 
 internal enum class HotMark { Hot, New, Live, First, Topic }
@@ -48,7 +54,14 @@ internal sealed interface SearchHit {
 
 @Immutable
 internal data class VideoHit(val item: VideoItem) : SearchHit {
-    override val key: String get() = "v${item.aid}${item.bvid}"
+    // YouTube hits have no aid / bvid: their watch URL keeps them apart.
+    override val key: String get() = item.youtubeUrl?.let { "y$it" } ?: "v${item.aid}${item.bvid}"
+}
+
+/** A YouTube channel in the 频道 tab. */
+@Immutable
+internal data class YtChannelHit(val channel: com.gpo.pilipala.yt.core.extractor.ChannelItem) : SearchHit {
+    override val key: String get() = "yc${channel.url}"
 }
 
 @Immutable
@@ -243,7 +256,7 @@ internal object SearchApi {
             wbi = true,
         ).asObj
         val top = data.obj("top_tlist") ?: return emptyMap()
-        return SearchTab.entries.associate { it.type to top.int(it.type) }
+        return SearchTab.entries.filter { it.isBilibili }.associate { it.type to top.int(it.type) }
     }
 
     suspend fun search(
@@ -283,6 +296,7 @@ internal object SearchApi {
             SearchTab.Live -> list.map(::parseLive)
             SearchTab.User -> list.map(::parseUser)
             SearchTab.Article -> list.map(::parseArticle)
+            SearchTab.YtChannel -> emptyList()
         }
         return SearchPage(items, page, numPages)
     }

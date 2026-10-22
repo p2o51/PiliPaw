@@ -38,8 +38,6 @@ import com.gpo.pilipala.yt.navigation.transition.rememberPageTransitions
 import com.gpo.pilipala.yt.navigation.transition.voteHighFrameRate
 import com.gpo.pilipala.yt.feature.channel.ChannelScreen
 import com.gpo.pilipala.yt.feature.player.PlayerOverlayHost
-import com.gpo.pilipala.yt.feature.search.SearchResultScreen
-import com.gpo.pilipala.yt.feature.search.SearchScreen
 import com.gpo.pilipala.yt.feature.settings.SettingsScreen
 import com.gpo.pilipala.yt.ui.shell.MainShell
 
@@ -147,8 +145,15 @@ object AppNavHostPages {
 }
 
 private fun androidx.navigation3.runtime.EntryProviderScope<NavKey>.ytPages() {
-    entry<Route.Search> { SearchScreen(it) }
-    entry<Route.SearchResult> { SearchResultScreen(it) }
+    // YouTube's search is the app's one search (PiliPaw's native bar and result page), on YouTube.
+    entry<Route.Search> {
+        YouTubeSearchScope()
+        com.gpo.pilipala.feature.search.SearchScreen(com.gpo.pilipala.navigation.Route.Search(it.hint))
+    }
+    entry<Route.SearchResult> {
+        YouTubeSearchScope()
+        com.gpo.pilipala.feature.search.SearchResultScreen(com.gpo.pilipala.navigation.Route.SearchResult(it.query))
+    }
     entry<Route.Channel> { ChannelScreen(it) }
     // The YouTube account's page (from the avatar menu, or 我的 › YouTube): account, library, its own options.
     entry<Route.Settings> { SettingsScreen(title = "YouTube") }
@@ -160,6 +165,15 @@ private fun androidx.navigation3.runtime.EntryProviderScope<NavKey>.ytPages() {
     entry<Route.FeedEditor> { com.gpo.pilipala.yt.feature.feeds.FeedEditorScreen(it) }
     entry<Route.Mutes> { com.gpo.pilipala.yt.feature.mute.MuteScreen() }
     entry<Route.Subscriptions> { com.gpo.pilipala.yt.feature.subscriptions.SubscriptionsScreen(pushed = true) }
+}
+
+/** Searching from the YouTube part: with both sources ticked, the search narrows to YouTube. */
+@androidx.compose.runtime.Composable
+private fun YouTubeSearchScope() {
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        val scope = com.gpo.pilipala.feature.sources.SearchScope
+        if (scope.mixing) scope.set(com.gpo.pilipala.core.source.VideoSource.YouTube)
+    }
 }
 
 /** The finger travel of a whole back gesture on a wide window (a phone needs its own width). */

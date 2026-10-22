@@ -232,7 +232,9 @@ internal class SearchTabViewModel(
 
     /** Parsing and mapping a result page (tag stripping, highlights) runs off the main thread. */
     private suspend fun load(p: Int): SearchPage {
-        if (tab != SearchTab.Video || !com.gpo.pilipala.feature.sources.SearchScope.mixing) return loadBili(p)
+        if (tab == SearchTab.YtChannel) return loadYtChannels(p)
+        // 视频 takes YouTube's results whenever YouTube is searched (with Bilibili's, or alone).
+        if (tab != SearchTab.Video || !com.gpo.pilipala.feature.sources.SearchScope.wants(com.gpo.pilipala.core.source.VideoSource.YouTube)) return loadBili(p)
         if (p == 1) {
             ytCursor = null
             ytDone = false
@@ -255,6 +257,20 @@ internal class SearchTabViewModel(
             repeat(2) { if (b.hasNext()) mixed += b.next() }
         }
         return SearchPage(mixed, p, if (ytDone) bili.numPages else maxOf(bili.numPages, p + 1))
+    }
+
+    /** YouTube's 频道 results, a page at a time on the extractor's cursor. */
+    private suspend fun loadYtChannels(p: Int): SearchPage {
+        if (p == 1) {
+            ytCursor = null
+            ytDone = false
+        }
+        val filter = com.gpo.pilipala.yt.core.extractor.Yt.SearchFilter(type = com.gpo.pilipala.yt.core.extractor.Yt.SearchFilter.Type.Channels)
+        val yt = com.gpo.pilipala.yt.core.extractor.Yt.search(keyword, ytCursor, filter)
+        ytCursor = yt.nextCursor
+        ytDone = yt.nextCursor == null
+        val hits = yt.items.filterIsInstance<com.gpo.pilipala.yt.core.extractor.ListItem.Channel>().map { YtChannelHit(it.channel) }
+        return SearchPage(hits, p, if (ytDone) p else p + 1)
     }
 
     private suspend fun loadBili(p: Int): SearchPage {
@@ -336,7 +352,19 @@ internal class SearchTabViewModel(
 fun SearchResultScreen(route: Route.SearchResult) {
     val nav = LocalNavigator.current
     val keyword = route.keyword
-    val tabs = SearchTab.entries
+    // Bilibili's tabs while it is searched, 视频 alone otherwise; 频道 while YouTube is.
+    val scopeOnly by com.gpo.pilipala.feature.sources.SearchScope.only.collectAsState()
+    val tabs = remember(scopeOnly) {
+        val bili = com.gpo.pilipala.feature.sources.SearchScope.wants(com.gpo.pilipala.core.source.VideoSource.Bilibili)
+        val yt = com.gpo.pilipala.feature.sources.SearchScope.wants(com.gpo.pilipala.core.source.VideoSource.YouTube)
+        SearchTab.entries.filter { t ->
+            when {
+                t == SearchTab.YtChannel -> yt
+                t == SearchTab.Video -> true
+                else -> bili
+            }
+        }
+    }
     val countsVm = viewModel { SearchCountsViewModel(keyword) }
     val vms = tabs.map { t ->
         viewModel(key = "search_tab_${t.type}") {
@@ -581,19 +609,19 @@ private fun ResultGrid(vm: SearchTabViewModel) {
         SearchTab.Video -> if (compactVideo) GridCells.Fixed(1) else GridCells.Fixed(cols)
         SearchTab.Live -> GridCells.Fixed(cols)
         SearchTab.Bangumi, SearchTab.Film -> GridCells.Adaptive(360.dp)
-        SearchTab.User, SearchTab.Article -> GridCells.Adaptive(380.dp)
+        SearchTab.User, SearchTab.Article, SearchTab.YtChannel -> GridCells.Adaptive(380.dp)
     }
     val hPad = when (vm.tab) {
         SearchTab.Video -> if (compactVideo) 0.dp else 16.dp
-        SearchTab.User, SearchTab.Article -> 4.dp
+        SearchTab.User, SearchTab.Article, SearchTab.YtChannel -> 4.dp
         else -> 16.dp
     }
     val vSpace = when {
         compactVideo -> 0.dp
-        vm.tab == SearchTab.User || vm.tab == SearchTab.Article -> 2.dp
+        vm.tab == SearchTab.User || vm.tab == SearchTab.Article || vm.tab == SearchTab.YtChannel -> 2.dp
         else -> 12.dp
     }
-    val hSpace = if (vm.tab == SearchTab.User || vm.tab == SearchTab.Article) 4.dp else 12.dp
+    val hSpace = if (vm.tab == SearchTab.User || vm.tab == SearchTab.Article || vm.tab == SearchTab.YtChannel) 4.dp else 12.dp
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     LazyVerticalGrid(
@@ -629,6 +657,7 @@ private fun ResultGrid(vm: SearchTabViewModel) {
                     onAddToFeed = { feedUser = hit },
                 )
                 is ArticleHit -> ArticleRow(hit, m)
+                is YtChannelHit -> YtChannelRow(hit.channel, m)
             }
         }
         item(key = "footer", span = { GridItemSpan(maxLineSpan) }, contentType = "footer") {

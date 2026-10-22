@@ -376,6 +376,50 @@ private fun AddToFeedButton(inFeed: Boolean, onClick: () -> Unit) {
  * [fame] (粉丝): a line under 名声模式 ([self]: the row is the signed-in user); the
  * row's tap keeps opening the space.
  */
+/**
+ * A YouTube channel, as [UserRow]: avatar with the verified dot, name, subscribers and videos as
+ * count pairs, and the same 订阅 toggle as the video page.
+ */
+@Composable
+internal fun YtChannelRow(channel: com.gpo.pilipala.yt.core.extractor.ChannelItem, modifier: Modifier = Modifier) {
+    val ytNav = com.gpo.pilipala.yt.navigation.LocalNavigator.current
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(YoinContainerShapes.ListRow)
+            .clickable { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Channel(channel.url, channel.name, channel.avatar)) }
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box {
+            Avatar(channel.avatar, 52.dp)
+            if (channel.verified) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(scheme.surface)
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(scheme.primary),
+                )
+            }
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(channel.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (channel.subscribers >= 0) CountPair(channel.subscribers, "订阅者", fame = true)
+                if (channel.videos >= 0) CountPair(channel.videos, "视频")
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        com.gpo.pilipala.yt.feature.player.SubscribeButton(channel)
+    }
+}
+
 @Composable
 private fun CountPair(n: Long, label: String, fame: Boolean = false, self: Boolean = false) {
     // Number and label share a baseline (two sizes: centring would float the label).
