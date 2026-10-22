@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -220,8 +221,10 @@ fun HomeScreen() {
                 val key = tabs.getOrNull(i)?.key
                 androidx.compose.animation.AnimatedVisibility(
             visible = mixed && i == pagerState.targetPage && key in splittable,
-            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + androidx.compose.animation.expandHorizontally(YoinMotion.defaultSpatialSpec()),
-            exit = fadeOut(YoinMotion.fastEffectsSpec()) + androidx.compose.animation.shrinkHorizontally(YoinMotion.fastSpatialSpec()),
+            // Behind the chip it tucks under, and unclipped so the tuck shows while it grows.
+            modifier = Modifier.zIndex(-1f),
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + androidx.compose.animation.expandHorizontally(YoinMotion.defaultSpatialSpec(), clip = false),
+            exit = fadeOut(YoinMotion.fastEffectsSpec()) + androidx.compose.animation.shrinkHorizontally(YoinMotion.fastSpatialSpec(), clip = false),
                 ) { com.gpo.pilipala.feature.sources.InlineSourceChips() }
             },
         )

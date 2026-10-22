@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.source.VideoSource
 import com.gpo.pilipala.ui.components.VideoItem
@@ -131,7 +132,7 @@ fun SourceChips(filter: SourceFilter = MixFilter, modifier: androidx.compose.ui.
                 val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
                 val scheme = androidx.compose.material3.MaterialTheme.colorScheme
                 val bg by androidx.compose.animation.animateColorAsState(
-                    if (picked) scheme.secondaryContainer else scheme.surfaceContainerHigh,
+                    if (picked) scheme.surface else scheme.surface.copy(alpha = 0f),
                     com.gpo.pilipala.ui.theme.YoinMotion.defaultEffectsSpec(),
                     label = "chip",
                 )
@@ -180,28 +181,41 @@ fun InlineSourceChips() {
     val only by MixFilter.only.collectAsStateCompat()
     val scheme = androidx.compose.material3.MaterialTheme.colorScheme
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // One tonal tail that tucks under the selected 推荐 / 关注 (drawn behind it: HomeScreen), so the
+    // avatars read as part of that chip: the row's 8dp gap plus half the chip's 40dp end cap.
+    val tuck = 28.dp
     androidx.compose.foundation.layout.Row(
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+        androidx.compose.ui.Modifier
+            .layout { measurable, constraints ->
+                val t = tuck.roundToPx()
+                val p = measurable.measure(constraints)
+                layout((p.width - t).coerceAtLeast(0), p.height) { p.placeRelative(-t, 0) }
+            }
+            .height(40.dp)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .background(scheme.primaryContainer)
+            .padding(start = tuck + 4.dp, end = 4.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
         VideoSource.entries.forEach { source ->
             val picked = only == source
             run {
                 val bg by androidx.compose.animation.animateColorAsState(
-                    if (picked) scheme.secondaryContainer else scheme.surfaceContainerHigh,
+                    if (picked) scheme.surface else scheme.surface.copy(alpha = 0f),
                     com.gpo.pilipala.ui.theme.YoinMotion.defaultEffectsSpec(),
                     label = "accountChip",
                 )
                 androidx.compose.foundation.layout.Row(
                     androidx.compose.ui.Modifier
-                        .height(40.dp)
+                        .height(32.dp)
                         .clip(androidx.compose.foundation.shape.CircleShape)
                         .background(bg)
                         .clickable {
                             haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
                             MixFilter.set(if (picked) null else source)
                         }
-                        .padding(start = 8.dp, end = 8.dp),
+                        .padding(start = 4.dp, end = 4.dp),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 ) {
                     SourceDotForMenu(source, 24.dp)
@@ -214,8 +228,8 @@ fun InlineSourceChips() {
                         androidx.compose.material3.Text(
                             source.label,
                             style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
-                            color = scheme.onSecondaryContainer,
-                            modifier = androidx.compose.ui.Modifier.padding(start = 8.dp, end = 6.dp),
+                            color = scheme.onSurface,
+                            modifier = androidx.compose.ui.Modifier.padding(start = 6.dp, end = 6.dp),
                         )
                     }
                 }
