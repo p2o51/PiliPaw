@@ -162,6 +162,12 @@ class PageTransitions internal constructor(
 
     /** The cover each pushed entry was opened from (host px, as in the snapshot beneath it). */
     private val pushedCovers = HashMap<String, Rect>()
+
+    /**
+     * Set by a page whose back docks its picture somewhere else than the card it came from (the
+     * video page into 继续播放's mini bar): the hero flies there instead. Read once per commit.
+     */
+    internal var heroDock: HeroDock? = null
     private val heroes = HashMap<String, PageHeroCapture>()
 
     internal fun registerCover(key: String, node: HeroCoverNode) {
@@ -356,6 +362,22 @@ class PageTransitions internal constructor(
         sceneMirror = backdrop == null
     }
 
+    /**
+     * A back the page drives itself: a swipe down on the video page's picture. The page follows
+     * [SwipeBack.drag] 1:1 as it does a back gesture (no sideways park), then commits or settles.
+     * Null while another back runs, or with nothing to go back to.
+     */
+    internal fun startSwipeBack(): SwipeBack? {
+        if (phase != BackPhase.Idle || backStack.size <= 1) return null
+        val events = kotlinx.coroutines.channels.Channel<BackEventCompat>(kotlinx.coroutines.channels.Channel.CONFLATED)
+        scope.launch {
+            runCatching {
+                handleBack(kotlinx.coroutines.flow.flow { for (e in events) emit(e) })
+            }
+        }
+        return SwipeBack(events)
+    }
+
     /** Navigator.pop(): the same commit a 3-button back plays, from rest. */
     internal fun requestPop() {
         when (phase) {
@@ -546,6 +568,17 @@ class PageTransitions internal constructor(
         hero = null
         heroProgress.snapTo(0f)
         val top = backStack.lastOrNull() as? Route ?: return
+        val dock = heroDock?.takeIf { it.key == top.toString() }
+        heroDock = null
+        if (dock != null) {
+            val to = dock.target() ?: return
+            val capture = top.sharedKey()?.let { heroes[it] } ?: return
+            val shot = withTimeoutOrNull(HeroCaptureTimeoutMs) { runCatching { capture() }.getOrNull() } ?: return
+            if (shot.second.isEmpty) return
+            dock.landing(shot.first)
+            hero = HeroFlight(shot.first, shot.second, to)
+            return
+        }
         val cover = pushedCovers[top.toString()] ?: return
         val capture = top.sharedKey()?.let { heroes[it] } ?: return
         val shot = withTimeoutOrNull(HeroCaptureTimeoutMs) { runCatching { capture() }.getOrNull() } ?: return
@@ -619,4 +652,24 @@ fun Route.sharedKey(): String? = when (this) {
     is Route.ReplyDetail -> "reply:$rpid"
     Route.DynamicCompose -> "dynamic:compose"
     else -> null
+}
+
+/** Where a docking hero lands (host px), and the frame it carries there, for whoever takes over. */
+internal class HeroDock(val key: String, val target: () -> Rect?, val landing: (ImageBitmap) -> Unit)
+
+/** A page-driven back ([PageTransitions.startSwipeBack]). */
+internal class SwipeBack(private val events: kotlinx.coroutines.channels.Channel<BackEventCompat>) {
+    /** [progress] 0..1 of the back; [dy] the finger's travel down (px), for the page's vertical follow. */
+    fun drag(progress: Float, dy: Float) {
+        // No touch x: the progress is taken as given; the right edge keeps the page centred.
+        events.trySend(BackEventCompat(Float.NaN, dy, progress.coerceIn(0f, 1f), BackEventCompat.EDGE_RIGHT))
+    }
+
+    fun commit() {
+        events.close()
+    }
+
+    fun cancel() {
+        events.close(CancellationException("swipe back cancelled"))
+    }
 }

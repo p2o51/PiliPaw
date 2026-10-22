@@ -131,6 +131,35 @@ object KeepPlaying {
     /** Scrolling's ask (down: fold into the nav bar); the bar follows once it holds for a moment. */
     internal var scrollWantsMerge by mutableStateOf(false)
 
+    /** The frame the video page's swipe down carried into the bar's tile, and when it landed. */
+    private var arrival: androidx.compose.ui.graphics.ImageBitmap? = null
+    private var arrivalAt = 0L
+
+    internal fun arrive(frame: androidx.compose.ui.graphics.ImageBitmap) {
+        arrival = frame
+        arrivalAt = android.os.SystemClock.uptimeMillis()
+    }
+
+    /** The bar appearing now takes over from a flight that just landed (good for a moment only). */
+    internal fun takeArrival(): androidx.compose.ui.graphics.ImageBitmap? {
+        val a = arrival?.takeIf { android.os.SystemClock.uptimeMillis() - arrivalAt < 2_000 }
+        arrival = null
+        return a
+    }
+
+    internal val arriving: Boolean get() = arrival != null && android.os.SystemClock.uptimeMillis() - arrivalAt < 2_000
+
+    /**
+     * Where the bar's picture will rest (window px) once the page over [shell] goes: for a flight
+     * that lands in it. [w] × [h] is the window less the system's navigation bar.
+     */
+    internal fun dockTile(shell: Boolean, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density): Rect {
+        val bar = miniBarRect(if (shell) NavSpot.bounds ?: NavSpot.last else null, w, h, tablet, density)
+        val barH = bar.height
+        val gap = with(density) { BlockGap.toPx() }
+        return miniGeo(barH * 16f / 9f, MiniDims(1f, barH * 16f / 9f, 1f, 1f), bar, null, 16f / 9f, Offset.Unspecified, Rect(0f, 0f, w, h), null, MiniPx(gap, 0f, 0f, 0f, 0f)).tile
+    }
+
     /** A video opened, or the docked one went: the next dock starts again as the plain bar. */
     internal fun resetDock() {
         rest = MiniRest.Row
@@ -179,7 +208,12 @@ object NavSpot {
         if (rect == null && owner !== token) return
         owner = if (rect == null) null else token
         bounds = rect
+        if (rect != null) last = rect
     }
+
+    /** Where the nav bar was last seen: where it comes back when a page over the shell goes. */
+    var last: Rect? = null
+        private set
 
     /** A shell left: only its own spot goes (the next shell may already have placed its own). */
     fun clear(token: Any) {
@@ -317,6 +351,31 @@ internal val NavLead = 10.dp
 /** What the nav bar opens at its start for the merged circle: the circle and the tabs' gap. */
 internal val NavRoom = CircleSize + 4.dp
 
+/**
+ * Where the bar rests (window px, in a [w] × [h] area above the system's navigation bar): over
+ * the nav bar (phone), left of it in its row (tablet, when there is room), or at the bottom on a
+ * page without one.
+ */
+internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density): Rect = with(density) {
+    val barH = (if (tablet) BarHeightTablet else BarHeightPhone).toPx()
+    val navGap = NavGap.toPx()
+    val side = SideMargin.toPx()
+    val maxBar = BarMaxWidth.toPx()
+    when {
+        nav != null && tablet && nav.left - navGap - side >= 280.dp.toPx() -> {
+            val bw = minOf(maxBar, nav.left - navGap - side)
+            val top = nav.center.y - barH / 2f
+            Rect(nav.left - navGap - bw, top, nav.left - navGap, top + barH)
+        }
+        else -> {
+            val bw = minOf(maxBar, w - side * 2f)
+            val left = (w - bw) / 2f
+            val bottom = nav?.top?.minus(navGap) ?: (h - side)
+            Rect(left, bottom - barH, left + bw, bottom)
+        }
+    }
+}
+
 /** Extra bottom room a shell list needs while the bar sits above the nav bar (phones). */
 @Composable
 fun miniBarInset(): Dp {
@@ -450,22 +509,9 @@ fun MiniBarHost() {
         val side = with(density) { SideMargin.toPx() }
         val maxBar = with(density) { BarMaxWidth.toPx() }
         val dims = with(density) { MiniDims(circle = CircleSize.toPx(), row = barH * 16f / 9f, detachExtra = 40.dp.toPx(), openPast = 36.dp.toPx()) }
-        val nav = NavSpot.bounds
-        // Where the bar rests: over the nav bar (phone), left of it in its row (tablet, when there
-        // is room), or at the bottom on a page without one.
-        val barTarget: Rect = when {
-            nav != null && tablet && nav.left - navGap - side >= with(density) { 280.dp.toPx() } -> {
-                val bw = minOf(maxBar, nav.left - navGap - side)
-                val top = nav.center.y - barH / 2f
-                Rect(nav.left - navGap - bw, top, nav.left - navGap, top + barH)
-            }
-            else -> {
-                val bw = minOf(maxBar, w - side * 2f)
-                val left = (w - bw) / 2f
-                val bottom = nav?.top?.minus(navGap) ?: (h - side)
-                Rect(left, bottom - barH, left + bw, bottom)
-            }
-        }
+        // Landing from the video page's swipe down: the shell's nav bar may not be back yet.
+        val nav = NavSpot.bounds ?: NavSpot.last?.takeIf { KeepPlaying.arriving }
+        val barTarget = miniBarRect(nav, w, h, tablet, density)
         // The merged circle at the nav bar's start; kept after the nav bar goes so the picture
         // can fly back out of it.
         val circleTarget = nav?.let {

@@ -192,8 +192,7 @@ internal class MixedFeedViewModel(private val only: VideoSource? = null) : ViewM
             views = if (views > 0) views else -1,
             pubdate = uploadedAt / 1000,
             badge = "YouTube",
-            // Never opened (the card's tap goes to the YouTube part); a key of its own for the card's shared bounds.
-            target = Route.Web(url, title),
+            youtubeUrl = url,
         ),
         // Undated uploads sink to the bottom rather than float to the top.
         at = uploadedAt.takeIf { it > 0 } ?: 0L,
@@ -252,17 +251,7 @@ internal fun MixedFollowTab(
             null
         },
     ) { _, item ->
-        val url = item.ytUrl
-        if (url == null) {
-            VideoCardV(item.card, feedItemMotion())
-        } else {
-            VideoCardV(
-                item.card,
-                feedItemMotion(),
-                onLongClick = {},
-                // Plays here, in the YouTube player over this page; nothing switches.
-                onClick = { com.gpo.pilipala.yt.feature.player.Player.play(url) },
-            )
-        }
+        // A YouTube card plays over the page and long-presses into 加入到列表 (VideoCards).
+        VideoCardV(item.card, feedItemMotion())
     }
 }

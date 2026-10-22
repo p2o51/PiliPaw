@@ -254,6 +254,7 @@ internal fun Modifier.playerGestures(
     val latestFullscreen by rememberUpdatedState(fullscreen)
     val latestDoubleTap by rememberUpdatedState(onDoubleTap)
     val latestSwipeExit by rememberUpdatedState(onSwipeExit)
+    val latestSwipeDown by rememberUpdatedState(LocalPictureSwipeDown.current)
     val locked = ui.locked
     val hasDoubleTap = onDoubleTap != null
     val togglePlay: () -> Unit = {
@@ -337,7 +338,8 @@ internal fun Modifier.playerGestures(
                 // ── Drag.
                 val seekBase = ctrl.exactPositionMs()
                 var seekTarget = seekBase
-                // 1 seek, 2 volume, 3 brightness, 4 swipe down to exit fullscreen, -1 ignored. The minimal chrome only seeks;
+                // 1 seek, 2 volume, 3 brightness, 4 swipe down to exit fullscreen, 5 swipe down to leave
+                // the page (inline, the middle third: the side thirds keep volume / brightness), -1 ignored. The minimal chrome only seeks;
                 // in fullscreen a drag from the very top / bottom edge is the system's.
                 var mode = when {
                     minimal -> 1
@@ -351,6 +353,7 @@ internal fun Modifier.playerGestures(
                 var ride: kotlinx.coroutines.channels.Channel<Float>? = null
                 var level = 0f
                 var lastStep = 0
+                val downVelocity = androidx.compose.ui.input.pointer.util.VelocityTracker()
                 val onDrag: (PointerInputChange, Offset) -> Unit = onDrag@{ change, drag ->
                     if (mode == -1) return@onDrag
                     if (mode == 0) {
@@ -358,10 +361,13 @@ internal fun Modifier.playerGestures(
                             abs(drag.x) > abs(drag.y) -> if (ctrl.durationMs > 0) 1 else -1
                             drag.y > 0f && latestFullscreen && latestSwipeExit != null &&
                                 tapThird(startX, size.width) == 0 -> 4
+                            drag.y > 0f && !latestFullscreen && latestSwipeDown != null &&
+                                tapThird(startX, size.width) == 0 -> 5
                             startX > size.width / 2f -> 2
                             else -> 3
                         }
                         when (mode) {
+                            5 -> if (latestSwipeDown?.start(ctrl) != true) mode = -1
                             4 -> {
                                 val ch = kotlinx.coroutines.channels.Channel<Float>(kotlinx.coroutines.channels.Channel.CONFLATED)
                                 if (swipeBack?.startSwipe?.invoke(ch) == true) ride = ch
@@ -405,6 +411,11 @@ internal fun Modifier.playerGestures(
                             }
                             feedback.level = PiliSymbols.Brightness to level
                         }
+                        5 -> {
+                            travel += drag.y
+                            downVelocity.addPosition(change.uptimeMillis, Offset(0f, travel))
+                            latestSwipeDown?.drag(travel)
+                        }
                         4 -> {
                             val was = travel >= exitDistance
                             travel += drag.y
@@ -432,6 +443,11 @@ internal fun Modifier.playerGestures(
                         r != null && exits -> r.close()
                         r != null -> r.close(kotlinx.coroutines.CancellationException("swipe back cancelled"))
                         exits -> latestSwipeExit?.invoke()
+                    }
+                    if (mode == 5) {
+                        // Lifted: the page decides from the travel and the finger's speed; cut short: back.
+                        if (ended) latestSwipeDown?.end(travel, downVelocity.calculateVelocity().y)
+                        else latestSwipeDown?.end(0f, 0f)
                     }
                     feedback.seekTargetMs = null
                     feedback.level = null
@@ -1230,3 +1246,18 @@ internal fun PlayerErrorPanel(message: String, onRetry: () -> Unit, modifier: Mo
         }
     }
 }
+
+/**
+ * A swipe down on the inline picture leaves the page, YouTube style (the video page provides it):
+ * the page follows the finger and either goes (into the mini bar when 继续播放 keeps the video)
+ * or settles back.
+ */
+internal interface PictureSwipeDown {
+    /** The swipe began; false: nothing to leave to, the drag is ignored. */
+    fun start(ctrl: PiliPlayerController): Boolean
+    fun drag(dy: Float)
+    /** Released after [dy] px at [vy] px/s (0, 0: cancelled). */
+    fun end(dy: Float, vy: Float)
+}
+
+internal val LocalPictureSwipeDown = androidx.compose.runtime.staticCompositionLocalOf<PictureSwipeDown?> { null }
