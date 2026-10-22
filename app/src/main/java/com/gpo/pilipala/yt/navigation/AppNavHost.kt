@@ -159,6 +159,7 @@ private fun androidx.navigation3.runtime.EntryProviderScope<NavKey>.ytPages() {
     entry<Route.LocalPlaylist> { com.gpo.pilipala.yt.feature.library.LocalPlaylistScreen(it) }
     entry<Route.FeedEditor> { com.gpo.pilipala.yt.feature.feeds.FeedEditorScreen(it) }
     entry<Route.Mutes> { com.gpo.pilipala.yt.feature.mute.MuteScreen() }
+    entry<Route.Subscriptions> { com.gpo.pilipala.yt.feature.subscriptions.SubscriptionsScreen(pushed = true) }
 }
 
 /** The finger travel of a whole back gesture on a wide window (a phone needs its own width). */

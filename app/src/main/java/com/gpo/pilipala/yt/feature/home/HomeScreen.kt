@@ -1,5 +1,6 @@
 package com.gpo.pilipala.yt.feature.home
 
+import com.gpo.pilipala.feature.sources.toCard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -179,8 +180,8 @@ fun HomeScreen() {
     Box(Modifier.fillMaxSize()) {
         when {
             onSubs && !signedIn && subs.isEmpty() -> HomeMessage(onSearch = { nav.push(Route.Search()) }, statusTop = statusTop, tabs = tabs) {
-                EmptyState("还没有订阅", icon = YoinSymbols.Library)
-                Button(
+                EmptyState("暂无订阅", icon = YoinSymbols.Library)
+                androidx.compose.material3.FilledTonalButton(
                     onClick = { nav.push(Route.Search()) },
                     modifier = Modifier.align(Alignment.Center).padding(top = 120.dp),
                 ) { Text("搜索") }
@@ -190,19 +191,22 @@ fun HomeScreen() {
                 ErrorState(pager.error.orEmpty(), onRetry = pager::refresh)
             }
             pager.items.isEmpty() -> HomeMessage(onSearch = { nav.push(Route.Search()) }, statusTop = statusTop, tabs = tabs) {
-                EmptyState(if (onSubs) "订阅的频道还没有视频" else "这个 Feed 还没有视频", icon = YoinSymbols.Library)
+                EmptyState("暂无视频", icon = YoinSymbols.Library)
             }
             else -> RefreshBox(
                 isRefreshing = pager.isRefreshing,
                 onRefresh = pager::refresh,
                 indicatorPadding = PaddingValues(top = statusTop),
             ) {
+                // PiliPaw's home grid: its column count (首页布局 grid or 单列) and its cards.
+                val single = com.gpo.pilipala.ui.components.homeSingleColumn()
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(videoGridMinWidth),
+                    columns = GridCells.Fixed(com.gpo.pilipala.ui.components.homeVideoColumns()),
                     state = gridState,
                     modifier = Modifier.fillMaxSize().seamViewport(gridState, underStatusBar = true),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = statusTop, bottom = bottom + 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(if (single) 16.dp else 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = "header") {
                         Column {
@@ -210,7 +214,14 @@ fun HomeScreen() {
                             tabs()
                         }
                     }
-                    items(pager.items.filterNot(Mutes::hides), key = { it.url }) { VideoCard(it) }
+                    items(pager.items.filterNot(Mutes::hides), key = { it.url }) { v ->
+                        val card = v.toCard()
+                        if (single) {
+                            com.gpo.pilipala.ui.components.VideoCardL(card, onClick = { com.gpo.pilipala.yt.feature.player.Player.play(v.url, v) })
+                        } else {
+                            com.gpo.pilipala.ui.components.VideoCardV(card, onClick = { com.gpo.pilipala.yt.feature.player.Player.play(v.url, v) })
+                        }
+                    }
                 }
             }
         }

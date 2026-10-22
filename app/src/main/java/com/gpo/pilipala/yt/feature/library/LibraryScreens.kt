@@ -18,7 +18,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,9 +46,7 @@ import com.gpo.pilipala.feature.sources.toCard
 import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.PiliLargeTopBar
 import com.gpo.pilipala.ui.components.VideoCardH
-import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.rememberToast
-import com.gpo.pilipala.ui.components.sheetBottomPadding
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.yt.feature.player.Player
 import com.gpo.pilipala.yt.feature.player.miniPlayerInset
@@ -259,57 +256,6 @@ internal fun FilledNameField(value: String, onValueChange: (String) -> Unit, mod
             disabledIndicatorColor = Color.Transparent,
         ),
     )
-}
-
-/**
- * 加入播放列表: every local playlist with a tick where the video already is (a tap adds or takes
- * it out), and 新建 at the bottom.
- */
-@Composable
-fun AddToPlaylistSheet(video: com.gpo.pilipala.yt.core.extractor.VideoItem, onDismiss: () -> Unit) {
-    val lists by Library.playlists.collectAsState()
-    val toast = rememberToast()
-    var create by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = onDismiss, properties = rememberSheetProperties()) {
-        Column(Modifier.fillMaxWidth().padding(bottom = sheetBottomPadding())) {
-            Text("加到 Mix", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-            lists.forEach { p ->
-                val inIt = p.items.any { it.key == Library.keyOf(video.url) }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            val added = Library.togglePlaylist(p.id, video)
-                            toast(if (added) "已加入「${p.name}」" else "已从「${p.name}」移除")
-                        }
-                        .padding(horizontal = 24.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    Text(p.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    if (inIt) Icon(YoinSymbols.Check, "已加入", tint = MaterialTheme.colorScheme.primary)
-                }
-            }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { create = true }
-                    .padding(horizontal = 24.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Icon(YoinSymbols.Add, null, tint = MaterialTheme.colorScheme.primary)
-                Text("新建 Mix", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
-            }
-        }
-    }
-    if (create) {
-        NameDialog("新建 Mix", "", onDismiss = { create = false }) {
-            val p = Library.createPlaylist(it)
-            Library.togglePlaylist(p.id, video)
-            toast("已加入「${p.name}」")
-        }
-    }
 }
 
 /** An empty playlist's cover: a blank thumbnail. */

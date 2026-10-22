@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
+import com.gpo.yoin.symbols.YoinSymbols
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -90,6 +91,8 @@ data class VideoItem(
     val target: Route? = null,
     /** A YouTube video in a mixed feed: its watch URL; the card plays it in the YouTube player. */
     val youtubeUrl: String? = null,
+    /** A YouTube video's channel URL, when known (the card menu's 查看频道 / 不看此频道). */
+    val youtubeChannelUrl: String? = null,
 )
 
 /** A card's tap: a YouTube video plays over the page; anything else opens its page. */
@@ -150,7 +153,7 @@ fun VideoCardV(
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).pageHeroCover(item.route()).seamGraphic()) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 360.dp)
             CoverStats(item, Modifier.align(Alignment.BottomCenter))
-            if (item.badge.isNotEmpty()) CoverBadge(item.badge, Modifier.align(Alignment.TopEnd).padding(6.dp))
+            CoverMarks(item, Modifier.align(Alignment.TopEnd).padding(6.dp))
         }
         ReservedTitleColumn(Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 10.dp).seamText()) { reserve ->
             Text(
@@ -211,12 +214,12 @@ fun VideoCardL(
                 },
             ),
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).pageHeroCover(item.route()).seamGraphic()) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).pageHeroCover(item.route()).seamGraphic()) {
             NetImage(item.cover, Modifier.matchParentSize(), shape = CoverShape, thumbWidth = 720.dp)
             if (item.duration > 0) {
                 DurationChip(Fmt.duration(item.duration), Modifier.align(Alignment.BottomEnd).padding(8.dp))
             }
-            if (item.badge.isNotEmpty()) CoverBadge(item.badge, Modifier.align(Alignment.TopEnd).padding(8.dp))
+            CoverMarks(item, Modifier.align(Alignment.TopEnd).padding(8.dp))
             FeedPreviewLayer(item.bvid, Modifier.matchParentSize().clip(CoverShape))
         }
         Row(
@@ -300,7 +303,7 @@ fun VideoCardH(
             if (item.duration > 0) {
                 DurationChip(Fmt.duration(item.duration), Modifier.align(Alignment.BottomEnd).padding(4.dp))
             }
-            if (item.badge.isNotEmpty()) CoverBadge(item.badge, Modifier.align(Alignment.TopEnd).padding(4.dp))
+            CoverMarks(item, Modifier.align(Alignment.TopEnd).padding(4.dp))
             if (item.progress != 0L && item.duration > 0) {
                 val frac = if (item.progress < 0) 1f else (item.progress.toFloat() / item.duration).coerceIn(0f, 1f)
                 Box(
@@ -454,6 +457,35 @@ fun DurationChip(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
+ * The cover's top corner: the badge (直播 / 番剧…), then for a YouTube video the source mark,
+ * a small play glyph on the same translucent block as [DurationChip] (no text).
+ */
+@Composable
+private fun CoverMarks(item: VideoItem, modifier: Modifier = Modifier) {
+    if (item.badge.isEmpty() && item.youtubeUrl == null) return
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (item.badge.isNotEmpty()) CoverBadge(item.badge)
+        if (item.youtubeUrl != null) SourceGlyph()
+    }
+}
+
+/** YouTube's mark on a cover: a play triangle on the duration chip's translucent block. */
+@Composable
+fun SourceGlyph(modifier: Modifier = Modifier) {
+    val style = MaterialTheme.typography.labelSmall.centered()
+    Box(
+        modifier
+            .seamText()
+            .clip(ContinuousRoundedCornerShape(6.dp))
+            .background(Color.Black.copy(alpha = 0.6f))
+            .padding(horizontal = 5.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(YoinSymbols.PlayFilled, contentDescription = "YouTube", Modifier.size(style.inlineIconSize()), tint = Color.White)
+    }
+}
+
+/**
  * Small filled tag on a cover (color block, never an outline — Yoin). Tertiary,
  * so the theme's accent seed shows up across feeds.
  */
@@ -526,21 +558,12 @@ fun rememberTagPlaceholder(text: String): Placeholder {
 }
 
 
-/** A YouTube card in a mixed feed: the YouTube part's own video menu (加入到列表, 稍后再看…). */
+/** A YouTube card: the same video card menu, in its YouTube form (VideoCardMenu). */
 @Composable
-private fun youtubeLongClick(item: VideoItem, url: String): () -> Unit {
+private fun youtubeLongClick(item: VideoItem, @Suppress("UNUSED_PARAMETER") url: String): () -> Unit {
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
-    if (menu) {
-        com.gpo.pilipala.yt.ui.components.VideoMenuSheet(
-            com.gpo.pilipala.yt.core.extractor.VideoItem(
-                url = url, title = item.title, thumbnail = item.cover, channelName = item.ownerName, channelUrl = "",
-                channelAvatar = item.ownerFace, durationSec = item.duration, views = item.views, uploaded = "",
-                uploadedAt = item.pubdate * 1000, isLive = false, isShort = false, channelVerified = false,
-            ),
-            onDismiss = { menu = false },
-        )
-    }
+    if (menu) VideoCardMenu(item, onDismiss = { menu = false })
     return {
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         menu = true

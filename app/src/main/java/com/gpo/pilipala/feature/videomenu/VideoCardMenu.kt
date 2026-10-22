@@ -127,6 +127,10 @@ internal fun VideoCardMenu(
     watchLater: Boolean = true,
     isVideo: Boolean = item.isPlainVideo,
 ) {
+    item.youtubeUrl?.let { yt ->
+        YoutubeCardMenu(item, yt, onDismiss, onRemove, extras, watchLater)
+        return
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val toast = rememberToast()
@@ -313,6 +317,141 @@ internal fun VideoCardMenu(
                         },
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The menu for a YouTube card, in the same groups and blocks: 仅听声音 › 稍后再看, 收藏 (the
+ * account's playlists and the Mix lists), 分享, 复制链接 › 查看频道 › 不感兴趣, 不看此频道.
+ */
+@Composable
+private fun YoutubeCardMenu(
+    item: VideoItem,
+    url: String,
+    onDismiss: () -> Unit,
+    onRemove: (() -> Unit)?,
+    extras: List<VideoMenuAction>,
+    watchLater: Boolean,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    val toast = rememberToast()
+    val haptics = LocalHapticFeedback.current
+    val ytNav = com.gpo.pilipala.yt.navigation.LocalNavigator.current
+    val context = LocalContext.current
+    var saveOpen by remember { mutableStateOf(false) }
+    val channelUrl = item.youtubeChannelUrl
+    val video = remember(item, url) {
+        com.gpo.pilipala.yt.core.extractor.VideoItem(
+            url = url, title = item.title, thumbnail = item.cover, channelName = item.ownerName, channelUrl = channelUrl.orEmpty(),
+            channelAvatar = item.ownerFace, durationSec = item.duration, views = item.views, uploaded = "",
+            uploadedAt = item.pubdate * 1000, isLive = false, isShort = false, channelVerified = false,
+        )
+    }
+    // 收藏 hands over to the list sheet once this one is down.
+    if (saveOpen) {
+        com.gpo.pilipala.feature.sources.SaveToListSheet(com.gpo.pilipala.yt.feature.library.Library.itemOf(video), onDismiss = onDismiss)
+        return
+    }
+    fun hide(then: () -> Unit) {
+        scope.launch { sheetState.hide() }.invokeOnCompletion { then() }
+    }
+    fun close(then: () -> Unit = {}) = hide {
+        onDismiss()
+        then()
+    }
+    val groups: List<List<MenuRow>> = buildList {
+        add(
+            buildList {
+                add(
+                    MenuRow(YoinSymbols.Headphones, "仅听声音") {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        close {
+                            com.gpo.pilipala.yt.feature.player.Player.play(url, video)
+                            com.gpo.pilipala.yt.feature.player.Player.changeAudioOnly(true)
+                        }
+                    },
+                )
+                extras.filterNot { it.destructive }.forEach { a -> add(MenuRow(a.icon, a.label) { close(a.onClick) }) }
+            },
+        )
+        add(
+            buildList {
+                if (watchLater) {
+                    val inLater = com.gpo.pilipala.yt.feature.library.Library.inWatchLater(url)
+                    add(
+                        MenuRow(PiliSymbols.WatchLater, if (inLater) "移出稍后再看" else "稍后再看") {
+                            val added = com.gpo.pilipala.yt.feature.library.Library.toggleWatchLater(video)
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            toast(if (added) "已添加到稍后再看" else "已移出稍后再看")
+                            close()
+                        },
+                    )
+                }
+                add(MenuRow(YoinSymbols.Star, "收藏") { hide { saveOpen = true } })
+                add(MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } })
+                add(
+                    MenuRow(PiliSymbols.Link, "复制链接") {
+                        context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(item.title, url))
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        toast("已复制")
+                        close()
+                    },
+                )
+            },
+        )
+        if (channelUrl != null) {
+            add(
+                listOf(
+                    MenuRow(YoinSymbols.Person, "查看频道") {
+                        close { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Channel(channelUrl, item.ownerName, item.ownerFace)) }
+                    },
+                ),
+            )
+        }
+        add(
+            buildList {
+                if (onRemove != null) {
+                    add(
+                        MenuRow(PiliSymbols.ThumbDown, "不感兴趣") {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            close(onRemove)
+                        },
+                    )
+                }
+                extras.filter { it.destructive }.forEach { a -> add(MenuRow(a.icon, a.label, destructive = true) { close(a.onClick) }) }
+                if (channelUrl != null) {
+                    add(
+                        MenuRow(YoinSymbols.VisibilityOff, "不看此频道", destructive = true) {
+                            com.gpo.pilipala.yt.feature.mute.Mutes.muteChannel(channelUrl, item.ownerName, item.ownerFace)
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            toast("已屏蔽")
+                            close { onRemove?.invoke() }
+                        },
+                    )
+                }
+            },
+        )
+    }.filter { it.isNotEmpty() }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        contentWindowInsets = SheetInsets,
+        properties = rememberSheetProperties(),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = sheetBottomPadding(16.dp)),
+        ) {
+            MenuHeader(item)
+            Spacer(Modifier.height(16.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                groups.forEach { rows -> RowGroup(rows, enabled = true) }
             }
         }
     }

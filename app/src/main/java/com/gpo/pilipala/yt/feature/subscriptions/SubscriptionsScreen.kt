@@ -27,6 +27,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.yt.core.account.AccountWrites
 import com.gpo.pilipala.yt.core.account.Accounts
@@ -55,10 +56,22 @@ private fun channelId(url: String): String = url.trimEnd('/').substringAfterLast
  * account: a dry run in debug builds).
  */
 @Composable
-fun SubscriptionsScreen() {
+fun SubscriptionsScreen(pushed: Boolean = false) {
+    if (pushed) {
+        // Opened from Home (订阅): PiliPaw's library frame, the large bar with back.
+        com.gpo.pilipala.yt.feature.library.YtLibraryScaffold(title = "订阅") { padding ->
+            SubscriptionsBody(padding.calculateTopPadding(), padding.calculateBottomPadding(), showTitle = false)
+        }
+    } else {
+        val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        SubscriptionsBody(statusTop, LocalBottomBarInset.current + 16.dp, showTitle = true)
+    }
+}
+
+@Composable
+private fun SubscriptionsBody(statusTop: Dp, bottom: Dp, showTitle: Boolean) {
     val local by Subscriptions.channels.collectAsState()
     val profile by Accounts.youtube.collectAsState()
-    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val signedIn = profile as? Profile.SignedIn
 
     var account by remember(signedIn?.cookies) { mutableStateOf<List<ChannelItem>?>(null) }
@@ -77,7 +90,7 @@ fun SubscriptionsScreen() {
             if (error != null) {
                 ErrorState(error.orEmpty(), Modifier.padding(top = statusTop), onRetry = { attempt++ })
             } else {
-                LoadingState()
+                LoadingState(Modifier.padding(top = statusTop))
             }
             return
         }
@@ -93,9 +106,9 @@ fun SubscriptionsScreen() {
     LazyColumn(
         state = state,
         modifier = Modifier.fillMaxSize().readingWidth().seamViewport(state, underStatusBar = true),
-        contentPadding = PaddingValues(top = statusTop, bottom = LocalBottomBarInset.current + 16.dp),
+        contentPadding = PaddingValues(top = statusTop, bottom = bottom),
     ) {
-        item(key = "title") {
+        if (showTitle) item(key = "title") {
             Text("订阅", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(16.dp))
         }
         if (signedIn != null) {

@@ -104,8 +104,9 @@ internal fun YtVideo.toCard(): VideoItem = VideoItem(
     ownerFace = channelAvatar,
     views = if (views > 0) views else -1,
     pubdate = uploadedAt / 1000,
-    badge = "YouTube",
+    badge = if (isLive) "直播" else "",
     youtubeUrl = url,
+    youtubeChannelUrl = channelUrl.ifEmpty { null },
 )
 
 /**

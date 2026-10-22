@@ -34,4 +34,7 @@ sealed interface Route : NavKey {
     /** 新建 / 编辑 Feed ([id] null: a new one). */
     @Serializable data class FeedEditor(val id: String? = null) : Route
     @Serializable data object Mutes : Route
+
+    /** 订阅 as a pushed page (Home's 订阅 button); the YouTube shell shows it as a tab. */
+    @Serializable data object Subscriptions : Route
 }
