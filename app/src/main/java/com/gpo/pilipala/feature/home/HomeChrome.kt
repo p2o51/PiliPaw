@@ -134,6 +134,8 @@ internal fun SegmentTabs(
     onLongClick: ((Int) -> Unit)? = null,
     longClickable: (Int) -> Boolean = { onLongClick != null },
     trailing: (@Composable () -> Unit)? = null,
+    /** Inline after chip i, in the same row (Home's account chips after 推荐 / 关注). */
+    afterChip: (@Composable (Int) -> Unit)? = null,
 ) {
     val scroll = rememberScrollState()
     val bounds = remember { mutableStateMapOf<Int, Pair<Int, Int>>() }
@@ -175,6 +177,7 @@ internal fun SegmentTabs(
                     }
                     .splashReveal(),
             )
+            afterChip?.invoke(i)
         }
         trailing?.invoke()
     }

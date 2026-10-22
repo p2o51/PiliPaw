@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
+import androidx.compose.animation.animateContentSize
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -171,103 +172,57 @@ fun SourceChips(filter: SourceFilter = MixFilter, modifier: androidx.compose.ui.
 private fun <T> kotlinx.coroutines.flow.StateFlow<T>.collectAsStateCompat() = collectAsState()
 
 /**
- * Spotify's library filter row for Home's 推荐 / 关注 with both sources: [×][tab][哔哩哔哩][YouTube].
- * Picking an account joins it to the tab as one pill ([推荐|YouTube]) and the other account steps
- * back; tapping the joined account lets go of it; × closes the row (both sources again).
+ * Home's account chips, inline right after the selected 推荐 / 关注 chip: each account as its
+ * avatar alone; the picked one grows its label and fills (the feed narrows to it), the other
+ * steps back; tapping the picked one again lets go (both sources).
  */
 @androidx.compose.runtime.Composable
-fun SourceSplitRow(tabLabel: String, onClose: () -> Unit) {
+fun InlineSourceChips() {
     val only by MixFilter.only.collectAsStateCompat()
     val scheme = androidx.compose.material3.MaterialTheme.colorScheme
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
-    val pill = 40.dp
     androidx.compose.foundation.layout.Row(
-        androidx.compose.ui.Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
-        // ×: back to the plain tabs.
-        androidx.compose.foundation.layout.Box(
-            androidx.compose.ui.Modifier
-                .size(pill)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(scheme.surfaceContainerHigh)
-                .clickable {
-                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
-                    onClose()
-                },
-            contentAlignment = androidx.compose.ui.Alignment.Center,
-        ) {
-            androidx.compose.material3.Icon(com.gpo.yoin.symbols.YoinSymbols.Close, contentDescription = "两边都看", modifier = androidx.compose.ui.Modifier.size(20.dp))
-        }
-        // The tab, and joined to it the picked account: one pill in two parts.
-        androidx.compose.foundation.layout.Row(
-            androidx.compose.ui.Modifier
-                .height(pill)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(scheme.primary),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        ) {
-            androidx.compose.material3.Text(
-                tabLabel,
-                style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
-                color = scheme.onPrimary,
-                modifier = androidx.compose.ui.Modifier.padding(horizontal = 16.dp),
-            )
-            androidx.compose.animation.AnimatedVisibility(
-                visible = only != null,
-                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
-                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally(),
-            ) {
-                val picked = only ?: VideoSource.Bilibili
-                androidx.compose.foundation.layout.Row(
-                    androidx.compose.ui.Modifier
-                        .height(pill)
-                        .clickable {
-                            haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
-                            MixFilter.set(null)
-                        },
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                ) {
-                    // The seam between the two parts.
-                    androidx.compose.foundation.layout.Box(
-                        androidx.compose.ui.Modifier.size(width = 1.dp, height = 24.dp).background(scheme.onPrimary.copy(alpha = 0.35f)),
-                    )
-                    androidx.compose.foundation.layout.Row(
-                        androidx.compose.ui.Modifier.padding(start = 8.dp, end = 16.dp),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                    ) {
-                        SourceDotForMenu(picked, 24.dp)
-                        androidx.compose.material3.Text(picked.label, style = androidx.compose.material3.MaterialTheme.typography.labelLarge, color = scheme.onPrimary)
-                    }
-                }
-            }
-        }
-        // The accounts not picked yet.
         VideoSource.entries.forEach { source ->
+            val picked = only == source
             androidx.compose.animation.AnimatedVisibility(
-                visible = only == null,
+                visible = only == null || picked,
                 enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
                 exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally(),
             ) {
+                val bg by androidx.compose.animation.animateColorAsState(
+                    if (picked) scheme.secondaryContainer else scheme.surfaceContainerHigh,
+                    com.gpo.pilipala.ui.theme.YoinMotion.defaultEffectsSpec(),
+                    label = "accountChip",
+                )
                 androidx.compose.foundation.layout.Row(
                     androidx.compose.ui.Modifier
-                        .height(pill)
+                        .height(40.dp)
                         .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(scheme.surfaceContainerHigh)
+                        .background(bg)
                         .clickable {
                             haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
-                            MixFilter.set(source)
+                            MixFilter.set(if (picked) null else source)
                         }
-                        .padding(start = 8.dp, end = 16.dp),
+                        .padding(start = 8.dp, end = 8.dp)
+                        .androidxAnimateContentSize(),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
                 ) {
                     SourceDotForMenu(source, 24.dp)
-                    androidx.compose.material3.Text(source.label, style = androidx.compose.material3.MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant)
+                    if (picked) {
+                        androidx.compose.material3.Text(
+                            source.label,
+                            style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
+                            color = scheme.onSecondaryContainer,
+                            modifier = androidx.compose.ui.Modifier.padding(start = 8.dp, end = 6.dp),
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+private fun androidx.compose.ui.Modifier.androidxAnimateContentSize() = this.then(androidx.compose.ui.Modifier.animateContentSize())
