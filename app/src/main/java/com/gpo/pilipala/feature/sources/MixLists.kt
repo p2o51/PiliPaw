@@ -129,7 +129,7 @@ object MixItems {
     }
 }
 
-private fun LocalPlaylist.asFolder() = FavFolder(
+internal fun LocalPlaylist.asFolder() = FavFolder(
     id = id.hashCode().toLong(),
     title = name,
     cover = MixItems.secure(items.firstOrNull()?.thumbnail.orEmpty()),

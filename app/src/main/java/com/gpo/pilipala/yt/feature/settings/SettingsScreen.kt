@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.BuildConfig
+import com.gpo.pilipala.yt.feature.account.accountItems
 import com.gpo.pilipala.yt.core.util.CrashLog
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.yt.core.settings.AppSettings
@@ -49,12 +50,13 @@ fun SettingsList(title: String, showBack: Boolean = false, bottom: Dp = 0.dp) {
     val height by AppSettings.preferredHeight.state.collectAsState()
     val fame by FameMode.scopeKey.state.collectAsState()
     val sbEnabled by com.gpo.pilipala.yt.feature.player.Segments.enabled.state.collectAsState()
-    val signedIn = com.gpo.pilipala.yt.core.account.Accounts.youtube.collectAsState().value is com.gpo.pilipala.yt.core.account.Profile.SignedIn
+    val profile = com.gpo.pilipala.yt.core.account.Accounts.youtube.collectAsState().value
+    val signedIn = profile is com.gpo.pilipala.yt.core.account.Profile.SignedIn
     val nav = com.gpo.pilipala.yt.navigation.LocalNavigator.current
 
     SettingsScaffold(title = title, showBack = showBack) {
         SettingsGroup("账号") {
-            item { com.gpo.pilipala.yt.feature.account.AccountRow() }
+            accountItems(profile) { nav.push(com.gpo.pilipala.yt.navigation.Route.SignIn) }
             if (signedIn) {
                 com.gpo.pilipala.yt.feature.account.AccountList.entries.forEach { list ->
                     item {

@@ -82,7 +82,7 @@ fun SubscriptionsScreen() {
             return
         }
     } else if (local.isEmpty()) {
-        EmptyState("还没有订阅", Modifier.padding(top = statusTop), icon = YoinSymbols.Library)
+        EmptyState("暂无订阅", Modifier.padding(top = statusTop), icon = YoinSymbols.Library)
         return
     }
 

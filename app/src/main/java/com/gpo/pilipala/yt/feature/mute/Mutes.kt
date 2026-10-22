@@ -13,7 +13,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -104,25 +103,23 @@ object Mutes {
     fun channels(): List<MutedChannel> = rules().channels
 }
 
-/** 屏蔽: add a keyword; every keyword and channel with a remove button. */
+/** 屏蔽: add a keyword; every keyword and channel with a remove button (PiliPaw's library frame). */
 @Composable
 fun MuteScreen() {
-    val nav = LocalNavigator.current
     Mutes.version.collectAsState().value // refresh on change
     val keywords = Mutes.keywords()
     val channels = Mutes.channels()
     var field by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxSize()) {
-        PawTopBar(title = "屏蔽", onBack = { nav.pop() })
+    com.gpo.pilipala.yt.feature.library.YtLibraryScaffold(title = "屏蔽") { padding ->
         LazyColumn(
             Modifier.fillMaxSize().readingWidth(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = miniPlayerInset() + 24.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding()),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             item(key = "kw-title") { Label("关键词") }
             item(key = "kw-field") {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(field, { field = it }, Modifier.weight(1f), singleLine = true, placeholder = { Text("标题里含有…") })
+                    com.gpo.pilipala.yt.feature.library.FilledNameField(field, { field = it }, Modifier.weight(1f), placeholder = "关键词")
                     FilledTonalButton(enabled = field.isNotBlank(), onClick = {
                         Mutes.addKeyword(field)
                         field = ""
@@ -132,20 +129,20 @@ fun MuteScreen() {
             items(keywords, key = { "k:$it" }) { k ->
                 Row(Modifier.fillMaxWidth().padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(k, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { Mutes.removeKeyword(k) }) { Icon(YoinSymbols.Close, "移除") }
+                    IconButton(onClick = { Mutes.removeKeyword(k) }, shapes = androidx.compose.material3.IconButtonDefaults.shapes()) { Icon(YoinSymbols.Close, "移除") }
                 }
             }
             item(key = "ch-title") { Label("频道") }
             if (channels.isEmpty()) {
                 item(key = "ch-empty") {
-                    Text("长按视频，选「不看此频道」", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(4.dp))
+                    Text("暂无", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(4.dp))
                 }
             }
             items(channels, key = { "c:" + it.url }) { c ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Avatar(c.avatar.ifEmpty { null }, 36.dp)
                     Text(c.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { Mutes.unmuteChannel(c.url) }) { Icon(YoinSymbols.Close, "移除") }
+                    IconButton(onClick = { Mutes.unmuteChannel(c.url) }, shapes = androidx.compose.material3.IconButtonDefaults.shapes()) { Icon(YoinSymbols.Close, "移除") }
                 }
             }
         }

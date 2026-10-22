@@ -5,21 +5,26 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,175 +33,204 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
-import com.gpo.pilipala.yt.feature.player.miniPlayerInset
-import com.gpo.pilipala.yt.navigation.LocalNavigator
-import com.gpo.pilipala.yt.navigation.Route
+import com.gpo.pilipala.feature.library.ConfirmDialog
+import com.gpo.pilipala.feature.library.FolderCard
+import com.gpo.pilipala.feature.library.ItemActionSheet
+import com.gpo.pilipala.feature.library.RowGridMinCell
+import com.gpo.pilipala.feature.library.SheetAction
+import com.gpo.pilipala.feature.sources.MixListScreen
+import com.gpo.pilipala.feature.sources.asFolder
+import com.gpo.pilipala.feature.sources.toCard
 import com.gpo.pilipala.ui.components.EmptyState
-import com.gpo.pilipala.yt.ui.components.PawTopBar
-import com.gpo.pilipala.yt.ui.components.Thumbnail
-import com.gpo.pilipala.yt.ui.components.VideoRow
-import com.gpo.pilipala.yt.ui.components.readingWidth
+import com.gpo.pilipala.ui.components.PiliLargeTopBar
+import com.gpo.pilipala.ui.components.VideoCardH
 import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.sheetBottomPadding
+import com.gpo.pilipala.ui.theme.YoinContainerShapes
+import com.gpo.pilipala.yt.feature.player.Player
+import com.gpo.pilipala.yt.feature.player.miniPlayerInset
+import com.gpo.pilipala.yt.navigation.LocalNavigator
+import com.gpo.pilipala.yt.navigation.Route
+import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
 /** Which local list a [Route.LocalList] shows. */
 enum class LocalList(val title: String) { History("历史记录"), WatchLater("稍后再看") }
 
 /**
- * 历史记录 / 稍后再看 (本机). History rows carry how far each was watched; a long press takes a
- * row out. History has 清空 in its bar.
+ * The YouTube library pages' frame, PiliPaw's LibraryScaffold: the large flexible bar with a
+ * subtitle, collapsing as the list scrolls. [content] gets the padding for the bar, the
+ * navigation bar and the mini player.
  */
 @Composable
-fun LocalListScreen(route: Route.LocalList) {
-    val kind = LocalList.valueOf(route.kind)
+internal fun YtLibraryScaffold(
+    title: String,
+    subtitle: String? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+    content: @Composable (PaddingValues) -> Unit,
+) {
     val nav = LocalNavigator.current
-    val toast = rememberToast()
-    val list by (if (kind == LocalList.History) Library.history else Library.watchLater).collectAsState()
-    var confirmClear by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize()) {
-        PawTopBar(title = kind.title, onBack = { nav.pop() }, actions = {
-            if (kind == LocalList.History && list.isNotEmpty()) {
-                TextButton(onClick = { confirmClear = true }) { Text("清空") }
-            }
-        })
-        if (list.isEmpty()) {
-            EmptyState(if (kind == LocalList.History) "还没有看过的视频" else "还没有稍后再看", icon = YoinSymbols.Library)
-        } else {
-            LazyColumn(
-                Modifier.fillMaxSize().readingWidth(),
-                contentPadding = PaddingValues(bottom = miniPlayerInset() + 24.dp),
-            ) {
-                items(list, key = { it.key }) { item ->
-                    val progress = if (kind == LocalList.History && item.durationSec > 0) item.positionMs / (item.durationSec * 1000f) else null
-                    VideoRow(item.toVideo(), progress = progress, onLongClick = {
-                        if (kind == LocalList.History) Library.removeFromHistory(item.key) else Library.toggleWatchLater(item.toVideo())
-                        toast("已移除")
-                    })
-                }
-            }
-        }
-    }
-    if (confirmClear) {
-        AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text("清空历史记录") },
-            confirmButton = {
-                TextButton(onClick = {
-                    Library.clearHistory()
-                    confirmClear = false
-                }) { Text("清空") }
-            },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.surface,
+        topBar = {
+            PiliLargeTopBar(title = title, subtitle = subtitle, scrollBehavior = scrollBehavior, onBack = { nav.pop() }, actions = actions)
+        },
+    ) { padding ->
+        content(
+            PaddingValues(
+                top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + miniPlayerInset() + 24.dp,
+            ),
         )
     }
 }
 
-/** 播放列表 (本机): every playlist with its first video's thumbnail and count; 新建 in the bar. */
+/**
+ * 历史记录 / 稍后再看 (本机), as PiliPaw's: row cards in a grid (one column on phones, two from
+ * tablet portrait), history cards showing how far each was watched. A long press opens the
+ * item's sheet; 清空 asks first.
+ */
 @Composable
-fun PlaylistsScreen() {
-    val nav = LocalNavigator.current
-    val lists by Library.playlists.collectAsState()
-    var create by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize()) {
-        PawTopBar(title = "Mix", onBack = { nav.pop() }, actions = {
-            IconButton(onClick = { create = true }) { Icon(YoinSymbols.Add, "新建 Mix") }
-        })
-        if (lists.isEmpty()) {
-            EmptyState("还没有 Mix", icon = YoinSymbols.Library)
-        } else {
-            LazyColumn(Modifier.fillMaxSize().readingWidth(), contentPadding = PaddingValues(bottom = miniPlayerInset() + 24.dp)) {
-                items(lists, key = { it.id }) { p ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { nav.push(Route.LocalPlaylist(p.id)) }
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        val first = p.items.firstOrNull()?.toVideo()
-                        if (first != null) {
-                            Thumbnail(first.copy(durationSec = 0), Modifier.width(140.dp))
-                        } else {
-                            Thumbnail(com.gpo.pilipala.yt.feature.library.emptyCover, Modifier.width(140.dp))
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(p.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text("${p.items.size} 个视频", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if (create) NameDialog("新建 Mix", "", onDismiss = { create = false }) { Library.createPlaylist(it) }
-}
-
-/** One local playlist: its videos (long press takes one out), 重命名 and 删除 in the bar. */
-@Composable
-fun LocalPlaylistScreen(route: Route.LocalPlaylist) {
-    val nav = LocalNavigator.current
+fun LocalListScreen(route: Route.LocalList) {
+    val kind = LocalList.valueOf(route.kind)
     val toast = rememberToast()
-    val lists by Library.playlists.collectAsState()
-    val p = lists.firstOrNull { it.id == route.id }
-    var rename by remember { mutableStateOf(false) }
-    var delete by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize()) {
-        PawTopBar(title = p?.name ?: "Mix", onBack = { nav.pop() }, actions = {
-            if (p != null) {
-                if (p.items.isNotEmpty()) {
-                    IconButton(onClick = { com.gpo.pilipala.feature.sources.MixPlayback.start(p.id, 0) }) { Icon(YoinSymbols.PlayFilled, "全部播放") }
+    val list by (if (kind == LocalList.History) Library.history else Library.watchLater).collectAsState()
+    var confirmClear by remember { mutableStateOf(false) }
+    var sheetFor by remember { mutableStateOf<LibItem?>(null) }
+    YtLibraryScaffold(
+        title = kind.title,
+        subtitle = if (list.isEmpty()) null else "${list.size}个视频",
+        actions = {
+            if (kind == LocalList.History && list.isNotEmpty()) {
+                IconButton(onClick = { confirmClear = true }, shapes = IconButtonDefaults.shapes()) {
+                    Icon(YoinSymbols.Delete, "清空")
                 }
-                IconButton(onClick = { rename = true }) { Icon(YoinSymbols.Edit, "重命名") }
-                IconButton(onClick = { delete = true }) { Icon(YoinSymbols.Delete, "删除这个 Mix") }
             }
-        })
-        if (p == null || p.items.isEmpty()) {
-            EmptyState("还没有视频", icon = YoinSymbols.Library)
+        },
+    ) { padding ->
+        if (list.isEmpty()) {
+            if (kind == LocalList.History) {
+                EmptyState("暂无历史记录", Modifier.padding(padding), icon = PiliSymbols.History)
+            } else {
+                EmptyState("稍后再看为空", Modifier.padding(padding), icon = PiliSymbols.WatchLater)
+            }
         } else {
-            LazyColumn(Modifier.fillMaxSize().readingWidth(), contentPadding = PaddingValues(bottom = miniPlayerInset() + 24.dp)) {
-                itemsIndexed(p.items, key = { _, it -> it.key }) { i, item ->
-                    VideoRow(
-                        item.toVideo(),
-                        onLongClick = {
-                            Library.removeFromPlaylist(p.id, item.key)
-                            toast("已移除")
-                        },
-                        // From here on through the rest of the Mix, either source.
-                        onClick = { com.gpo.pilipala.feature.sources.MixPlayback.start(p.id, i) },
+            LazyVerticalGrid(GridCells.Adaptive(RowGridMinCell), Modifier.fillMaxSize(), contentPadding = padding) {
+                items(list, key = { it.key }) { item ->
+                    val video = item.toVideo()
+                    // History: seconds watched (-1 when finished), as PiliPaw's history cards.
+                    val progress = when {
+                        kind != LocalList.History || item.positionMs <= 0 -> 0L
+                        item.durationSec > 0 && item.positionMs >= item.durationSec * 1000 - 1000 -> -1L
+                        else -> item.positionMs / 1000
+                    }
+                    VideoCardH(
+                        video.toCard().copy(progress = progress),
+                        Modifier.animateItem(),
+                        onLongClick = { sheetFor = item },
+                        onClick = { Player.play(video.url, video) },
                     )
                 }
             }
         }
     }
-    if (rename && p != null) NameDialog("重命名", p.name, onDismiss = { rename = false }) { Library.renamePlaylist(p.id, it) }
-    if (delete && p != null) {
-        AlertDialog(
-            onDismissRequest = { delete = false },
-            title = { Text("删除「${p.name}」") },
-            confirmButton = {
-                TextButton(onClick = {
-                    delete = false
-                    nav.pop()
-                    Library.deletePlaylist(p.id)
-                }) { Text("删除") }
+    sheetFor?.let { item ->
+        ItemActionSheet(
+            title = item.title,
+            cover = item.thumbnail,
+            actions = listOf(
+                if (kind == LocalList.History) {
+                    SheetAction("从历史记录移除", YoinSymbols.Delete, destructive = true) {
+                        Library.removeFromHistory(item.key)
+                        toast("已移除")
+                    }
+                } else {
+                    SheetAction("移出稍后再看", YoinSymbols.Delete, destructive = true) {
+                        Library.toggleWatchLater(item.toVideo())
+                        toast("已移除")
+                    }
+                },
+            ),
+            onDismiss = { sheetFor = null },
+        )
+    }
+    if (confirmClear) {
+        ConfirmDialog(
+            title = "清空历史记录",
+            confirmLabel = "清空",
+            onConfirm = {
+                Library.clearHistory()
+                confirmClear = false
             },
-            dismissButton = { TextButton(onClick = { delete = false }) { Text("取消") } },
+            onDismiss = { confirmClear = false },
         )
     }
 }
 
+/** Mix: every Mix list as PiliPaw's folder cards (as in 收藏); one opens PiliPaw's Mix page. */
+@Composable
+fun PlaylistsScreen() {
+    val biliNav = com.gpo.pilipala.navigation.LocalNavigator.current
+    val lists by Library.playlists.collectAsState()
+    var create by remember { mutableStateOf(false) }
+    YtLibraryScaffold(
+        title = "Mix",
+        subtitle = if (lists.isEmpty()) null else "${lists.size}个",
+        actions = {
+            IconButton(onClick = { create = true }, shapes = IconButtonDefaults.shapes()) { Icon(YoinSymbols.Add, "新建 Mix") }
+        },
+    ) { padding ->
+        if (lists.isEmpty()) {
+            EmptyState("暂无 Mix", Modifier.padding(padding), icon = YoinSymbols.Library)
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(168.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = padding.calculateTopPadding(),
+                    bottom = padding.calculateBottomPadding(),
+                ),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(lists, key = { it.id }) { p ->
+                    val route = com.gpo.pilipala.navigation.Route.MixList(p.id, p.name)
+                    FolderCard(p.asFolder(), Modifier.animateItem(), route = route, onClick = { biliNav.push(route) })
+                }
+            }
+        }
+    }
+    if (create) {
+        NameDialog("新建 Mix", "", onDismiss = { create = false }) {
+            val p = Library.createPlaylist(it)
+            biliNav.push(com.gpo.pilipala.navigation.Route.MixList(p.id, p.name))
+        }
+    }
+}
+
+/** One Mix list: PiliPaw's Mix page (cover theme, source counts, play split, rows). */
+@Composable
+fun LocalPlaylistScreen(route: Route.LocalPlaylist) {
+    val name = Library.playlists.collectAsState().value.firstOrNull { it.id == route.id }?.name.orEmpty()
+    MixListScreen(com.gpo.pilipala.navigation.Route.MixList(route.id, name))
+}
+
+/** A name, typed into a filled field (no outlines: colour blocks, not strokes). */
 @Composable
 private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onDone: (String) -> Unit) {
     var name by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { OutlinedTextField(name, { name = it }, singleLine = true, placeholder = { Text("名称") }) },
+        text = { FilledNameField(name, { name = it }) },
         confirmButton = {
             TextButton(enabled = name.isNotBlank(), onClick = {
                 onDone(name)
@@ -204,6 +238,26 @@ private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, on
             }) { Text("完成") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+/** A single-line filled field on a tonal block, PiliPaw's FeedTextField look. */
+@Composable
+internal fun FilledNameField(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier, placeholder: String = "名称") {
+    TextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        singleLine = true,
+        placeholder = { Text(placeholder) },
+        shape = YoinContainerShapes.Card,
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent,
+        ),
     )
 }
 
