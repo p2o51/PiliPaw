@@ -181,39 +181,67 @@ fun HomeScreen() {
                 onMessages = { nav.push(if (user != null) Route.Messages else Route.Login) },
             )
         }
-        SegmentTabs(
-            labels = labels,
-            selected = pagerState.targetPage,
-            onSelect = { i ->
-                if (i == pagerState.currentPage && i == pagerState.targetPage) {
-                    tabs.getOrNull(i)?.let { pageReselects.tryEmit(it.key) }
-                } else {
-                    scope.launch { pagerState.animateScrollToPage(i, animationSpec = pageSpec) }
-                }
-            },
-            // combinedClickable already ticks the long-press haptic.
-            onLongClick = { i -> tabs.getOrNull(i)?.feedId?.let { managing = it } },
-            longClickable = { i -> tabs.getOrNull(i)?.feedId != null },
-            trailing = if (feeds.size < MaxFeeds) {
-                {
-                    Box(Modifier.splashReveal()) {
-                        SegmentIconChip(
-                            YoinSymbols.Add,
-                            contentDescription = "新建 Feed",
-                            onClick = { nav.push(Route.FeedEditor()) },
-                            // Spelled out until the first feed exists, then just the plus.
-                            label = if (feeds.isEmpty()) "Feed" else null,
-                        )
-                    }
-                }
+        // Both sources: 推荐 and 关注 split, like Spotify's library filters, into
+        // [×][推荐][哔哩哔哩][YouTube]; picking an account joins it to the tab ([推荐|YouTube]); × goes back.
+        val currentKey = tabs.getOrNull(pagerState.currentPage)?.key
+        val splittable = setOf("rcmd", MixedTab.key)
+        var splitOpen by rememberSaveable { mutableStateOf(false) }
+        val filterNow by com.gpo.pilipala.feature.sources.MixFilter.only.collectAsState()
+        val showSplit = mixed && currentKey in splittable && (splitOpen || filterNow != null)
+        val splitIn = YoinMotion.defaultEffectsSpec<Float>()
+        val splitOut = YoinMotion.fastEffectsSpec<Float>()
+        LaunchedEffect(currentKey, mixed) {
+            if (!mixed || currentKey !in splittable) {
+                splitOpen = false
+                com.gpo.pilipala.feature.sources.MixFilter.set(null)
+            }
+        }
+        androidx.compose.animation.AnimatedContent(
+            targetState = showSplit,
+            transitionSpec = { fadeIn(splitIn) togetherWith fadeOut(splitOut) },
+            label = "homeTabsSplit",
+        ) { split ->
+            if (split) {
+                com.gpo.pilipala.feature.sources.SourceSplitRow(
+                    tabLabel = tabs.getOrNull(pagerState.currentPage)?.label.orEmpty(),
+                    onClose = {
+                        splitOpen = false
+                        com.gpo.pilipala.feature.sources.MixFilter.set(null)
+                    },
+                )
             } else {
-                null
-            },
-        )
-        // Both sources, on 推荐 or 关注: the chips that narrow them to one.
-        val chipsFor = tabs.getOrNull(pagerState.currentPage)?.key
-        androidx.compose.animation.AnimatedVisibility(mixed && (chipsFor == "rcmd" || chipsFor == MixedTab.key)) {
-            com.gpo.pilipala.feature.sources.SourceChips()
+            SegmentTabs(
+                labels = labels,
+                selected = pagerState.targetPage,
+                onSelect = { i ->
+                    if (i == pagerState.currentPage && i == pagerState.targetPage) {
+                        // Both sources, on 推荐 / 关注: tapping it again splits it into the accounts (Spotify's filter row).
+                        if (mixed && tabs.getOrNull(i)?.key in splittable) splitOpen = true
+                        else tabs.getOrNull(i)?.let { pageReselects.tryEmit(it.key) }
+                    } else {
+                        scope.launch { pagerState.animateScrollToPage(i, animationSpec = pageSpec) }
+                    }
+                },
+                // combinedClickable already ticks the long-press haptic.
+                onLongClick = { i -> tabs.getOrNull(i)?.feedId?.let { managing = it } },
+                longClickable = { i -> tabs.getOrNull(i)?.feedId != null },
+                trailing = if (feeds.size < MaxFeeds) {
+                    {
+                        Box(Modifier.splashReveal()) {
+                            SegmentIconChip(
+                                YoinSymbols.Add,
+                                contentDescription = "新建 Feed",
+                                onClick = { nav.push(Route.FeedEditor()) },
+                                // Spelled out until the first feed exists, then just the plus.
+                                label = if (feeds.isEmpty()) "Feed" else null,
+                            )
+                        }
+                    }
+                } else {
+                    null
+                },
+            )
+            }
         }
         HorizontalPager(
             state = pagerState,
