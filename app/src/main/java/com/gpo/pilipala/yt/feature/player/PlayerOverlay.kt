@@ -416,8 +416,9 @@ fun PlayerOverlayHost() {
                 }
                 // Over the picture: the scrub preview rides above the seek bar's thumb.
                 if (p > 0.99f && !Player.fullscreen) SeekBubbleLayer(seek, frames, big = false)
-                // 仅听声音: the listen page over the open player; the picture flies into its cover.
-                if (Player.audioOnly && p > 0.99f) ListenScreen(from = { pictureRect })
+                // 仅听声音: the listen page over the open player; the picture flies into its cover,
+                // and the page folds back into the picture as the player docks.
+                ListenScreen(overlay = { progress.value }, from = { pictureRect })
             }
         }
         // Over everything, the overlay included: it takes the video surface while it is up.

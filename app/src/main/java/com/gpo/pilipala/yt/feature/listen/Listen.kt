@@ -1,6 +1,10 @@
 package com.gpo.pilipala.yt.feature.listen
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import kotlin.math.min
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -52,12 +56,24 @@ import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 
 /**
- * 仅听声音 over the open YouTube player: the app's one listen page ([ListenPage]) on the
- * YouTube player. Coming in, the picture ([from]: its window rect) flies into the cover.
+ * 仅听声音 over the YouTube player: the app's one listen page ([ListenPage]) on the YouTube
+ * player. The picture ([from]: its window rect) flies into the cover on the way in, and the
+ * cover back into the picture for 显示画面. [overlay] is the player's own open progress (1 open,
+ * 0 the mini bar): as a back or 收起 docks the player, the page folds into the picture over the
+ * first quarter of the way and the picture carries on to the bar; opening the bar unfolds it.
  */
 @Composable
-fun ListenScreen(from: () -> Rect?) {
+fun ListenScreen(overlay: () -> Float, from: () -> Rect?) {
     val session = Player.session ?: return
+    val listening = Player.audioOnly
+    val own = remember { Animatable(if (listening) 1f else 0f) }
+    val inSpec = YoinMotion.slowSpatialSpec<Float>(YoinMotionRole.Standard)
+    LaunchedEffect(listening) { own.animateTo(if (listening) 1f else 0f, if (listening) inSpec else ShowVideoSpec) }
+    val latestOverlay by rememberUpdatedState(overlay)
+    val progress: () -> Float = remember { { min(own.value, ((latestOverlay() - 0.75f) / 0.25f).coerceIn(0f, 1f)) } }
+    val shown by remember { derivedStateOf { progress() > 0.001f } }
+    if (!shown) return
+
     val key = remember(session.url) { Library.keyOf(session.url) }
     LaunchedEffect(key) { LyricsStore.load(key) }
     val picked = LyricsStore.lines(key)
@@ -65,14 +81,13 @@ fun ListenScreen(from: () -> Rect?) {
     val lines = remember(picked, cues) { (picked ?: cues).map { SubtitleLine(it.startMs, it.endMs, it.text) } }
     val source = remember(session.url) { YtListenSource(session.url, key) }
     source.lines = lines
-
-    // The flight in: the picture's rect → the cover's, on the slow spatial spring.
-    val progress = remember { Animatable(0f) }
-    val spec = YoinMotion.slowSpatialSpec<Float>(YoinMotionRole.Standard)
-    LaunchedEffect(Unit) { progress.animateTo(1f, spec) }
-    val flight = remember { ListenFlight({ progress.value }, from) }
+    val latestFrom by rememberUpdatedState(from)
+    val flight = remember { ListenFlight(progress, { latestFrom() }) }
     ListenPage(source, flight)
 }
+
+/** 显示画面: the cover back into the picture, a little quicker than the way in (as B站's). */
+private val ShowVideoSpec = spring<Float>(dampingRatio = 0.9f, stiffness = 170f)
 
 @Stable
 private class YtListenSource(val url: String, val key: String) : ListenSource {
