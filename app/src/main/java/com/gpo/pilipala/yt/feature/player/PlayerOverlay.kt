@@ -328,8 +328,11 @@ fun PlayerOverlayHost() {
             val videoY = lerp(0.dp, fullVideoY, p)
             val videoW = lerp(miniVideoW, fullVideoW, p)
             val videoH = lerp(miniH, fullVideoH, p)
-            val corner = lerp(6.dp, 0.dp, p)
-            val videoCorner = lerp(6.dp, if (twoPane) 16.dp else 0.dp, p)
+            // The opening spring overshoots past 1: a corner lerped past 0dp went negative and
+            // the shape threw (a crash as the player opened).
+            val cornerP = p.coerceIn(0f, 1f)
+            val corner = lerp(6.dp, 0.dp, cornerP)
+            val videoCorner = lerp(6.dp, if (twoPane) 16.dp else 0.dp, cornerP)
             val rangePx = with(density) { (miniY).toPx() }.coerceAtLeast(1f)
 
             val drag = rememberDraggableState { delta ->

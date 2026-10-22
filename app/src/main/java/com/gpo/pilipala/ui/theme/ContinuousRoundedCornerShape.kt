@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.graphics.shapes.CornerRounding
 import androidx.graphics.shapes.RoundedPolygon
@@ -155,7 +156,8 @@ fun ContinuousRoundedCornerShape(
     size: Dp,
     smoothing: Float = ContinuousSmoothing,
 ): ContinuousRoundedCornerShape {
-    val corner = CornerSize(size)
+    // An animated size can dip a hair below zero on a spring; CornerBasedShape throws on that.
+    val corner = CornerSize(size.coerceAtLeast(0.dp))
     return ContinuousRoundedCornerShape(corner, corner, corner, corner, smoothing)
 }
 
@@ -166,10 +168,10 @@ fun ContinuousRoundedCornerShape(
     bottomStart: Dp,
     smoothing: Float = ContinuousSmoothing,
 ): ContinuousRoundedCornerShape = ContinuousRoundedCornerShape(
-    topStart = CornerSize(topStart),
-    topEnd = CornerSize(topEnd),
-    bottomEnd = CornerSize(bottomEnd),
-    bottomStart = CornerSize(bottomStart),
+    topStart = CornerSize(topStart.coerceAtLeast(0.dp)),
+    topEnd = CornerSize(topEnd.coerceAtLeast(0.dp)),
+    bottomEnd = CornerSize(bottomEnd.coerceAtLeast(0.dp)),
+    bottomStart = CornerSize(bottomStart.coerceAtLeast(0.dp)),
     smoothing = smoothing,
 )
 
