@@ -366,7 +366,10 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         // 仅听声音 gets its own page over this one (the player keeps running beneath it); the
         // picture flies into its cover on the way in and back out of it (ListenFlight).
         val listening = ctrl?.audioOnly == true && !vm.fullscreen && !showImmersive
-        val listenP = remember { Animatable(if (listening) 1f else 0f) }
+        // Opened already listening (the mini bar, 仅听声音 from a card): the cover still flies in
+        // from the picture's slot, with no frame to start from (none was ever drawn).
+        val listenP = remember { Animatable(0f) }
+        val openedListening = remember { booleanArrayOf(listening) }
         var listenShot by remember { mutableStateOf<ImageBitmap?>(null) }
         // Slower than the page springs: the trip is short (picture slot → cover slot) and has to
         // read as the picture becoming the cover, not a cut.
@@ -374,7 +377,7 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         val listenOut = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.9f, stiffness = 170f)
         LaunchedEffect(listening) {
             if (listening) {
-                if (listenP.value < 0.01f) {
+                if (listenP.value < 0.01f && !openedListening[0]) {
                     // The picture as it is now, so the flight starts from what is on screen.
                     listenShot = handoff.classicRect?.let { r ->
                         findVideoView(heroView.rootView, r)?.let { v ->
@@ -382,9 +385,11 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
                         }
                     }
                 }
+                openedListening[0] = false
                 listenP.animateTo(1f, listenIn)
                 listenShot = null
             } else {
+                openedListening[0] = false
                 listenShot = null
                 listenP.animateTo(0f, listenOut)
             }
