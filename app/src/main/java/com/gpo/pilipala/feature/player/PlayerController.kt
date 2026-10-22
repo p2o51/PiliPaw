@@ -218,9 +218,15 @@ internal class PiliPlayerController(
     private var skipJob: Job? = null
     private var queueFailures = 0
 
-    /** 仅听声音: only the DASH audio stream is loaded (video track off for progressive streams). */
+    /**
+     * 仅听声音: the video track is switched off (its stream stops loading; the audio plays on
+     * without a rebuild). A page opened to listen loads the DASH audio stream alone.
+     */
     var audioOnly by mutableStateOf(false)
         private set
+
+    /** The prepared source carries no picture (built while listening): 显示画面 has to rebuild it. */
+    private var sourceAudioOnly = false
 
     /** What the page offers beyond a single video: 分P / 合集 neighbours, its target, the like toggle. */
     private var hooks: PlayerPageHooks? = null
@@ -338,6 +344,7 @@ internal class PiliPlayerController(
 
         override fun onRenderedFirstFrame() {
             firstFrameRendered = true
+            com.gpo.pilipala.feature.listen.ListenLog.firstFrame()
         }
 
         override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -697,10 +704,14 @@ internal class PiliPlayerController(
     private fun changeAudioOnly(on: Boolean) {
         if (on == audioOnly) return
         audioOnly = on
+        if (!on) com.gpo.pilipala.feature.listen.ListenLog.videoAsked(if (sourceAudioOnly) "B站, rebuild" else "B站, track on")
         applyVideoTrack()
         // The picture comes back (or goes) with the next rendered frame; the cover covers the gap.
         firstFrameRendered = false
-        if (exo != null && info?.isDash == true && phase !is PlayerPhase.Error) reprepare()
+        // Switching the video track is enough: its stream stops loading while it is off and
+        // picks up at the playhead when it comes back, the audio never stopping. Only a source
+        // built without a picture (opened to listen) is rebuilt for it.
+        if (!on && sourceAudioOnly && exo != null && phase !is PlayerPhase.Error) reprepare()
         refreshSessionControls()
         syncBackgroundHost()
     }
@@ -1111,6 +1122,7 @@ internal class PiliPlayerController(
     }
 
     private fun buildSource(pi: PlayInfo): MediaSource? {
+        sourceAudioOnly = false
         localMedia?.let { return it.source(context, ::metadataItem) }
         if (pi.isDash) {
             val v = StreamPicker.video(pi, currentQn, currentCodec) ?: return null
@@ -1136,7 +1148,10 @@ internal class PiliPlayerController(
             val aUrls = com.gpo.pilipala.feature.player.cdn.CdnRouter.orderUrls(a.urls)
             val aUrl = aUrls[urlAttempt % aUrls.size]
             // 仅听声音: the audio stream alone (nothing to download or decode for the picture).
-            if (audioOnly) return progressiveFactory.createMediaSource(metadataItem(aUrl))
+            if (audioOnly) {
+                sourceAudioOnly = true
+                return progressiveFactory.createMediaSource(metadataItem(aUrl))
+            }
             val audioSource = progressiveFactory.createMediaSource(MediaItem.fromUri(aUrl))
             return MergingMediaSource(false, true, videoSource, audioSource)
         }

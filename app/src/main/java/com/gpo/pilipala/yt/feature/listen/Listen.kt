@@ -4,6 +4,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.min
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -68,7 +71,11 @@ fun ListenScreen(overlay: () -> Float, from: () -> Rect?) {
     val listening = Player.audioOnly
     val own = remember { Animatable(if (listening) 1f else 0f) }
     val inSpec = YoinMotion.slowSpatialSpec<Float>(YoinMotionRole.Standard)
-    LaunchedEffect(listening) { own.animateTo(if (listening) 1f else 0f, if (listening) inSpec else ShowVideoSpec) }
+    LaunchedEffect(listening) {
+        // 显示画面: the cover flies home once the picture under the page has its first frame.
+        if (!listening && own.value > 0.99f) withTimeoutOrNull(ShowVideoWaitMs) { snapshotFlow { Player.pictureReady }.first { it } }
+        own.animateTo(if (listening) 1f else 0f, if (listening) inSpec else ShowVideoSpec)
+    }
     val latestOverlay by rememberUpdatedState(overlay)
     // The fold runs the whole way down, so the cover visibly flies into the bar's tile and the bar
     // takes over only as it lands (folding over the first quarter let the bar catch it at once).
@@ -90,6 +97,9 @@ fun ListenScreen(overlay: () -> Float, from: () -> Rect?) {
 
 /** 显示画面: the cover back into the picture, a little quicker than the way in (as B站's). */
 private val ShowVideoSpec = spring<Float>(dampingRatio = 0.9f, stiffness = 170f)
+
+/** How long 显示画面 waits for the video's first frame before the cover flies home anyway. */
+private const val ShowVideoWaitMs = 700L
 
 @Stable
 private class YtListenSource(val url: String, val key: String) : ListenSource {

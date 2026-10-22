@@ -431,12 +431,8 @@ private const val FlingVelocity = 1200f
 
 @Composable
 private fun BoxScope.Picture(session: Player.Session) {
-    // 仅听声音 draws no picture: the cover stands in (the mini bar, the flight's start).
-    if (Player.audioOnly) {
-        NetImage(session.thumbnail, Modifier.fillMaxSize(), shape = ContinuousRoundedCornerShape(0.dp), thumbWidth = null)
-        return
-    }
-    // Fullscreen owns the one video surface while it is up.
+    // Fullscreen owns the one video surface while it is up. 仅听声音 keeps it (under the cover):
+    // 显示画面 then only switches the video track back on, with no surface to rebuild.
     if (session.info != null && session.error == null && !Player.fullscreen) {
         ContentFrame(
             player = Player.exo,
@@ -446,6 +442,11 @@ private fun BoxScope.Picture(session: Player.Session) {
             contentScale = ContentScale.Fit,
             shutter = {},
         )
+    }
+    // 仅听声音 shows no picture: the cover stands in (the mini bar, the flight's start).
+    if (Player.audioOnly) {
+        NetImage(session.thumbnail, Modifier.fillMaxSize(), shape = ContinuousRoundedCornerShape(0.dp), thumbWidth = null)
+        return
     }
     val waiting = session.info == null || (Player.isBuffering && Player.durationMs == 0L)
     if (waiting && session.error == null) {

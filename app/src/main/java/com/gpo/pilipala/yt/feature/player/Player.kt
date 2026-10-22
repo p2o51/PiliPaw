@@ -139,9 +139,18 @@ object Player {
         private set
     private var borrowedSubtitles = false
 
+    /**
+     * The video track has drawn a frame since 仅听声音 last changed (显示画面 waits for it, so the
+     * cover lands on the picture).
+     */
+    var pictureReady by mutableStateOf(false)
+        private set
+
     fun changeAudioOnly(on: Boolean) {
         if (on == audioOnly) return
         audioOnly = on
+        pictureReady = false
+        if (!on) com.gpo.pilipala.feature.listen.ListenLog.videoAsked("YouTube, track on")
         exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, on)
             .build()
@@ -293,6 +302,10 @@ object Player {
                         if (playing) PlayerHost.started(PlayerSlot.YouTube)
                         // Paused (or ended): the resume point is exact.
                         if (!playing) savePosition()
+                    }
+                    override fun onRenderedFirstFrame() {
+                        pictureReady = true
+                        com.gpo.pilipala.feature.listen.ListenLog.firstFrame()
                     }
                     override fun onVideoSizeChanged(size: VideoSize) {
                         if (size.width > 0 && size.height > 0) videoAspect = size.width * size.pixelWidthHeightRatio / size.height

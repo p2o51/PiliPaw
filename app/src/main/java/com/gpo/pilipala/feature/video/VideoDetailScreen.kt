@@ -77,6 +77,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.ImageBitmap
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.platform.LocalView
@@ -399,6 +400,12 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
             } else {
                 openedListening[0] = false
                 listenShot = null
+                // 显示画面: the cover flies home once the picture under the page has drawn its
+                // first frame (the video track picks up at the playhead), so it lands on the
+                // video, not on the loading cover; a slow line lets it go after a moment.
+                if (listenP.value > 0.99f && ctrl?.audioOnly == false) {
+                    withTimeoutOrNull(ShowVideoWaitMs) { snapshotFlow { ctrl.firstFrameRendered }.first { it } }
+                }
                 listenP.animateTo(0f, listenOut)
             }
         }
@@ -762,3 +769,6 @@ private fun LazyGridScope.relatedGridItems(vm: VideoDetailViewModel, listening: 
         else -> gridItems(vm.related, key = { "r_${it.bvid}" }) { RelatedCard(it, listening) }
     }
 }
+
+/** How long 显示画面 waits for the video's first frame before the cover flies home anyway. */
+private const val ShowVideoWaitMs = 700L
