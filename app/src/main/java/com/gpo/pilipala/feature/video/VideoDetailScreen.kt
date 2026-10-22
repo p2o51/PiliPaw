@@ -253,7 +253,17 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
             if (transitions?.backIdle != false) heroRect[0] = r
         }
     }
+    // 仅听声音 shows no picture (its video track is off): the listen page's cover flies home
+    // instead, from its place on that page, its 28dp corners and all.
+    val listenFlight = remember { arrayOfNulls<ListenFlight>(1) }
+    val listenRect = remember { arrayOfNulls<Rect>(1) }
     PageHeroEffect(Route.Video(bvid = vm.bvid)) {
+        listenFlight[0]?.takeIf { ctrl?.audioOnly == true }?.let { lf ->
+            if (lf.flying) return@PageHeroEffect null
+            val rect = listenRect[0] ?: return@PageHeroEffect null
+            val image = lf.coverLayer?.toImageBitmap() ?: return@PageHeroEffect null
+            return@PageHeroEffect image to rect
+        }
         val rect = heroRect[0] ?: return@PageHeroEffect null
         if (vm.fullscreen || vm.immersive == true) return@PageHeroEffect null
         val view = findVideoView(heroView.rootView, rect) ?: return@PageHeroEffect null
@@ -382,6 +392,13 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         val listenShown by remember { derivedStateOf { listenP.value > 0.001f } }
         val flight = remember(listenP) {
             ListenFlight(progress = { listenP.value }, from = { handoff.classicRect }, shot = { listenShot })
+        }
+        // The back's hero: the cover's rect as laid out while no back runs (PageHero.kt).
+        listenFlight[0] = flight
+        LaunchedEffect(flight) {
+            snapshotFlow { flight.coverRect }.collect { r ->
+                if (transitions?.backIdle != false) listenRect[0] = r
+            }
         }
         if (ctrl != null && (listening || listenShown)) {
             ListenScreen(vm, ctrl, queue, gate, flight, onTriple = { sheet = VideoSheet.Triple })
