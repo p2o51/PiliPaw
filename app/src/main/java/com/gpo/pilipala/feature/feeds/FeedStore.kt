@@ -28,6 +28,14 @@ internal enum class KeywordOrder(val key: String, val label: String) {
     @SerialName("pubdate") Pubdate("pubdate", "最新"),
 }
 
+/** Where a keyword searches once both sources are ticked (Bilibili alone otherwise, as before). */
+@Serializable
+internal enum class KeywordWhere(val label: String) {
+    @SerialName("bili") Bili("哔哩哔哩"),
+    @SerialName("both") Both("两边"),
+    @SerialName("yt") YouTube("YouTube"),
+}
+
 /** How a feed interleaves its sources: one from each in turn, or newest first across all. */
 @Serializable
 internal enum class FeedMix(val label: String) {
@@ -45,7 +53,11 @@ internal sealed interface FeedSource {
     @Immutable
     @Serializable
     @SerialName("keyword")
-    data class Keyword(val term: String, val order: KeywordOrder = KeywordOrder.Totalrank) : FeedSource {
+    data class Keyword(
+        val term: String,
+        val order: KeywordOrder = KeywordOrder.Totalrank,
+        val where: KeywordWhere = KeywordWhere.Bili,
+    ) : FeedSource {
         override val key: String get() = keywordKey(term)
         override val label: String get() = term
     }

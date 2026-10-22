@@ -253,6 +253,10 @@ internal class FeedEditorViewModel(route: Route.FeedEditor) : ViewModel() {
         sources = sources.filterNot { it.key == key }
     }
 
+    fun setWhere(key: String, where: KeywordWhere) {
+        sources = sources.map { if (it.key == key && it is FeedSource.Keyword) it.copy(where = where) else it }
+    }
+
     fun setOrder(key: String, order: KeywordOrder) {
         sources = sources.map { if (it.key == key && it is FeedSource.Keyword) it.copy(order = order) else it }
     }
@@ -598,6 +602,7 @@ private fun LazyGridScope.editorForm(
             source = source,
             onOrder = { vm.setOrder(source.key, it) },
             onRemove = { vm.remove(source.key) },
+            onWhere = { vm.setWhere(source.key, it) },
             modifier = Modifier.animateItem(
                 fadeInSpec = YoinMotion.defaultEffectsSpec(),
                 placementSpec = YoinMotion.defaultSpatialSpec(),

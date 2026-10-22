@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 private const val TAG = "HomeFeed"
 
 internal fun VideoItem.feedKey(): Any = when {
+    youtubeUrl != null -> youtubeUrl
     bvid.isNotEmpty() -> bvid
     target != null -> target
     else -> "$title|$cover"
@@ -51,8 +52,16 @@ internal class RcmdViewModel : ViewModel() {
 
     val feed = FeedPager(viewModelScope, key = { it.feedKey() }) { cursor -> load(cursor == null) }
 
+    /** Both sources ticked: YouTube's recommendations ride along (MixFilter decides which show). */
+    private val youtube = com.gpo.pilipala.feature.sources.YouTubeRecommendations()
+
     init {
         feed.refresh()
+        // Ticking a source, or the filter chips: the feed starts over with what they ask for.
+        viewModelScope.launch {
+            combine(com.gpo.pilipala.core.source.Sources.enabled, com.gpo.pilipala.feature.sources.MixFilter.only) { a, b -> a to b }
+                .distinctUntilChanged().drop(1).collect { feed.refresh() }
+        }
         viewModelScope.launch { AppSettings.rcmdSource.state.drop(1).collect { feed.refresh() } }
         // 单列 shows UP avatars, which the app feed only gets with a request of its own.
         viewModelScope.launch {
@@ -83,6 +92,28 @@ internal class RcmdViewModel : ViewModel() {
     }
 
     private suspend fun load(first: Boolean): Page<VideoItem> {
+        if (first) youtube.reset()
+        val wantBili = com.gpo.pilipala.feature.sources.MixFilter.wants(com.gpo.pilipala.core.source.VideoSource.Bilibili)
+        val wantYt = com.gpo.pilipala.feature.sources.MixFilter.wants(com.gpo.pilipala.core.source.VideoSource.YouTube)
+        if (!wantBili) {
+            val yt = youtube.next(20)
+            return Page(yt, hasMore = yt.isNotEmpty(), nextCursor = "yt")
+        }
+        val bili = loadBili(first)
+        if (!wantYt) return bili
+        // One YouTube card after every three of Bilibili's, as long as YouTube has any.
+        val yt = runCatching { youtube.next(bili.items.size / 3 + 1) }.getOrDefault(emptyList())
+        val mixed = ArrayList<VideoItem>(bili.items.size + yt.size)
+        var y = 0
+        bili.items.forEachIndexed { i, v ->
+            mixed += v
+            if (i % 3 == 2 && y < yt.size) mixed += yt[y++]
+        }
+        while (y < yt.size) mixed += yt[y++]
+        return bili.copy(items = mixed)
+    }
+
+    private suspend fun loadBili(first: Boolean): Page<VideoItem> {
         BiliClient.ensureBuvid()
         if (first) {
             freshIdx = 0

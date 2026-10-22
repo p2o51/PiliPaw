@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -140,7 +141,30 @@ internal fun SourceRow(
     onOrder: (KeywordOrder) -> Unit,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
+    onWhere: ((KeywordWhere) -> Unit)? = null,
 ) {
+    // Both sources ticked: a keyword row grows a second line, where it searches.
+    val mixing = com.gpo.pilipala.core.source.Sources.enabled.collectAsState().value.size > 1
+    if (mixing && source is FeedSource.Keyword && onWhere != null) {
+        Column(
+            modifier
+                .fillMaxWidth()
+                .clip(YoinContainerShapes.ListRow)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .padding(bottom = 10.dp),
+        ) {
+            SourceRow(source, onOrder, onRemove, Modifier, onWhere = null)
+            ConnectedToggles(
+                options = KeywordWhere.entries,
+                selected = source.where,
+                label = { it.label },
+                onSelect = onWhere,
+                compact = true,
+                modifier = Modifier.padding(start = 12.dp),
+            )
+        }
+        return
+    }
     Row(
         modifier
             .fillMaxWidth()

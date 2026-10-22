@@ -174,12 +174,40 @@ internal class FeedMixer(
 
     private suspend fun fetch(source: FeedSource, cursor: String?): Chunk = when (source) {
         is FeedSource.Keyword -> {
-            val page = cursor?.toIntOrNull() ?: 1
-            val res = SearchApi.search(SearchTab.Video, source.term, page, source.order.key, duration = 0, tids = -1)
-            val items = res.items.filterIsInstance<VideoHit>().map { hit ->
-                hit.item.copy(title = Fmt.stripTags(hit.item.title), ownerName = Fmt.stripTags(hit.item.ownerName))
+            // Both sources ticked, the keyword may search YouTube too: cursor "biliPage|ytCursor".
+            val mixing = com.gpo.pilipala.core.source.Sources.enabled.value.size > 1
+            val where = if (mixing) source.where else KeywordWhere.Bili
+            val (pagePart, ytPart) = (cursor ?: "1|").split('|', limit = 2).let { it[0] to it.getOrNull(1).orEmpty() }
+            val page = pagePart.toIntOrNull() ?: 1
+            var biliMore = false
+            val bili = if (where != KeywordWhere.YouTube && page > 0) {
+                val res = SearchApi.search(SearchTab.Video, source.term, page, source.order.key, duration = 0, tids = -1)
+                biliMore = page < res.numPages
+                res.items.filterIsInstance<VideoHit>().map { hit ->
+                    hit.item.copy(title = Fmt.stripTags(hit.item.title), ownerName = Fmt.stripTags(hit.item.ownerName))
+                }
+            } else {
+                emptyList()
             }
-            Chunk(items, (page + 1).toString(), more = page < res.numPages)
+            var ytNext: String? = null
+            val yt = if (where != KeywordWhere.Bili && ytPart != "end") {
+                val res = com.gpo.pilipala.yt.core.extractor.Yt.search(source.term, ytPart.ifEmpty { null })
+                ytNext = res.nextCursor
+                res.items.filterIsInstance<com.gpo.pilipala.yt.core.extractor.ListItem.Video>()
+                    .map { with(com.gpo.pilipala.feature.sources.Cards) { it.video.card() } }
+            } else {
+                emptyList()
+            }
+            val items = ArrayList<VideoItem>()
+            val a = bili.iterator()
+            val b = yt.iterator()
+            while (a.hasNext() || b.hasNext()) {
+                if (a.hasNext()) items += a.next()
+                if (b.hasNext()) items += b.next()
+            }
+            val nextBili = if (biliMore) page + 1 else 0
+            val nextYt = ytNext ?: "end"
+            Chunk(items, "$nextBili|$nextYt", more = biliMore || ytNext != null)
         }
         is FeedSource.Up -> {
             val res = MemberRepo.archive(source.mid, cursor, ArchiveOrder.Pubdate)

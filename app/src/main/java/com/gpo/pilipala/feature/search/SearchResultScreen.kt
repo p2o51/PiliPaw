@@ -167,6 +167,9 @@ internal class SearchTabViewModel(
     val mutual = mutableStateMapOf<Long, Boolean>()
 
     private var page = 0
+    /** Both sources ticked, 视频 tab: YouTube's results interleaved (SearchScope narrows to one). */
+    private var ytCursor: String? = null
+    private var ytDone = false
     private var job: Job? = null
     private var generation = 0
     private var started = false
@@ -229,6 +232,32 @@ internal class SearchTabViewModel(
 
     /** Parsing and mapping a result page (tag stripping, highlights) runs off the main thread. */
     private suspend fun load(p: Int): SearchPage {
+        if (tab != SearchTab.Video || !com.gpo.pilipala.feature.sources.SearchScope.mixing) return loadBili(p)
+        if (p == 1) {
+            ytCursor = null
+            ytDone = false
+        }
+        val wantBili = com.gpo.pilipala.feature.sources.SearchScope.wants(com.gpo.pilipala.core.source.VideoSource.Bilibili)
+        val wantYt = com.gpo.pilipala.feature.sources.SearchScope.wants(com.gpo.pilipala.core.source.VideoSource.YouTube)
+        val bili = if (wantBili) loadBili(p) else SearchPage(emptyList(), p, if (ytDone) p else p + 1)
+        if (!wantYt || ytDone) return bili
+        val yt = runCatching { com.gpo.pilipala.yt.core.extractor.Yt.search(keyword, ytCursor) }.getOrNull()
+        ytCursor = yt?.nextCursor
+        ytDone = yt == null || yt.nextCursor == null
+        val ytHits = yt?.items.orEmpty().filterIsInstance<com.gpo.pilipala.yt.core.extractor.ListItem.Video>()
+            .map { VideoHit(with(com.gpo.pilipala.feature.sources.Cards) { it.video.card() }) }
+        // Alternate: two of one side's, then two of the other's.
+        val mixed = ArrayList<SearchHit>()
+        val a = bili.items.iterator()
+        val b = ytHits.iterator()
+        while (a.hasNext() || b.hasNext()) {
+            repeat(2) { if (a.hasNext()) mixed += a.next() }
+            repeat(2) { if (b.hasNext()) mixed += b.next() }
+        }
+        return SearchPage(mixed, p, if (ytDone) bili.numPages else maxOf(bili.numPages, p + 1))
+    }
+
+    private suspend fun loadBili(p: Int): SearchPage {
         val order = order.ifEmpty { null }
         val duration = duration
         val tids = tids
@@ -366,6 +395,12 @@ fun SearchResultScreen(route: Route.SearchResult) {
             },
             onAddToFeed = { feedSheet = true },
         )
+        // Both sources ticked: search both (视频 interleaved) or one.
+        if (com.gpo.pilipala.feature.sources.SearchScope.mixing) {
+            val scopeNow by com.gpo.pilipala.feature.sources.SearchScope.only.collectAsState()
+            LaunchedEffect(scopeNow) { if (videoVm.items.isNotEmpty() || videoVm.error != null) videoVm.refresh() }
+            com.gpo.pilipala.feature.sources.SourceChips(com.gpo.pilipala.feature.sources.SearchScope, Modifier.padding(top = 4.dp))
+        }
         PrimaryScrollableTabRow(
             selectedTabIndex = pagerState.currentPage,
             containerColor = scheme.surface,

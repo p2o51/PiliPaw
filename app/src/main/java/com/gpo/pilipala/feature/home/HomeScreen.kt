@@ -78,7 +78,6 @@ import kotlinx.coroutines.launch
 private data class HomeTab(val key: String, val label: String, val feedId: String? = null)
 
 private val MixedTab = HomeTab("follow", "关注")
-private val YouTubeTab = HomeTab("youtube", "YouTube")
 
 private val BuiltinTabs = listOf(
     HomeTab("live", "直播"),
@@ -98,13 +97,15 @@ fun HomeScreen() {
     val mixed = enabled.size > 1
     // Built-ins, then the user's feeds in their order.
     val tabs = remember(feeds, mixed) {
-        (if (mixed) listOf(MixedTab, YouTubeTab) else emptyList()) + BuiltinTabs + feeds.map { HomeTab(it.tabKey, it.name, it.id) }
+        // Both sources: 关注 (both sides' follows) joins right after 推荐 (both sides' picks).
+        (if (mixed) BuiltinTabs.flatMap { if (it.key == "rcmd") listOf(it, MixedTab) else listOf(it) } else BuiltinTabs) +
+            feeds.map { HomeTab(it.tabKey, it.name, it.id) }
     }
     val labels = remember(tabs) { tabs.map { it.label } }
     val latestTabs by rememberUpdatedState(tabs)
     // The selected tab is kept by key, so it stays put while feeds are added, moved or renamed.
     var selectedKey by rememberSaveable {
-        mutableStateOf(if (mixed) MixedTab.key else BuiltinTabs[AppSettings.homeDefaultTab.value.coerceIn(0, BuiltinTabs.lastIndex)].key)
+        mutableStateOf(BuiltinTabs[AppSettings.homeDefaultTab.value.coerceIn(0, BuiltinTabs.lastIndex)].key)
     }
     val pagerState = rememberPagerState(initialPage = remember { tabs.indexOfFirst { it.key == selectedKey }.coerceAtLeast(0) }) { tabs.size }
     val scope = rememberCoroutineScope()
@@ -115,7 +116,6 @@ fun HomeScreen() {
 
     // One scroll state per tab, hoisted so it survives the pager disposing pages.
     val mixedState = rememberLazyGridState()
-    val youtubeState = rememberLazyGridState()
     val liveState = rememberLazyGridState()
     val rcmdState = rememberLazyGridState()
     val hotState = rememberLazyGridState()
@@ -135,14 +135,6 @@ fun HomeScreen() {
             val fallback = (pagerState.currentPage - 1).coerceIn(0, tabs.lastIndex)
             selectedKey = tabs[fallback].key
             pagerState.animateScrollToPage(fallback, animationSpec = pageSpec)
-        }
-    }
-    // YouTube just ticked: Home opens on the mixed 关注.
-    LaunchedEffect(mixed) {
-        if (mixed && selectedKey != MixedTab.key) {
-            selectedKey = MixedTab.key
-            val index = tabs.indexOfFirst { it.key == MixedTab.key }
-            if (index >= 0) pagerState.scrollToPage(index)
         }
     }
     // A feed just created: switch to its tab once it is in the row.
@@ -218,6 +210,11 @@ fun HomeScreen() {
                 null
             },
         )
+        // Both sources, on 推荐 or 关注: the chips that narrow them to one.
+        val chipsFor = tabs.getOrNull(pagerState.currentPage)?.key
+        androidx.compose.animation.AnimatedVisibility(mixed && (chipsFor == "rcmd" || chipsFor == MixedTab.key)) {
+            com.gpo.pilipala.feature.sources.SourceChips()
+        }
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -228,9 +225,6 @@ fun HomeScreen() {
             val feedId = tab.feedId
             when {
                 tab.key == MixedTab.key -> com.gpo.pilipala.feature.sources.MixedFollowTab(mixedState, reselect, behavior)
-                tab.key == YouTubeTab.key -> com.gpo.pilipala.feature.sources.MixedFollowTab(
-                    youtubeState, reselect, behavior, only = com.gpo.pilipala.core.source.VideoSource.YouTube,
-                )
                 feedId != null -> CustomFeedTab(feedId, feedStates.getOrPut(tab.key) { LazyGridState() }, reselect, behavior)
                 tab.key == "live" -> LiveTab(liveState, reselect, behavior)
                 tab.key == "rcmd" -> RcmdTab(rcmdState, reselect, behavior)

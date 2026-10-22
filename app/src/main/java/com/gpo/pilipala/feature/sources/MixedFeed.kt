@@ -80,7 +80,7 @@ internal class MixedFeedViewModel(private val only: VideoSource? = null) : ViewM
         // A source ticked or unticked, signing in or out on either side, or a YouTube subscription added: start over.
         viewModelScope.launch {
             combine(
-                Sources.enabled,
+                combine(Sources.enabled, MixFilter.only) { a, b -> a to b },
                 Account.user.map { it?.mid },
                 Accounts.youtube.map { it is Profile.SignedIn },
                 Subscriptions.channels.map { list -> list.map { it.url } },
@@ -92,8 +92,9 @@ internal class MixedFeedViewModel(private val only: VideoSource? = null) : ViewM
     private suspend fun load(reset: Boolean): Page<MixedItem> {
         if (reset) {
             lanes = buildList {
-                if (only != VideoSource.YouTube && Sources.isOn(VideoSource.Bilibili) && Account.isLoggedIn) add(Lane(VideoSource.Bilibili))
-                if (only != VideoSource.Bilibili && Sources.isOn(VideoSource.YouTube)) add(Lane(VideoSource.YouTube))
+                val pick = only ?: MixFilter.only.value
+                if (pick != VideoSource.YouTube && Sources.isOn(VideoSource.Bilibili) && Account.isLoggedIn) add(Lane(VideoSource.Bilibili))
+                if (pick != VideoSource.Bilibili && Sources.isOn(VideoSource.YouTube)) add(Lane(VideoSource.YouTube))
             }
             biliBaseline = ""
         }
