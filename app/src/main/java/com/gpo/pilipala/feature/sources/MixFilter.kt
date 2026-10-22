@@ -9,7 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
-import androidx.compose.animation.animateContentSize
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -206,12 +205,16 @@ fun InlineSourceChips() {
                             haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
                             MixFilter.set(if (picked) null else source)
                         }
-                        .padding(start = 8.dp, end = 8.dp)
-                        .androidxAnimateContentSize(),
+                        .padding(start = 8.dp, end = 8.dp),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 ) {
                     SourceDotForMenu(source, 24.dp)
-                    if (picked) {
+                    // The label grows in and folds away with the pill, so letting go never leaves it wide and empty.
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = picked,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
+                        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally(),
+                    ) {
                         androidx.compose.material3.Text(
                             source.label,
                             style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
@@ -225,4 +228,3 @@ fun InlineSourceChips() {
     }
 }
 
-private fun androidx.compose.ui.Modifier.androidxAnimateContentSize() = this.then(androidx.compose.ui.Modifier.animateContentSize())
