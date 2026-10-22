@@ -136,6 +136,20 @@ object Yt {
     }
 
     /**
+     * One of a channel's own tabs ([org.schabi.newpipe.extractor.linkhandler.ChannelTabs]: Shorts,
+     * 直播…) as videos, page by page; anything that is not a video (playlists) is left out.
+     */
+    suspend fun channelTab(tab: org.schabi.newpipe.extractor.linkhandler.ListLinkHandler, cursor: String?): Page<VideoItem> = io {
+        if (cursor == null) {
+            val info = org.schabi.newpipe.extractor.channel.ChannelTabInfo.getInfo(service, tab)
+            page(info.relatedItems.filterIsInstance<StreamInfoItem>().map { it.toVideo() }, info.nextPage)
+        } else {
+            val more = org.schabi.newpipe.extractor.channel.ChannelTabInfo.getMoreItems(service, tab, Cursors.take(cursor))
+            page(more.items.filterIsInstance<StreamInfoItem>().map { it.toVideo() }, more.nextPage)
+        }
+    }
+
+    /**
      * A channel's latest uploads: its RSS feed first (one cheap request, no paging), the channel
      * page's first uploads when the feed fails or comes back empty, as PipePipe's FeedLoadManager
      * falls back. YouTube's RSS endpoint answers 404 / 500 for whole days at a time.
