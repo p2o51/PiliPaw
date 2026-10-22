@@ -135,7 +135,22 @@ internal fun BoxScope.YtPictureChrome(chrome: YtChrome, seek: SeekState, reveal:
                     translationY = (1f - p) * -8.dp.toPx()
                 },
         ) {
-            CornerButton(YoinSymbols.Back, "收起", onCollapse)
+            if (com.gpo.pilipala.feature.sources.LocalBackHasMore.current) {
+                // Videos to go back to (继续播放): the arrow and three dots, one pill; it opens the back menu.
+                androidx.compose.material3.Surface(
+                    onClick = onCollapse,
+                    shape = YoinShapeTokens.Full,
+                    color = CornerPlate,
+                    contentColor = OnVideo,
+                    modifier = Modifier.height(40.dp),
+                ) {
+                    Box(Modifier.padding(horizontal = 9.dp), contentAlignment = Alignment.Center) {
+                        com.gpo.pilipala.feature.sources.TrailBackGlyph(more = true, tint = OnVideo)
+                    }
+                }
+            } else {
+                CornerButton(YoinSymbols.Back, "收起", onCollapse)
+            }
             Row(Modifier.align(Alignment.TopEnd).background(CornerPlate, YoinShapeTokens.Full), verticalAlignment = Alignment.CenterVertically) {
                 if (activity != null && pipSupported(activity)) {
                     GroupButton(PiliSymbols.Pip, "画中画") { enterPip(activity, Player.videoAspect, title = Player.session?.title.orEmpty()) }

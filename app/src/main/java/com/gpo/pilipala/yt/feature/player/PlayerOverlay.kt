@@ -231,6 +231,18 @@ fun PlayerOverlayHost() {
             throw e
         }
     }
+    // 继续播放 with videos to go back to (related ones played in place): back opens the back menu
+    // instead of docking; registered after the dock's handler so it comes first, and standing down
+    // while the menu is open, so the next back docks (返回首页).
+    val ytTrail = com.gpo.pilipala.feature.sources.WatchTrail.entries.filter { it.source == com.gpo.pilipala.core.source.VideoSource.YouTube }
+    val trailMenu = com.gpo.pilipala.feature.sources.rememberTrailMenuState()
+    val ytTrailOn = com.gpo.pilipala.feature.sources.KeepPlaying.on && expanded && ytTrail.isNotEmpty() && !Player.fullscreen
+    com.gpo.pilipala.feature.sources.TrailBackHandler(trailMenu, ytTrailOn)
+    LaunchedEffect(expanded) { if (!expanded) trailMenu.dismiss() }
+    // While the player itself is being pulled down (返回首页 by gesture) the menu steps aside.
+    LaunchedEffect(trailMenu) {
+        androidx.compose.runtime.snapshotFlow { progress.value < 0.995f }.collect { trailMenu.aside = it }
+    }
 
     // 后台播放 off: leaving the app pauses, coming back resumes what was playing.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -423,7 +435,9 @@ fun PlayerOverlayHost() {
                         HoldSpeedPill(feedback, big = false, modifier = Modifier.align(Alignment.Center))
                     }
                     if (expanded && p > 0.99f && !Player.fullscreen && !Player.audioOnly && session.error == null) {
-                        YtPictureChrome(chrome, seek, reveal, onCollapse = { Player.expanded = false })
+                        androidx.compose.runtime.CompositionLocalProvider(com.gpo.pilipala.feature.sources.LocalBackHasMore provides ytTrailOn) {
+                            YtPictureChrome(chrome, seek, reveal, onCollapse = { if (ytTrailOn && !trailMenu.isOpen) trailMenu.open() else Player.expanded = false })
+                        }
                     }
                 }
                 // Over the picture: the scrub preview rides above the seek bar's thumb.
@@ -433,6 +447,25 @@ fun PlayerOverlayHost() {
                 ListenScreen(overlay = { progress.value }, from = { pictureRect })
             }
         }
+        // The back menu, out of the picture's back button (its top start, 10dp in).
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val anchor = pictureRect
+        com.gpo.pilipala.feature.sources.TrailMenu(
+            menu = trailMenu,
+            entries = ytTrail,
+            anchorX = with(density) { (anchor?.left ?: 0f).toDp() } + 10.dp,
+            anchorY = with(density) { (anchor?.top ?: 0f).toDp() } + 10.dp,
+            onPick = { e ->
+                (e.target as? YtTrailTarget)?.let { t ->
+                    trailMenu.close()
+                    Player.play(t.url, t.preview)
+                }
+            },
+            onHome = {
+                trailMenu.dismiss()
+                Player.expanded = false
+            },
+        )
         // Over everything, the overlay included: it takes the video surface while it is up.
         if (Player.fullscreen) FullscreenPlayer(session)
     }

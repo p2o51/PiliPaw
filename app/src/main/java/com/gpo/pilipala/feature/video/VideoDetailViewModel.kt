@@ -175,9 +175,14 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
                             cid = cid,
                             title = d.title,
                             cover = d.pic,
-                            startPositionMs = if (cid == route.cid) route.progress * 1000 else 0,
+                            startPositionMs = when {
+                                pendingStartMs > 0 -> pendingStartMs
+                                cid == route.cid -> route.progress * 1000
+                                else -> 0
+                            },
                         )
                     }
+                    pendingStartMs = 0
                     actions.bind(d.aid, d.bvid, d.like, d.coin, d.favorite, d.share)
                     up.bind(d.ownerMid)
                 }
@@ -212,6 +217,27 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
         // Unknown cid: no target until the detail resolves it (the layout pauses the last video).
         target = if (item.cid > 0) {
             PlayTarget(bvid = item.bvid, aid = item.aid, cid = item.cid, title = item.title, cover = item.cover)
+        } else {
+            null
+        }
+        tags = emptyList()
+        load(keepContent = true)
+    }
+
+    /** Where the next video switched to in place resumes (the back menu's), until its stream is known. */
+    private var pendingStartMs = 0L
+
+    /**
+     * 继续播放's in-place switch: a related video, a link, or one picked back from the back menu,
+     * on this same page, resuming at [startMs].
+     */
+    fun openTarget(bvid: String, aid: Long, cid: Long, title: String, cover: String, startMs: Long) {
+        if (bvid.isEmpty() || bvid == this.bvid) return
+        this.bvid = bvid
+        this.cid = cid.coerceAtLeast(0)
+        pendingStartMs = startMs.coerceAtLeast(0)
+        target = if (cid > 0) {
+            PlayTarget(bvid = bvid, aid = aid, cid = cid, title = title, cover = cover, startPositionMs = pendingStartMs)
         } else {
             null
         }

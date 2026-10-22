@@ -595,7 +595,22 @@ internal fun InlineCorners(
                 translationY = (1f - p) * -8.dp.toPx()
             },
     ) {
-        CornerButton(YoinSymbols.Back, "返回", actions.onBack)
+        if (com.gpo.pilipala.feature.sources.LocalBackHasMore.current) {
+            // Videos to go back to (继续播放): the arrow and three dots, one pill; it opens the back menu.
+            androidx.compose.material3.Surface(
+                onClick = actions.onBack,
+                shape = YoinShapeTokens.Full,
+                color = CornerPlate,
+                contentColor = OnVideo,
+                modifier = Modifier.height(40.dp),
+            ) {
+                Box(Modifier.padding(horizontal = 9.dp), contentAlignment = Alignment.Center) {
+                    com.gpo.pilipala.feature.sources.TrailBackGlyph(more = true, tint = OnVideo)
+                }
+            }
+        } else {
+            CornerButton(YoinSymbols.Back, "返回", actions.onBack)
+        }
         Row(
             Modifier
                 .align(Alignment.TopEnd)

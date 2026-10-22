@@ -406,6 +406,26 @@ object Player {
 
     /** Opens [url] in the player, expanded. Tapping the video that is already playing just expands it. */
     fun play(url: String, preview: VideoItem? = null) {
+        // 继续播放: a video opened on the open player (a related one, a link) replaces this one in
+        // place, and this one goes on the back menu; any other open starts a new watch.
+        val trail = com.gpo.pilipala.feature.sources.WatchTrail
+        val current = session
+        if (expandedState && current != null && current.url != url && com.gpo.pilipala.feature.sources.KeepPlaying.on) {
+            trail.push(
+                com.gpo.pilipala.feature.sources.TrailEntry(
+                    key = current.url,
+                    source = com.gpo.pilipala.core.source.VideoSource.YouTube,
+                    title = current.title,
+                    cover = current.thumbnail,
+                    positionMs = exo.currentPosition.coerceAtLeast(0),
+                    durationMs = durationMs,
+                    target = YtTrailTarget(current.url, current.preview),
+                ),
+            )
+            trail.forget(url)
+        } else if (!expandedState) {
+            trail.clear()
+        }
         expandedState = true
         // Opened from a card: the player grows from its own place, not from where the bar was.
         com.gpo.pilipala.feature.sources.KeepPlaying.openFrom = null
@@ -490,6 +510,7 @@ object Player {
 
     /** Mini bar's close: playback stops and the overlay goes away. */
     fun close() {
+        com.gpo.pilipala.feature.sources.WatchTrail.clear()
         savePosition()
         loadJob?.cancel()
         exo.stop()
@@ -502,3 +523,6 @@ object Player {
         syncBackgroundHost()
     }
 }
+
+/** What reopens a YouTube video from the back menu (WatchTrail): its url and card. */
+data class YtTrailTarget(val url: String, val preview: VideoItem?)

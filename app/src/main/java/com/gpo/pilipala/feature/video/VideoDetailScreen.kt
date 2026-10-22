@@ -5,6 +5,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -114,16 +117,20 @@ fun VideoDetailScreen(route: Route.Video) {
     val vm = viewModel { VideoDetailViewModel(route) }
     CoverTheme(vm.cover) {
         // A swipe down on the inline picture leaves the page (into the mini bar with 继续播放).
+        // 继续播放 with videos to go back to: the back button shows its three dots.
+        val backHasMore = com.gpo.pilipala.feature.sources.KeepPlaying.on && vm.queue == null &&
+            com.gpo.pilipala.feature.sources.WatchTrail.entries.any { it.source == com.gpo.pilipala.core.source.VideoSource.Bilibili }
         androidx.compose.runtime.CompositionLocalProvider(
             com.gpo.pilipala.feature.player.LocalPictureSwipeDown provides rememberVideoSwipeDown(),
+            com.gpo.pilipala.feature.sources.LocalBackHasMore provides backHasMore,
         ) {
-            VideoDetailContent(vm)
+            VideoDetailContent(vm, route)
         }
     }
 }
 
 @Composable
-private fun VideoDetailContent(vm: VideoDetailViewModel) {
+private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
     val nav = LocalNavigator.current
     val context = LocalContext.current
     val toast = rememberToast()
@@ -230,6 +237,11 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     // current page and the flight between them, so playback never reloads.
     // Pinching the picture in flies it into 仅听声音 (filled in by the listen overlay below).
     val pinchToListen = remember { PinchToListenHost() }
+    // 继续播放's way back: videos this page switched away from in place (WatchTrail).
+    val trailMenu = com.gpo.pilipala.feature.sources.rememberTrailMenuState()
+    val trailEntries = com.gpo.pilipala.feature.sources.WatchTrail.entries.filter { it.source == com.gpo.pilipala.core.source.VideoSource.Bilibili }
+    val trailOn = com.gpo.pilipala.feature.sources.KeepPlaying.on && vm.queue == null && trailEntries.isNotEmpty()
+    val latestTrailOn by rememberUpdatedState(trailOn)
     val pageTransitions = LocalPageTransitions.current
     val heroKey = remember(vm.bvid) { Route.Video(bvid = vm.bvid).sharedKey() }
     val player = remember(vm, playerState) {
@@ -240,7 +252,13 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
                     state = playerState,
                     fullscreen = vm.fullscreen,
                     onFullscreenChange = { latestFullscreenChange(it) },
-                    onBack = { if (vm.fullscreen) vm.fullscreen = false else nav.pop() },
+                    onBack = {
+                        when {
+                            vm.fullscreen -> vm.fullscreen = false
+                            latestTrailOn -> trailMenu.open()
+                            else -> nav.pop()
+                        }
+                    },
                     // While a back flies a copy of the picture out (to its card, the bar), the
                     // page draws none of its own: never two pictures. Not drawn at all, so a
                     // SurfaceView punches no hole either.
@@ -318,6 +336,61 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     val anchorAid = vm.detail?.aid ?: 0L
     LaunchedEffect(anchorAid) {
         if (anchorAid > 0 && ReplyAnchors.has(anchorAid, 1)) compactPagerState.animateScrollToPage(1)
+    }
+
+    // 继续播放: a related video or a link opened here takes this page's place (the one left goes on
+    // the back menu, where it was); only while this page is the one on top.
+    val latestCtrl by rememberUpdatedState(ctrl)
+    val trailEntryOf: () -> com.gpo.pilipala.feature.sources.TrailEntry? = {
+        val t = vm.target
+        if (t == null || vm.bvid.isEmpty()) {
+            null
+        } else {
+            com.gpo.pilipala.feature.sources.TrailEntry(
+                key = vm.bvid,
+                source = com.gpo.pilipala.core.source.VideoSource.Bilibili,
+                title = vm.detail?.title ?: t.title,
+                cover = vm.cover.ifEmpty { t.cover },
+                positionMs = playerState.positionMs,
+                durationMs = playerState.durationMs,
+                target = Route.Video(bvid = vm.bvid, aid = vm.detail?.aid ?: t.aid, cid = vm.cid, cover = vm.cover, title = vm.detail?.title ?: t.title),
+            )
+        }
+    }
+    val switchTo: (Route.Video, Long) -> Unit = { r, startMs ->
+        val bv = r.bvid.ifEmpty { if (r.aid > 0) com.gpo.pilipala.core.util.IdUtils.av2bv(r.aid) else "" }
+        trailEntryOf()?.let { com.gpo.pilipala.feature.sources.WatchTrail.push(it) }
+        com.gpo.pilipala.feature.sources.WatchTrail.forget(bv)
+        com.gpo.pilipala.feature.sources.MiniLog.event("in place", "${vm.bvid} → $bv at ${startMs / 1000}s")
+        vm.openTarget(bv, r.aid, r.cid, r.title, r.cover, startMs)
+    }
+    DisposableEffect(vm) {
+        val take: (Any) -> Boolean = take@{ r ->
+            val v = r as? Route.Video ?: return@take false
+            if (!com.gpo.pilipala.feature.sources.KeepPlaying.on || vm.queue != null || v.playlistId.isNotEmpty()) return@take false
+            if (nav.backStack.lastOrNull() != route || latestCtrl == null) return@take false
+            if (v.bvid.isNotEmpty() && v.bvid == vm.bvid) return@take true
+            trailMenu.dismiss()
+            switchTo(v, v.progress * 1000)
+            true
+        }
+        com.gpo.pilipala.feature.sources.WatchTrail.inPlace = take
+        onDispose { if (com.gpo.pilipala.feature.sources.WatchTrail.inPlace === take) com.gpo.pilipala.feature.sources.WatchTrail.inPlace = null }
+    }
+    // A switch in place starts the page over: 简介 from its top.
+    val switchedBvid = remember { arrayOf(vm.bvid) }
+    LaunchedEffect(vm.bvid) {
+        if (switchedBvid[0] != vm.bvid) {
+            switchedBvid[0] = vm.bvid
+            if (compactPagerState.currentPage != 0) compactPagerState.animateScrollToPage(0)
+        }
+    }
+    // Back with videos to go back to opens the menu (registered before the in-page handlers below,
+    // fullscreen's and the immersive pager's, so they still come first).
+    com.gpo.pilipala.feature.sources.TrailBackHandler(trailMenu, enabled = trailOn && !vm.fullscreen && !(immersiveOn && handoff.fromClassic))
+    // The menu steps aside while the page itself is leaving (its 返回首页), back if that is cancelled.
+    LaunchedEffect(trailMenu, pageTransitions) {
+        snapshotFlow { pageTransitions?.backIdle != false }.collect { idle -> trailMenu.aside = !idle }
     }
 
     // Back from an immersive pager opened on this page returns to the classic layout.
@@ -512,6 +585,27 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         if (ctrl != null && (listening || listenShown)) {
             ListenScreen(vm, ctrl, queue, gate, flight, onTriple = { sheet = VideoSheet.Triple })
         }
+        // 继续播放's back menu, out of the picture's back button (top start of the player).
+        val statusTop = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
+        val twoPane = isTwoPane()
+        com.gpo.pilipala.feature.sources.TrailMenu(
+            menu = trailMenu,
+            entries = trailEntries,
+            anchorX = if (twoPane && !showImmersive) 26.dp else 10.dp,
+            anchorY = statusTop + if (twoPane && !showImmersive) 18.dp else 10.dp,
+            onPick = { e ->
+                (e.target as? Route.Video)?.let { r ->
+                    trailMenu.close()
+                    com.gpo.pilipala.feature.sources.WatchTrail.take(e.key)
+                    switchTo(r, e.positionMs)
+                }
+            },
+            onHome = {
+                // The page leaves and its video docks in the bar (the usual flight).
+                trailMenu.dismiss()
+                nav.pop()
+            },
+        )
     }
 
     val d = vm.detail

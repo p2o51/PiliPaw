@@ -355,6 +355,8 @@ internal object BiliKeeper {
     fun close() {
         val c = held ?: return
         held = null
+        // Swiped away, or the window closed: the watch's way back goes with it.
+        WatchTrail.clear()
         PlayerHost.released(PlayerSlot.Bili(c))
         c.dispose()
     }

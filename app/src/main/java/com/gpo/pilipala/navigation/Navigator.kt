@@ -22,6 +22,14 @@ class Navigator(internal val backStack: NavBackStack<NavKey>) {
 
     /** Any page of the app, the YouTube part's included (yt.navigation.Route). */
     fun pushKey(route: NavKey) {
+        if (route is Route.Video) {
+            val trail = com.gpo.pilipala.feature.sources.WatchTrail
+            // 继续播放: a video opened on the video page (a related one, a link) takes the page's
+            // place there instead of stacking another page.
+            if (trail.inPlace?.invoke(route) == true) return
+            // Any other open starts a new watch (the docked picture reopening its page keeps it).
+            if (!com.gpo.pilipala.feature.sources.KeepPlaying.openingFromDock) trail.clear()
+        }
         transitions?.beforePush(route)
         backStack.add(route)
     }
