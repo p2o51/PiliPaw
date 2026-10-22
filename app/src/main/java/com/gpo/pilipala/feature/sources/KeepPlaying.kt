@@ -132,6 +132,9 @@ object KeepPlaying {
      */
     internal var openFrom by mutableStateOf<Rect?>(null)
 
+    /** The docked video's shape (width / height) as last known: the bar's window keeps it while no player says. */
+    internal var knownAspect: Float? = null
+
     /** Where a video's page that was opened from the bar's picture lands back (window px). */
     internal var landing by mutableStateOf<Rect?>(null)
 
@@ -545,11 +548,19 @@ private fun restAxisOf(rest: MiniRest, dims: MiniDims, canMerge: Boolean, maxAxi
 /** The picture's shape, as the player reports it (16:9 until it says, or with no picture). */
 @Composable
 private fun rememberVideoAspect(player: androidx.media3.common.Player?): Float {
-    var aspect by remember(player) { mutableFloatStateOf(16f / 9f) }
+    // The picture's own shape from the very first frame: read from the player as this composes
+    // (a 16:9 start, corrected a frame later, sized a portrait window 16:9 and back), else the
+    // last one known (the page that flew it here, a moment without a player).
+    var aspect by remember(player) {
+        mutableFloatStateOf(player?.videoSize?.let(::aspectOf) ?: KeepPlaying.knownAspect ?: (16f / 9f))
+    }
     DisposableEffect(player) {
         if (player == null) return@DisposableEffect onDispose { }
         fun read(v: androidx.media3.common.VideoSize) {
-            if (v.width > 0 && v.height > 0) aspect = (v.width * v.pixelWidthHeightRatio / v.height).coerceIn(0.4f, 2.5f)
+            aspectOf(v)?.let {
+                aspect = it
+                KeepPlaying.knownAspect = it
+            }
         }
         read(player.videoSize)
         val l = object : androidx.media3.common.Player.Listener {
@@ -628,7 +639,7 @@ fun MiniBarHost() {
     // Playing is rebuilt with every tick of progress; gestures read the latest one instead of
     // restarting (a restart cut every pinch and swipe short).
     val latest by rememberUpdatedState(p)
-    val aspect = if (p.player != null) rememberVideoAspect(p.player) else 16f / 9f
+    val aspect = rememberVideoAspect(p.player)
 
     BoxWithConstraints(Modifier.fillMaxSize().navigationBarsPadding()) {
         val density = LocalDensity.current
@@ -1422,3 +1433,7 @@ internal object MiniLog {
         android.util.Log.d("PiliMini", "#$id $what $detail ($caller)")
     }
 }
+
+/** A video size's width / height, held to what the window can show; null while unknown. */
+private fun aspectOf(v: androidx.media3.common.VideoSize): Float? =
+    if (v.width > 0 && v.height > 0) (v.width * v.pixelWidthHeightRatio / v.height).coerceIn(0.4f, 2.5f) else null

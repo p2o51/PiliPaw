@@ -263,14 +263,21 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     }
     val compactPagerState = rememberPagerState { 2 }
 
-    // Back flies the picture's current frame home into the card it was opened from (PageHero.kt):
-    // the classic layout's inline picture only, as laid out while no back runs.
+    // Back flies the picture's current frame home into the card it was opened from, or into the
+    // bar or window it was opened from (PageHero.kt): the classic layout's inline picture or the
+    // immersive pager's, as laid out while no back runs.
     val heroView = LocalView.current
     val transitions = LocalPageTransitions.current
     val heroRect = remember { arrayOfNulls<Rect>(1) }
+    val heroImmersiveRect = remember { arrayOfNulls<Rect>(1) }
     LaunchedEffect(handoff) {
         snapshotFlow { handoff.classicRect }.collect { r ->
             if (transitions?.backIdle != false) heroRect[0] = r
+        }
+    }
+    LaunchedEffect(handoff) {
+        snapshotFlow { handoff.immersiveRect }.collect { r ->
+            if (transitions?.backIdle != false) heroImmersiveRect[0] = r
         }
     }
     // 仅听声音 shows no picture (its video track is off): the listen page's cover flies home
@@ -284,11 +291,11 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
             val image = lf.coverLayer?.toImageBitmap() ?: return@PageHeroEffect null
             return@PageHeroEffect image to rect
         }
-        val rect = heroRect[0] ?: return@PageHeroEffect null
-        if (vm.fullscreen || vm.immersive == true) return@PageHeroEffect null
+        if (vm.fullscreen || handoff.flight != null) return@PageHeroEffect null
+        val rect = (if (showImmersive) heroImmersiveRect[0] else heroRect[0]) ?: return@PageHeroEffect null
         val view = findVideoView(heroView.rootView, rect) ?: return@PageHeroEffect null
         val frame = captureVideoFrame(view, view.width, view.height) ?: return@PageHeroEffect null
-        // The video view sits fitted, centred, in the 16:9 slot: its rect as laid out at rest.
+        // The video view sits fitted, centred, in its slot: its rect as laid out at rest.
         // (Its place in the window is not used: a back gesture has already shrunk and moved the
         // page, and the flight poses the rect the way the page is posed, so that place would be
         // posed twice: the copy appeared below and smaller than the picture it replaces.)
@@ -298,6 +305,8 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
             rect.center.x + view.width / 2f,
             rect.center.y + view.height / 2f,
         )
+        // The picture's shape goes with it: a bar or window it lands in starts in that shape.
+        ctrl?.videoAspect?.takeIf { it.isFinite() && it > 0f }?.let { com.gpo.pilipala.feature.sources.KeepPlaying.knownAspect = it.coerceIn(0.4f, 2.5f) }
         val loc = IntArray(2).also { view.getLocationInWindow(it) }
         com.gpo.pilipala.feature.sources.MiniLog.event(
             "hero start",

@@ -71,6 +71,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.feature.player.BiliPlayerState
 import com.gpo.pilipala.feature.player.PiliPlayerController
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.runtime.rememberUpdatedState
 import com.gpo.pilipala.feature.player.PlayerSheet
 import com.gpo.pilipala.feature.player.SheetPage
 import com.gpo.pilipala.feature.reply.ReplyAnchors
@@ -172,6 +174,10 @@ internal fun PortraitVideoLayout(
     val commentCount = currentDetail?.reply ?: 0L
     val seek: (Long) -> Unit = { s -> playerState.seekTo(s * 1000) }
 
+    // Pulled down past the first video (nothing above it to page to), the page leaves the way the
+    // classic picture's swipe down does: into the bar or window it came from, with the finger.
+    val swipeDown = rememberPagerSwipeDown(pager) { ctrl }
+
     // The picture takes over from the classic layout's; the overlay springs in over it.
     val reveal = remember { Animatable(0f) }
     val revealSpec = YoinMotion.defaultSpatialSpec<Float>()
@@ -217,7 +223,7 @@ internal fun PortraitVideoLayout(
                     ) { cover -> CoverBackdrop(cover, Modifier.fillMaxSize()) }
                 }
                 Row(Modifier.fillMaxSize()) {
-                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                    Box(Modifier.weight(1f).fillMaxHeight().nestedScroll(swipeDown)) {
                         VerticalPager(
                             state = pager,
                             modifier = Modifier.fillMaxSize(),
@@ -529,4 +535,61 @@ private fun ImmersiveTheme(content: @Composable () -> Unit) {
 @Composable
 private fun ImmersiveSystemBars() {
     LightBarIcons(status = true, navigation = true)
+}
+
+/**
+ * The immersive pager's swipe down out of the page: once the pager can go no further up (its
+ * first video) a downward drag it leaves unused drives the page's back
+ * ([com.gpo.pilipala.feature.player.LocalPictureSwipeDown]) with the finger, and the release
+ * commits or springs back as the classic picture's does. Back up past where it began undoes it.
+ */
+@Composable
+private fun rememberPagerSwipeDown(
+    pager: androidx.compose.foundation.pager.PagerState,
+    ctrl: () -> PiliPlayerController?,
+): androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+    val swipe = com.gpo.pilipala.feature.player.LocalPictureSwipeDown.current
+    val latestCtrl by rememberUpdatedState(ctrl)
+    return remember(swipe, pager) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            var active = false
+            var travel = 0f
+
+            override fun onPreScroll(
+                available: androidx.compose.ui.geometry.Offset,
+                source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
+            ): androidx.compose.ui.geometry.Offset {
+                if (!active || swipe == null) return androidx.compose.ui.geometry.Offset.Zero
+                // While it leaves, every move is the leave's (the pager stays on its page).
+                travel = (travel + available.y).coerceAtLeast(0f)
+                swipe.drag(travel)
+                return androidx.compose.ui.geometry.Offset(0f, available.y)
+            }
+
+            override fun onPostScroll(
+                consumed: androidx.compose.ui.geometry.Offset,
+                available: androidx.compose.ui.geometry.Offset,
+                source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
+            ): androidx.compose.ui.geometry.Offset {
+                if (active || swipe == null || source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) {
+                    return androidx.compose.ui.geometry.Offset.Zero
+                }
+                if (available.y <= 0f || pager.currentPage != 0) return androidx.compose.ui.geometry.Offset.Zero
+                val c = latestCtrl() ?: return androidx.compose.ui.geometry.Offset.Zero
+                if (!swipe.start(c)) return androidx.compose.ui.geometry.Offset.Zero
+                active = true
+                travel = available.y
+                swipe.drag(travel)
+                return androidx.compose.ui.geometry.Offset(0f, available.y)
+            }
+
+            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                if (!active || swipe == null) return androidx.compose.ui.unit.Velocity.Zero
+                active = false
+                swipe.end(travel, available.y)
+                travel = 0f
+                return available
+            }
+        }
+    }
 }
