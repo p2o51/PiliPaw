@@ -59,8 +59,8 @@ import kotlinx.coroutines.launch
  * 仅听声音 over the YouTube player: the app's one listen page ([ListenPage]) on the YouTube
  * player. The picture ([from]: its window rect) flies into the cover on the way in, and the
  * cover back into the picture for 显示画面. [overlay] is the player's own open progress (1 open,
- * 0 the mini bar): as a back or 收起 docks the player, the page folds into the picture over the
- * first quarter of the way and the picture carries on to the bar; opening the bar unfolds it.
+ * 0 the mini bar): as a back or 收起 docks the player, the page folds into the picture all the
+ * way down to the bar; opening the bar unfolds it.
  */
 @Composable
 fun ListenScreen(overlay: () -> Float, from: () -> Rect?) {
@@ -70,7 +70,9 @@ fun ListenScreen(overlay: () -> Float, from: () -> Rect?) {
     val inSpec = YoinMotion.slowSpatialSpec<Float>(YoinMotionRole.Standard)
     LaunchedEffect(listening) { own.animateTo(if (listening) 1f else 0f, if (listening) inSpec else ShowVideoSpec) }
     val latestOverlay by rememberUpdatedState(overlay)
-    val progress: () -> Float = remember { { min(own.value, ((latestOverlay() - 0.75f) / 0.25f).coerceIn(0f, 1f)) } }
+    // The fold runs the whole way down, so the cover visibly flies into the bar's tile and the bar
+    // takes over only as it lands (folding over the first quarter let the bar catch it at once).
+    val progress: () -> Float = remember { { min(own.value, latestOverlay().coerceIn(0f, 1f)) } }
     val shown by remember { derivedStateOf { progress() > 0.001f } }
     if (!shown) return
 
