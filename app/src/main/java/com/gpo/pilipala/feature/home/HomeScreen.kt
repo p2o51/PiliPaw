@@ -2,6 +2,7 @@ package com.gpo.pilipala.feature.home
 
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -46,6 +47,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -220,6 +223,8 @@ fun HomeScreen() {
             // Both sources: right after 推荐 / 关注 (when selected), the accounts as avatars, inline in the row.
             afterChip = { i ->
                 val key = tabs.getOrNull(i)?.key
+                val tailIn = YoinMotion.defaultEffectsSpec<Float>()
+                val tailOut = YoinMotion.fastEffectsSpec<Float>()
                 androidx.compose.animation.AnimatedVisibility(
                     visible = mixed && i == pagerState.targetPage && key in splittable,
                     // Behind the chip it tucks under, and unclipped so the tuck shows while it grows.
@@ -227,10 +232,23 @@ fun HomeScreen() {
                     // One standard spring both ways: going between 推荐 and 关注 one tail folds exactly as
                     // the other unfolds, so the row's width holds and the chips to the right stay put
                     // (a bouncy grow against a quicker fold made them wobble).
-                    enter = fadeIn(YoinMotion.defaultEffectsSpec()) + androidx.compose.animation.expandHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), expandFrom = Alignment.Start, clip = false),
-                    exit = fadeOut(YoinMotion.fastEffectsSpec()) + androidx.compose.animation.shrinkHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), shrinkTowards = Alignment.Start, clip = false),
+                    enter = androidx.compose.animation.expandHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), expandFrom = Alignment.Start, clip = false),
+                    exit = androidx.compose.animation.shrinkHorizontally(YoinMotion.defaultSpatialSpec(YoinMotionRole.Standard), shrinkTowards = Alignment.Start, clip = false),
                 ) {
-                    Box(Modifier.padding(start = 8.dp)) {
+                    // Not fadeIn / fadeOut: their layer goes offscreen below full alpha, and that buffer
+                    // stops at the layout's bounds, cutting the tuck off until the fade ends.
+                    val tailAlpha by transition.animateFloat(
+                        transitionSpec = { if (targetState == androidx.compose.animation.EnterExitState.Visible) tailIn else tailOut },
+                        label = "tailAlpha",
+                    ) { if (it == androidx.compose.animation.EnterExitState.Visible) 1f else 0f }
+                    Box(
+                        Modifier
+                            .graphicsLayer {
+                                alpha = tailAlpha
+                                compositingStrategy = CompositingStrategy.ModulateAlpha
+                            }
+                            .padding(start = 8.dp),
+                    ) {
                         com.gpo.pilipala.feature.sources.InlineSourceChips()
                     }
                 }
