@@ -156,7 +156,11 @@ private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
         if (queue == null && vm.listening) playerState.setAudioOnly(true)
         onDispose {
             if (queue == null) vm.listening = playerState.listening
-            playerState.attachQueue(null)
+            // Kept in the mini bar (继续播放): the queue stays with the player, so the list plays on
+            // and 仅听声音 holds (letting the queue go switched the picture back on, and the page
+            // reopened from the bar came back as video).
+            val kept = (playerState as? PiliPlayerController)?.let(com.gpo.pilipala.feature.sources.BiliKeeper::wouldKeep) == true
+            if (!kept) playerState.attachQueue(null)
         }
     }
     LaunchedEffect(playerState, vm.detail?.ownerName) { playerState.artist = vm.detail?.ownerName.orEmpty() }

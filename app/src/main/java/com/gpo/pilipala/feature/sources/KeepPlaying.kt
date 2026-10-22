@@ -365,7 +365,7 @@ internal object BiliKeeper {
     }
 
     internal fun route(c: PiliPlayerController): Route? = c.target?.let { t ->
-        Route.Video(bvid = t.bvid, aid = t.aid, cid = t.cid, cover = t.cover, title = t.title, audioOnly = c.audioOnly)
+        Route.Video(bvid = t.bvid, aid = t.aid, cid = t.cid, cover = t.cover, title = t.title, playlistId = c.queue?.id.orEmpty(), audioOnly = c.audioOnly)
     }
 }
 
