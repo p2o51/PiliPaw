@@ -43,6 +43,10 @@ import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.source.Sources
 import com.gpo.pilipala.core.source.VideoSource
+import com.gpo.pilipala.feature.sources.SourceDotForMenu
+import com.gpo.pilipala.yt.core.account.Accounts
+import com.gpo.pilipala.yt.core.account.Profile
+import com.gpo.pilipala.yt.feature.account.SignIn
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.FameCount
@@ -117,22 +121,33 @@ private fun SettingsList(
     val rcmd by AppSettings.rcmdSource.state.collectAsState()
     val toast = rememberToast()
     val scope = rememberCoroutineScope()
-    var confirmLogout by remember { mutableStateOf(false) }
     val twoPane = selected != null
     val linkState = rememberLinkHostState()
     val sources by Sources.enabled.collectAsState()
-    // YouTube's block shows only when it is ticked; then each account is headed by its site.
-    val bothAccounts = VideoSource.YouTube in sources
-    val logoutLabel = if (bothAccounts) "退出${VideoSource.Bilibili.label}登录" else "退出登录"
+    val ytProfile by Accounts.youtube.collectAsState()
+    // Only ticked sources show their account; with both, each is headed by its site.
+    val bothAccounts = sources.size > 1
+    val signedIn = VideoSource.entries.filter { source ->
+        source in sources && when (source) {
+            VideoSource.Bilibili -> user != null
+            VideoSource.YouTube -> ytProfile is Profile.SignedIn
+        }
+    }
+    var pickLogout by remember { mutableStateOf(false) }
+    var confirmLogout by remember { mutableStateOf<VideoSource?>(null) }
 
     SettingsScaffold(title = "设置", pageColor = pageColor) {
-        AccountBlock(
-            label = if (bothAccounts) VideoSource.Bilibili.label else null,
-            user = user,
-            onLogin = { nav.push(Route.Login) },
-            onProfile = { u -> nav.push(Route.Member(u.mid, u.face, u.name)) },
-        )
-        YouTubeAccountBlock()
+        if (VideoSource.Bilibili in sources) {
+            AccountBlock(
+                label = if (bothAccounts) VideoSource.Bilibili.label else null,
+                user = user,
+                onLogin = { nav.push(Route.Login) },
+                onProfile = { u -> nav.push(Route.Member(u.mid, u.face, u.name)) },
+            )
+        }
+        if (VideoSource.YouTube in sources) {
+            YouTubeAccountBlock(label = if (bothAccounts) VideoSource.YouTube.label else null)
+        }
         OpenLinksCard(linkState)
 
         SettingsGroup("偏好") {
@@ -194,52 +209,79 @@ private fun SettingsList(
             }
         }
 
-        if (user != null) {
+        // One 退出登录 for every signed-in account shown; with two, a sheet asks which.
+        if (signedIn.isNotEmpty()) {
             SettingsGroup(null) {
                 item {
                     SettingsItem(
-                        title = logoutLabel,
+                        title = "退出登录",
                         icon = PiliSymbols.Logout,
                         titleColor = MaterialTheme.colorScheme.error,
-                        onClick = { confirmLogout = true },
+                        onClick = { if (signedIn.size > 1) pickLogout = true else confirmLogout = signedIn.single() },
                     )
                 }
             }
         }
     }
 
-    if (confirmLogout) {
+    if (pickLogout) {
+        ChoiceSheet(
+            title = "退出登录",
+            choices = signedIn.map { Choice<VideoSource?>(it, it.label) },
+            selected = null,
+            onSelect = { confirmLogout = it },
+            onDismiss = { pickLogout = false },
+            summary = { source ->
+                when (source) {
+                    VideoSource.Bilibili -> user?.name
+                    VideoSource.YouTube -> (ytProfile as? Profile.SignedIn)?.let { it.name.ifEmpty { it.handle } }
+                    null -> null
+                }
+            },
+            leading = { source -> if (source != null) SourceDotForMenu(source, 40.dp) },
+        )
+    }
+
+    confirmLogout?.let { source ->
+        val title = logoutTitle(source)
         AlertDialog(
-            onDismissRequest = { confirmLogout = false },
+            onDismissRequest = { confirmLogout = null },
             icon = { Icon(PiliSymbols.Logout, null) },
-            title = { Text(logoutLabel) },
+            title = { Text(title) },
             confirmButton = {
                 TextButton(onClick = {
-                    confirmLogout = false
-                    clearAllCookies()
-                    toast("已退出登录")
-                    scope.launch { BiliClient.ensureBuvid() }
+                    confirmLogout = null
+                    when (source) {
+                        VideoSource.Bilibili -> {
+                            clearAllCookies()
+                            scope.launch { BiliClient.ensureBuvid() }
+                        }
+                        VideoSource.YouTube -> SignIn.signOut()
+                    }
+                    toast("已$title")
                 }) { Text("退出") }
             },
-            dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { confirmLogout = null }) { Text("取消") } },
         )
     }
 }
 
+private fun logoutTitle(source: VideoSource): String = when (source) {
+    VideoSource.Bilibili -> "退出哔哩哔哩登录"
+    VideoSource.YouTube -> "退出 YouTube 登录"
+}
+
 /**
- * The YouTube account beside the Bilibili one, once YouTube is ticked, under its own heading:
- * signed in, its avatar, name and handle (opens its page: subscriptions, library, its own
- * options); signed out, 登录.
+ * The YouTube account, under [label] when Bilibili's sits beside it: signed in, its avatar,
+ * name and handle (opens its page: subscriptions, library, its own options); signed out, 登录.
  */
 @Composable
-private fun YouTubeAccountBlock() {
-    val sources by Sources.enabled.collectAsState()
-    if (VideoSource.YouTube !in sources) return
-    val profile by com.gpo.pilipala.yt.core.account.Accounts.youtube.collectAsState()
+private fun YouTubeAccountBlock(label: String?) {
+    val profile by Accounts.youtube.collectAsState()
     val ytNav = com.gpo.pilipala.yt.navigation.LocalNavigator.current
-    val p = profile as? com.gpo.pilipala.yt.core.account.Profile.SignedIn
+    val p = profile as? Profile.SignedIn
     val circle = androidx.compose.foundation.shape.CircleShape
-    SettingsGroup(VideoSource.YouTube.label) {
+    SettingsGroup(label) {
         item {
             SettingsItem(
                 title = p?.name?.ifEmpty { p.handle.ifEmpty { "已登录" } } ?: "登录",
