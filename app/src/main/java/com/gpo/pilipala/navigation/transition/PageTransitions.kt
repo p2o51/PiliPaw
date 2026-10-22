@@ -620,14 +620,14 @@ class PageTransitions internal constructor(
             if (shot.second.isEmpty) return
             dock.landing(shot.first)
             com.gpo.pilipala.feature.sources.MiniLog.event("hero flies to bar", top.toString())
-            hero = HeroFlight(shot.first, shot.second, to)
+            hero = HeroFlight(shot.first, shot.second, to, top.sharedKey().orEmpty())
             return
         }
         val cover = pushedCovers[top.toString()] ?: return
         val capture = top.sharedKey()?.let { heroes[it] } ?: return
         val shot = withTimeoutOrNull(HeroCaptureTimeoutMs) { runCatching { capture() }.getOrNull() } ?: return
         if (shot.second.isEmpty) return
-        hero = HeroFlight(shot.first, shot.second, cover)
+        hero = HeroFlight(shot.first, shot.second, cover, top.sharedKey().orEmpty())
     }
 
     /** The picture's flight home: the slow spatial spring, landing with the page beneath. */

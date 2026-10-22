@@ -42,7 +42,8 @@ import kotlin.math.roundToInt
 typealias PageHeroCapture = suspend () -> Pair<ImageBitmap, Rect>?
 
 /** One flight: [image] from [from] (window px, untransformed page) into [to] (the cover, page beneath). */
-internal class HeroFlight(val image: ImageBitmap, val from: Rect, val to: Rect)
+/** [page]: the shared key of the page whose picture flies (it hides its own while this is up). */
+internal class HeroFlight(val image: ImageBitmap, val from: Rect, val to: Rect, val page: String)
 
 /** Registers the page's hero for [route] while composed. */
 @Composable

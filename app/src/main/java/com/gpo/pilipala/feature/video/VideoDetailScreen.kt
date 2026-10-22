@@ -73,6 +73,8 @@ import com.gpo.pilipala.feature.player.rememberBiliPlayerState
 import com.gpo.pilipala.feature.player.captureVideoFrame
 import com.gpo.pilipala.feature.player.findVideoView
 import com.gpo.pilipala.navigation.transition.LocalPageTransitions
+import com.gpo.pilipala.navigation.transition.sharedKey
+import androidx.compose.ui.draw.drawWithContent
 import com.gpo.pilipala.navigation.transition.PageHeroEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.derivedStateOf
@@ -228,6 +230,8 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
     // current page and the flight between them, so playback never reloads.
     // Pinching the picture in flies it into 仅听声音 (filled in by the listen overlay below).
     val pinchToListen = remember { PinchToListenHost() }
+    val pageTransitions = LocalPageTransitions.current
+    val heroKey = remember(vm.bvid) { Route.Video(bvid = vm.bvid).sharedKey() }
     val player = remember(vm, playerState) {
         movableContentOf { m: Modifier, chrome: PlayerChrome ->
             androidx.compose.runtime.CompositionLocalProvider(LocalPicturePinchIn provides pinchToListen) {
@@ -237,7 +241,12 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
                     fullscreen = vm.fullscreen,
                     onFullscreenChange = { latestFullscreenChange(it) },
                     onBack = { if (vm.fullscreen) vm.fullscreen = false else nav.pop() },
-                    modifier = m,
+                    // While a back flies a copy of the picture out (to its card, the bar), the
+                    // page draws none of its own: never two pictures. Not drawn at all, so a
+                    // SurfaceView punches no hole either.
+                    modifier = m.drawWithContent {
+                        if (heroKey == null || pageTransitions?.hero?.page != heroKey) drawContent()
+                    },
                     // With a queue the player steps it itself; pages / season only without one.
                     // (The immersive pager loops a video and steps nothing.)
                     onCompleted = { if (AppSettings.autoPlayNext.value && vm.queue == null) vm.playNext() },
@@ -279,10 +288,21 @@ private fun VideoDetailContent(vm: VideoDetailViewModel) {
         if (vm.fullscreen || vm.immersive == true) return@PageHeroEffect null
         val view = findVideoView(heroView.rootView, rect) ?: return@PageHeroEffect null
         val frame = captureVideoFrame(view, view.width, view.height) ?: return@PageHeroEffect null
+        // The video view sits fitted, centred, in the 16:9 slot: its rect as laid out at rest.
+        // (Its place in the window is not used: a back gesture has already shrunk and moved the
+        // page, and the flight poses the rect the way the page is posed, so that place would be
+        // posed twice: the copy appeared below and smaller than the picture it replaces.)
+        val bounds = Rect(
+            rect.center.x - view.width / 2f,
+            rect.center.y - view.height / 2f,
+            rect.center.x + view.width / 2f,
+            rect.center.y + view.height / 2f,
+        )
         val loc = IntArray(2).also { view.getLocationInWindow(it) }
-        // The video view sits fitted inside the 16:9 slot; fly what it shows from where it is.
-        val bounds = Rect(loc[0].toFloat(), loc[1].toFloat(), (loc[0] + view.width).toFloat(), (loc[1] + view.height).toFloat())
-            .takeIf { it.overlaps(rect) } ?: rect
+        com.gpo.pilipala.feature.sources.MiniLog.event(
+            "hero start",
+            "slot ${rect.left.toInt()},${rect.top.toInt()} ${view.width}x${view.height}; view now at ${loc[0]},${loc[1]}",
+        )
         frame.asImageBitmap() to bounds
     }
     // Opened from a comment notification: straight to 评论, where the comment waits pinned.

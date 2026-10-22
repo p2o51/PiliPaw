@@ -56,7 +56,9 @@ internal fun Modifier.pageClosingTransform(t: PageTransitions): Modifier = graph
     translationX = pose.tx
     translationY = pose.ty
 
-    alpha = max(1f - 5f * t.exit.value, 0f)
+    // Out in the first tenth of the ride (~45 ms): the page and the list beneath, riding home,
+    // never stand half over each other for long (a double exposure read as a jolt).
+    alpha = max(1f - 10f * t.exit.value, 0f)
     shape = RoundedCornerShape(BackMotionTokens.PopPageCornerRadius * p)
     clip = p > 0f
 }
@@ -67,7 +69,7 @@ internal fun Modifier.pageClosingTransform(t: PageTransitions): Modifier = graph
  * it rides home on EMPHASIZED while the closing page dissolves.
  *
  * [over] is the same pixels drawn ABOVE the closing page during the commit,
- * at alpha min(5t, 1) — the complement of the closing page's max(1 − 5t, 0).
+ * at alpha min(10t, 1) — the complement of the closing page's max(1 − 10t, 0).
  * A video page's SurfaceView ignores layer alpha (its hole punch stays clear
  * through the fade), so without this cover its picture would float over the
  * revealed page until the pop; opaque window pixels drawn above bury it.
@@ -88,7 +90,7 @@ internal fun BeneathPage(t: PageTransitions, fill: Color, over: Boolean = false)
                         alpha = if (t.holding) 1f else 0f
                     } else {
                         if (t.phase != BackPhase.Committing) return@graphicsLayer
-                        alpha = min(5f * t.exit.value, 1f)
+                        alpha = min(10f * t.exit.value, 1f)
                     }
                 }
                 val pose = beneathPose(t, size)
