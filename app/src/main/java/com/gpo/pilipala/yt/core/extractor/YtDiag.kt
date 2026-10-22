@@ -40,23 +40,24 @@ object YtDiag {
         .mapNotNull { it as? JsonObject }.flatMap { p -> p.getArray("params").mapNotNull { it as? JsonObject } }
         .firstOrNull { it.getString("key") == "logged_in" }?.getString("value")
 
-    private fun request(endpoint: String, body: ByteArray): Pair<Int, JsonObject> {
+    private fun request(endpoint: String, body: ByteArray, auth: Boolean = true, authUser: Boolean = true): Pair<Int, JsonObject> {
         val headers = YoutubeParsingHelper.getYouTubeHeaders()
         headers["Content-Type"] = listOf("application/json")
-        YoutubeParsingHelper.addLoggedInHeaders(headers)
+        if (auth) YoutubeParsingHelper.addLoggedInHeaders(headers)
         // What youtube.com itself sends with a signed-in call: which of the signed-in accounts.
-        if (ServiceList.YouTube.hasTokens()) headers["X-Goog-AuthUser"] = listOf("0")
+        if (auth && authUser && ServiceList.YouTube.hasTokens()) headers["X-Goog-AuthUser"] = listOf("0")
         val url = "${YoutubeParsingHelper.YOUTUBEI_V1_URL}$endpoint?${YoutubeParsingHelper.DISABLE_PRETTY_PRINT_PARAMETER}"
         val response = NewPipe.getDownloader().post(url, headers, body, Localization.DEFAULT)
         val json = runCatching { JsonParser.`object`().from(response.responseBody()) }.getOrDefault(JsonObject())
         return response.responseCode() to json
     }
 
-    private fun browseBody(browseId: String): ByteArray {
-        val builder = YoutubeParsingHelper.prepareDesktopJsonBuilder(
-            NewPipe.getPreferredLocalization() ?: Localization.DEFAULT,
-            NewPipe.getPreferredContentCountry() ?: ContentCountry.DEFAULT,
-        )
+    private fun browseBody(
+        browseId: String,
+        loc: Localization = NewPipe.getPreferredLocalization() ?: Localization.DEFAULT,
+        country: ContentCountry = NewPipe.getPreferredContentCountry() ?: ContentCountry.DEFAULT,
+    ): ByteArray {
+        val builder = YoutubeParsingHelper.prepareDesktopJsonBuilder(loc, country)
         builder.value("browseId", browseId)
         return JsonWriter.string(builder.done()).toByteArray()
     }
@@ -69,6 +70,22 @@ object YtDiag {
         sb.append("tokens: ${if (tokens.isEmpty()) "无" else "${names.size} 个 cookie"}\n")
         sb.append("cookies: ${names.joinToString(",")}\n")
         sb.append("client: ${runCatching { YoutubeParsingHelper.getClientVersion() }.getOrElse { "? ${it.message}" }}\n")
+        sb.append("hl: ${NewPipe.getPreferredLocalization()?.localizationCode} gl: ${NewPipe.getPreferredContentCountry()?.countryCode}\n")
+        sb.append("locale: ${java.util.Locale.getDefault().toLanguageTag()}\n")
+        // The same 首页 call with one thing changed at a time, to see which part YouTube refuses.
+        val variants = listOf(
+            "首页 en-US" to { request("browse", browseBody("FEwhat_to_watch", Localization("en", "US"), ContentCountry("US"))) },
+            "首页 不带 AuthUser" to { request("browse", browseBody("FEwhat_to_watch"), authUser = false) },
+            "首页 不登录" to { request("browse", browseBody("FEwhat_to_watch"), auth = false) },
+            "account_menu 用设备语言" to {
+                val body = YoutubeParsingHelper.prepareDesktopJsonBuilder(NewPipe.getPreferredLocalization() ?: Localization.DEFAULT, NewPipe.getPreferredContentCountry() ?: ContentCountry.DEFAULT).done()
+                request("account/account_menu", JsonWriter.string(body).toByteArray())
+            },
+        )
+        for ((label, call) in variants) {
+            val r = runCatching { call() }
+            sb.append("试 $label: ").append(r.fold({ (code, json) -> "HTTP $code" + json.getObject("error").getString("message")?.let { " $it" }.orEmpty() + (loggedIn(json)?.let { " logged_in=$it" } ?: "") }, { "失败 ${it.message}" })).append("\n")
+        }
         val probes = listOf(
             "account_menu" to ("account/account_menu" to JsonWriter.string(YoutubeParsingHelper.prepareDesktopJsonBuilder(Localization.DEFAULT, ContentCountry.DEFAULT).done()).toByteArray()),
             "首页 FEwhat_to_watch" to ("browse" to browseBody("FEwhat_to_watch")),
@@ -87,7 +104,7 @@ object YtDiag {
 
     private fun describe(sb: StringBuilder, code: Int, json: JsonObject) {
         sb.append("HTTP $code, ${JsonWriter.string(json).length} 字节\n")
-        json.getObject("error").takeIf { it.isNotEmpty() }?.let { sb.append("error: ${it.getInt("code")} ${it.getString("status")} ${it.getString("message")}\n") }
+        json.getObject("error").takeIf { it.isNotEmpty() }?.let { sb.append("error: ${JsonWriter.string(it).take(600)}\n") }
         sb.append("顶层: ${json.keys.joinToString(",")}\n")
         sb.append("logged_in: ${loggedIn(json) ?: "?"}\n")
         // Alerts and empty-page messages say why a list is empty (history off, private, ...).
