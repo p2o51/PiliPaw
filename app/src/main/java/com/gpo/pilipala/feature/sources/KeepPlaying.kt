@@ -1146,7 +1146,16 @@ private fun releaseWindow(frame: MiniFrame, scope: CoroutineScope, v: Velocity, 
     // Thrown hard off a side: closed (a window always has a way out).
     if (abs(v.x) > 2500f * density && (projected.x < 0f || projected.x > frame.bounds.right + frame.bounds.left)) {
         KeepPlaying.windowCenter = center
-        latest().close()
+        // It goes on off that side with the throw, fading, and closes once it is gone (the
+        // next bar to show comes back in the middle, as after a swipe away).
+        val screenW = frame.bounds.right + frame.bounds.left
+        val away = if (v.x > 0f) screenW - g.tile.left else -g.tile.right
+        MiniLog.event("window thrown off", if (v.x > 0f) "right" else "left")
+        scope.launch {
+            frame.swipe.snapTo(0f)
+            frame.swipe.animateTo(away, MiniSprings.fast(), initialVelocity = v.x)
+            latest().close()
+        }
         return
     }
     // A corner (the bottom ones rest above the nav bar), however it is dragged or flung: only a

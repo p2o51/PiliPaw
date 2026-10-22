@@ -199,10 +199,14 @@ fun PlayerOverlayHost() {
     var pictureRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     val frames = remember(session.info) { pickFrameset(session.info?.previewFrames.orEmpty(), PreviewMinWidthPx) }
 
+    // A throw that flips open / closed hands its speed to the spring below (progress units / s).
+    val throwVelocity = remember { floatArrayOf(0f) }
     LaunchedEffect(expanded) {
         if (!expanded) Player.fullscreen = false
         com.gpo.pilipala.feature.sources.MiniLog.event(if (expanded) "YouTube opens" else "YouTube collapses", "")
-        progress.animateTo(if (expanded) 1f else 0f, spatial)
+        val v = throwVelocity[0]
+        throwVelocity[0] = 0f
+        progress.animateTo(if (expanded) 1f else 0f, spatial, initialVelocity = v)
         // Landed back on the bar or window: where it opened from is spent.
         if (!expanded) com.gpo.pilipala.feature.sources.KeepPlaying.openFrom = null
     }
@@ -332,6 +336,7 @@ fun PlayerOverlayHost() {
                 if (target == Player.expanded) {
                     scope.launch { progress.animateTo(if (target) 1f else 0f, spatial, initialVelocity = -velocity / rangePx) }
                 } else {
+                    throwVelocity[0] = -velocity / rangePx
                     Player.expanded = target
                 }
             }

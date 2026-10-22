@@ -76,8 +76,10 @@ internal fun rememberVideoSwipeDown(): PictureSwipeDown? {
             }
 
             override fun drag(dy: Float) {
-                // Half the window's height is the whole back; the page also follows the finger down.
-                back?.drag(dy / (metrics.h * 0.5f), dy)
+                // Half the window's height is the whole back; the page also follows the finger down
+                // (dragged back up past where it began, it rests in place, it does not rise).
+                val down = dy.coerceAtLeast(0f)
+                back?.drag(down / (metrics.h * 0.5f), down)
             }
 
             override fun end(dy: Float, vy: Float) {
