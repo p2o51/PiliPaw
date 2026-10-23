@@ -97,18 +97,19 @@ internal fun ListenCoverImage(
         // A key change cancels the old animation but keeps its pixels on screen while loading.
         // Flatten an interrupted blend ONCE. Never retain a recursive stack of old painters:
         // rapid skips must have constant bitmap retention and constant work on later frames.
-        if (incoming != null) {
-            if (frameLayer.size.width <= 0 || frameLayer.size.height <= 0) return@LaunchedEffect
-            val frozen = try {
+        // Without a capture (not drawn yet, or no memory for it) the cover it was heading to
+        // becomes the floor: a jump, but never a skip that leaves the old cover up.
+        incoming?.let { interrupted ->
+            val frozen = if (frameLayer.size.width <= 0 || frameLayer.size.height <= 0) null else try {
                 BitmapPainter(frameLayer.toImageBitmap())
             } catch (c: CancellationException) {
                 throw c
             } catch (_: Exception) {
-                return@LaunchedEffect // Keep the visible frame if the capture is unavailable.
+                null
             } catch (_: OutOfMemoryError) {
-                return@LaunchedEffect
+                null
             }
-            floor = frozen
+            floor = frozen ?: interrupted
         }
         progress.snapTo(0f)
         incoming = next
