@@ -270,7 +270,8 @@ internal class PiliPlayerController(
             onPlayingChanged(playing)
             // A page's player starting: the mini bar's other video steps aside (PlayerHost.kt).
             if (playing && !preview) com.gpo.pilipala.feature.sources.PlayerHost.started(com.gpo.pilipala.feature.sources.PlayerSlot.Bili(this@PiliPlayerController))
-            if (playing && !hostWanted) {
+            // Every start, not only the first: the notification may have gone to another player.
+            if (playing) {
                 hostWanted = true
                 syncBackgroundHost()
             }
@@ -993,7 +994,9 @@ internal class PiliPlayerController(
         // background, whatever 后台播放 says. So does a page already in the background
         // (the picture just came back from the notification: let it be until the page returns).
         val want = hostWanted && (AppSettings.backgroundPlay.value || audioOnly || backgrounded)
-        if (want == hosted) return
+        // Hosted, but another player (YouTube's, a Mix's next) took the notification meanwhile:
+        // attach again, or the controls stay gone while this one plays.
+        if (want == hosted && (!want || PlaybackService.isHosting(s))) return
         hosted = want
         if (want) PlaybackService.attach(context, s) else PlaybackService.detach(s)
     }

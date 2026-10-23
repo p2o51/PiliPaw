@@ -86,18 +86,29 @@ class PlaybackService : MediaSessionService() {
         private var instance: PlaybackService? = null
         private var hosted: MediaSession? = null
 
-        /** Starts hosting [session] (main thread). Must be called while the app is in the foreground. */
+        /**
+         * Starts hosting [session] (main thread), B站's player or YouTube's: one service for both,
+         * so a hand-over between them (a Mix's next video, in the background too) swaps sessions
+         * in the running service instead of starting another, which the system refuses to an app
+         * in the background. Starting the service itself needs the app in the foreground.
+         */
         internal fun attach(context: Context, session: MediaSession) {
             if (hosted === session && instance?.isSessionAdded(session) == true) return
-            hosted?.takeIf { it !== session }?.let { old -> instance?.takeIf { it.isSessionAdded(old) }?.removeSession(old) }
+            val old = hosted?.takeIf { it !== session }
             hosted = session
             val service = instance
             if (service != null) {
+                // The new one first: the service never stands with no session (and drops out of
+                // the foreground) in between.
                 if (!service.isSessionAdded(session)) service.addSession(session)
+                old?.let { if (service.isSessionAdded(it)) service.removeSession(it) }
             } else {
                 runCatching { context.startService(Intent(context, PlaybackService::class.java)) }
             }
         }
+
+        /** Whether [session] is the one hosted now (another player's attach takes its place). */
+        internal fun isHosting(session: MediaSession): Boolean = hosted === session
 
         /** Stops hosting [session]; the notification goes away and the service stops. */
         internal fun detach(session: MediaSession) {

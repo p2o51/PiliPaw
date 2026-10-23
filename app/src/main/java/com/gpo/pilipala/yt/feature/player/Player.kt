@@ -152,6 +152,7 @@ object Player {
         if (on == audioOnly) return
         audioOnly = on
         pictureReady = false
+        syncBackgroundHost()
         if (!on) com.gpo.pilipala.feature.listen.ListenLog.videoAsked("YouTube, track on")
         exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, on)
@@ -302,6 +303,8 @@ object Player {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         this@Player.isPlaying = playing
                         if (playing) PlayerHost.started(PlayerSlot.YouTube)
+                        // A B站 player may have taken the notification meanwhile: take it back.
+                        if (playing) syncBackgroundHost()
                         // Paused (or ended): the resume point is exact.
                         if (!playing) savePosition()
                     }
@@ -397,14 +400,20 @@ object Player {
     }
     private var hosted = false
 
-    /** Hands the session to [PlaybackService] while a video is open and 后台播放 is on. */
+    /**
+     * Hands the session to [PlaybackService] while a video is open and 后台播放 is on, or it is
+     * listening (仅听声音 always has its controls, as B站's does).
+     */
     private fun syncBackgroundHost() {
         if (session == null && !hosted) return
         val s = mediaSession ?: return
-        val want = session != null && AppSettings.backgroundPlay.value
-        if (want == hosted) return
+        val want = session != null && (AppSettings.backgroundPlay.value || audioOnly)
+        // Hosted, but a B站 player took the notification meanwhile: attach again.
+        if (want == hosted && (!want || com.gpo.pilipala.feature.player.PlaybackService.isHosting(s))) return
         hosted = want
-        if (want) PlaybackService.attach(app, s) else PlaybackService.detach(s)
+        // B站's service hosts YouTube's session too (see its attach): one notification, handed over.
+        if (want) com.gpo.pilipala.feature.player.PlaybackService.attach(app, s)
+        else com.gpo.pilipala.feature.player.PlaybackService.detach(s)
     }
 
     /** Opens [url] in the player, expanded. Tapping the video that is already playing just expands it. */
