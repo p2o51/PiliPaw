@@ -167,7 +167,8 @@ class ArchiveActions(private val scope: CoroutineScope) {
         }
     }
 
-    fun saveFav(add: List<Long>, del: List<Long>, onDone: () -> Unit = {}) = write {
+    /** [announce] = false: the caller shows the outcome itself (the 收藏到 sheet's 完成 turns into it). */
+    fun saveFav(add: List<Long>, del: List<Long>, announce: Boolean = true, onDone: () -> Unit = {}) = write {
         if (add.isEmpty() && del.isEmpty()) {
             onDone()
             return@write
@@ -186,7 +187,7 @@ class ArchiveActions(private val scope: CoroutineScope) {
         val folders = runCatching { loadFolders() }.getOrNull()
         favored = folders?.any { it.faved } ?: add.isNotEmpty()
         if (favored != wasFaved) favCount = (favCount + if (favored) 1 else -1).coerceAtLeast(0)
-        _messages.tryEmit(if (favored) "已收藏" else "已取消收藏")
+        if (announce) _messages.tryEmit(if (favored) "已收藏" else "已取消收藏")
         onDone()
     }
 

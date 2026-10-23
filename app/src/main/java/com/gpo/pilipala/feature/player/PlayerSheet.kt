@@ -2,9 +2,11 @@ package com.gpo.pilipala.feature.player
 
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -13,6 +15,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,13 +23,17 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,16 +45,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalBottomSheetProperties
-import androidx.activity.compose.LocalActivity
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.core.view.WindowCompat
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -64,21 +61,29 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import com.gpo.pilipala.core.net.BiliClient
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.feature.player.sheets.QualitySliderPage
 import com.gpo.pilipala.feature.player.sheets.SpeedSliderPage
 import com.gpo.pilipala.feature.widget.WidgetStore
+import com.gpo.pilipala.ui.components.SheetIconAction
+import com.gpo.pilipala.ui.components.SheetIconRow
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
@@ -417,15 +422,65 @@ private fun SectionLabel(text: String) {
     )
 }
 
+/**
+ * 播放设置 in tiers rather than one long list: round one-tap actions (稍后再看, 缓存, 截图,
+ * 定时关闭), the speed strip, the stream rows (画质, 音质…), 画面, then the 播放 switches.
+ */
 @Composable
 private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, onClose: () -> Unit) {
     val pi = ctrl.info
     val toast = rememberToast()
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     val autoNext by AppSettings.autoPlayNext.state.collectAsState()
     val background by AppSettings.backgroundPlay.state.collectAsState()
     val t = ctrl.target
     val cdn by com.gpo.pilipala.feature.player.cdn.CdnRouter.status.collectAsState()
+    val shot = LocalPlayerShot.current
+    // 稍后再看 answers in its own circle (a tick, 已添加) before the sheet goes.
+    var laterDone by remember { mutableStateOf<String?>(null) }
+    val canLater = BiliClient.isLoggedIn && t != null && !t.isPgc && (t.aid > 0 || t.bvid.isNotBlank())
+    val sleepValue = if (ctrl.sleepMinutes > 0) {
+        val left = ((ctrl.sleepDeadline - SystemClock.elapsedRealtime()) / 60_000L).coerceAtLeast(0L) + 1
+        "$left 分钟"
+    } else {
+        null
+    }
+
+    SheetIconRow(Modifier.padding(bottom = 16.dp)) {
+        if (canLater && t != null) {
+            SheetIconAction(PiliSymbols.WatchLater, "稍后再看", done = laterDone, enabled = laterDone == null, onClick = {
+                scope.launch {
+                    val result = runCatching {
+                        BiliClient.postData(
+                            "/x/v2/history/toview/add",
+                            buildMap {
+                                if (t.aid > 0) put("aid", t.aid) else put("bvid", t.bvid)
+                            },
+                        )
+                        WidgetStore.laterChanged()
+                    }
+                    result.onSuccess {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        laterDone = "已添加"
+                        kotlinx.coroutines.delay(520)
+                        onClose()
+                    }.onFailure { toast(it.message ?: "添加失败") }
+                }
+            })
+        }
+        if (t != null) SheetIconAction(YoinSymbols.Download, "缓存", onClick = { onOpen(SheetPage.Cache) })
+        if (shot != null) {
+            SheetIconAction(ScreenshotSymbol, "截图", onClick = {
+                onClose()
+                shot()
+            })
+        }
+        SheetIconAction(YoinSymbols.Sleep, sleepValue ?: "定时关闭", onClick = { onOpen(SheetPage.Sleep) })
+    }
+
+    SpeedStrip(ctrl, onMore = { onOpen(SheetPage.Speed) })
+    Spacer(Modifier.height(12.dp))
 
     val playback = buildList {
         add(RowSpec(PiliSymbols.Hd, "画质", value = Qualities.videoShort(ctrl.currentQn).takeIf { pi != null }) { onOpen(SheetPage.Quality) })
@@ -435,7 +490,6 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
         if (pi != null && pi.isDash && StreamPicker.codecsFor(pi, ctrl.currentQn).size > 1) {
             add(RowSpec(YoinSymbols.Memory, "解码格式", value = Qualities.codecName(ctrl.currentCodec)) { onOpen(SheetPage.Codec) })
         }
-        add(RowSpec(YoinSymbols.Speed, "播放速度", value = speedLabel(ctrl.speed)) { onOpen(SheetPage.Speed) })
         if (cdn.host.isNotEmpty()) {
             add(RowSpec(YoinSymbols.Storage, "线路", value = cdnLabel(cdn)) {
                 scope.launch {
@@ -459,57 +513,76 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
             add(RowSpec(YoinSymbols.Playlist, "章节", value = "${ctrl.chapters.size}") { onOpen(SheetPage.Chapters) })
         }
         add(RowSpec(PiliSymbols.Danmaku, "弹幕设置") { onOpen(SheetPage.Danmaku) })
-        if (t != null) add(RowSpec(YoinSymbols.Download, "缓存") { onOpen(SheetPage.Cache) })
     }
     SegmentedGroup(playback)
 
     PictureFitChoice()
-    LocalPlayerShot.current?.let { shot ->
-        Spacer(Modifier.height(8.dp))
-        SegmentedGroup(listOf(RowSpec(ScreenshotSymbol, "截图") {
-            onClose()
-            shot()
-        }))
-    }
 
     SectionLabel("播放")
-    val sleepValue = if (ctrl.sleepMinutes > 0) {
-        val left = ((ctrl.sleepDeadline - SystemClock.elapsedRealtime()) / 60_000L).coerceAtLeast(0L) + 1
-        "$left 分钟"
-    } else {
-        "关闭"
-    }
     SegmentedGroup(
         listOf(
-            RowSpec(YoinSymbols.Sleep, "定时关闭", value = sleepValue) { onOpen(SheetPage.Sleep) },
             RowSpec(YoinSymbols.RepeatOne, "单集循环", switch = ctrl.loop) { ctrl.changeLoop(!ctrl.loop) },
             RowSpec(YoinSymbols.SkipNext, "自动连播", switch = autoNext) { AppSettings.set(AppSettings.autoPlayNext, !autoNext) },
             RowSpec(YoinSymbols.MusicNote, "仅听声音", switch = ctrl.audioOnly) { ctrl.toggleAudioOnly() },
             RowSpec(YoinSymbols.Headphones, "后台播放", switch = background) { AppSettings.set(AppSettings.backgroundPlay, !background) },
         ),
     )
+}
 
-    if (BiliClient.isLoggedIn && t != null && !t.isPgc && (t.aid > 0 || t.bvid.isNotBlank())) {
-        Spacer(Modifier.height(16.dp))
-        SegmentedGroup(
-            listOf(
-                RowSpec(PiliSymbols.WatchLater, "添加至稍后再看") {
-                    scope.launch {
-                        val result = runCatching {
-                            BiliClient.postData(
-                                "/x/v2/history/toview/add",
-                                buildMap {
-                                    if (t.aid > 0) put("aid", t.aid) else put("bvid", t.bvid)
-                                },
-                            )
-                            WidgetStore.laterChanged()
-                        }
-                        toast(result.fold({ "已添加至稍后再看" }, { it.message ?: "添加失败" }))
+/** Speeds offered right in the strip; the rest (1.75, 3.0) are one tap away on the slider page. */
+private val StripSpeeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+
+private fun stripFigure(v: Float): String = if (v == v.toInt().toFloat()) "${v.toInt()}.0" else v.toString()
+
+/** 播放速度 as a strip: its name and value (tap for the slider page), then the common speeds. */
+@Composable
+private fun SpeedStrip(ctrl: PiliPlayerController, onMore: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
+    Surface(shape = YoinContainerShapes.Panel, color = scheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 8.dp)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(YoinContainerShapes.ListRow)
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onMore()
                     }
-                    onClose()
-                },
-            ),
-        )
+                    .padding(start = 8.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(YoinSymbols.Speed, null, Modifier.size(22.dp), tint = scheme.onSurfaceVariant)
+                Spacer(Modifier.width(16.dp))
+                Text("播放速度", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Text(speedLabel(ctrl.speed), style = MaterialTheme.typography.labelLarge, color = scheme.primary)
+                Icon(YoinSymbols.ChevronRight, null, Modifier.padding(start = 4.dp).size(18.dp), tint = scheme.onSurfaceVariant)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                StripSpeeds.forEach { v ->
+                    val on = kotlin.math.abs(ctrl.speed - v) < 0.01f
+                    val spec = YoinMotion.defaultEffectsSpec<Color>()
+                    val container by animateColorAsState(if (on) scheme.primary else scheme.surfaceContainerHighest, spec, label = "speedPill")
+                    val content by animateColorAsState(if (on) scheme.onPrimary else scheme.onSurfaceVariant, spec, label = "speedPillText")
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .clip(YoinShapeTokens.Full)
+                            .background(container)
+                            .clickable {
+                                if (!on) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    ctrl.changeSpeed(v)
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(stripFigure(v), style = MaterialTheme.typography.labelLarge.withTabularFigures(), color = content, maxLines = 1)
+                    }
+                }
+            }
+        }
     }
 }
 

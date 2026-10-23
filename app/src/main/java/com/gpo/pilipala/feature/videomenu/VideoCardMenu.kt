@@ -11,6 +11,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -20,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -29,6 +33,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -66,12 +71,20 @@ import com.gpo.pilipala.feature.video.shareText
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.NetImage
+import com.gpo.pilipala.ui.components.SheetChipAction
+import com.gpo.pilipala.ui.components.SheetFinisher
+import com.gpo.pilipala.ui.components.SheetHeroAction
+import com.gpo.pilipala.ui.components.SheetIconAction
+import com.gpo.pilipala.ui.components.SheetIconRow
 import com.gpo.pilipala.ui.components.SheetInsets
+import com.gpo.pilipala.ui.components.SheetTileAction
 import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.components.friendlyMessage
+import com.gpo.pilipala.ui.components.rememberSheetFinisher
 import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.sheetBottomPadding
+import com.gpo.pilipala.ui.components.sheetStagger
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
@@ -105,13 +118,18 @@ internal fun VideoItem.webUrl(): String {
 private enum class MenuPage { Actions, Block, Cache }
 
 private val CoverShape = ContinuousRoundedCornerShape(12.dp)
+private val OwnerShape = ContinuousRoundedCornerShape(20.dp)
 
 /**
  * The one long-press menu for a video card, wherever a card can be long-pressed (home 推荐 /
  * 热门 / Feed tabs, 排行榜, search results, related videos, UP uploads, 历史记录, 收藏夹,
- * 稍后再看, 订阅). Rows, most used first, in colour-block groups:
- * 仅听声音 (+ the list's own play rows) › 稍后再看, 缓存, 分享, 复制链接 › 查看 UP 主,
- * 添加到 Feed › 不感兴趣, the list's destructive rows, 拉黑 UP.
+ * 稍后再看, 订阅). It reads in tiers, not one stack of equal rows: the video, then a wide
+ * 仅听声音 block beside square 稍后再看 / 收藏 tiles, the list's own play rows, a light row of
+ * round 缓存 / 分享 / 复制链接, the UP strip (avatar, 查看 UP 主, 加入 Feed), and quiet
+ * pills at the end: 不感兴趣, the list's destructive rows, 拉黑 UP.
+ *
+ * A write that lands (稍后再看, 复制链接) turns its block into a tick in the sheet, then the
+ * sheet slides down ([SheetFinisher]).
  *
  * [onRemove] marks a feed-like list: it brings 不感兴趣 (through [dislike] when the feed can
  * tell the server) and 拉黑 UP, and drops the card afterwards. [watchLater] = false hides
@@ -132,6 +150,7 @@ internal fun VideoCardMenu(
         return
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val finisher = rememberSheetFinisher(sheetState, onDismiss)
     val scope = rememberCoroutineScope()
     val toast = rememberToast()
     val haptics = LocalHapticFeedback.current
@@ -169,10 +188,7 @@ internal fun VideoCardMenu(
         scope.launch { sheetState.hide() }.invokeOnCompletion { then() }
     }
 
-    fun close(then: () -> Unit = {}) = hide {
-        onDismiss()
-        then()
-    }
+    fun close(then: () -> Unit = {}) = finisher.close(then)
 
     fun runWrite(action: suspend () -> Unit, onDone: () -> Unit) {
         busy = true
@@ -184,97 +200,74 @@ internal fun VideoCardMenu(
         }
     }
 
-    val groups: List<List<MenuRow>> = buildList {
-        if (isVideo) {
-            add(
-                buildList {
-                    add(
-                        MenuRow(YoinSymbols.Headphones, "仅听声音") {
-                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                            close {
-                                nav.push(
-                                    Route.Video(
-                                        bvid = item.bvid,
-                                        aid = item.aid,
-                                        cid = item.cid,
-                                        cover = item.cover,
-                                        title = item.title,
-                                        progress = item.progress.coerceAtLeast(0),
-                                        audioOnly = true,
-                                    ),
-                                )
-                            }
-                        },
-                    )
-                    extras.filterNot { it.destructive }.forEach { a -> add(MenuRow(a.icon, a.label) { close(a.onClick) }) }
-                },
-            )
-            add(
-                buildList {
-                    if (watchLater && loggedIn) {
-                        add(
-                            MenuRow(PiliSymbols.WatchLater, "稍后再看") {
-                                runWrite({ FeedActions.watchLater(item) }) {
-                                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                                    toast("已添加到稍后再看")
-                                    close()
-                                }
-                            },
-                        )
-                    }
-                    add(MenuRow(YoinSymbols.Star, "收藏") { hide { mixOpen = true } })
-                    add(MenuRow(YoinSymbols.Download, "缓存") { page = MenuPage.Cache })
-                    if (url.isNotEmpty()) {
-                        add(MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } })
-                        add(
-                            MenuRow(PiliSymbols.Link, "复制链接") {
-                                context.getSystemService(ClipboardManager::class.java)
-                                    ?.setPrimaryClip(ClipData.newPlainText(item.title, url))
-                                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                                toast("已复制")
-                                close()
-                            },
-                        )
-                    }
-                },
-            )
-        } else {
-            extras.filterNot { it.destructive }.takeIf { it.isNotEmpty() }?.let { list ->
-                add(list.map { a -> MenuRow(a.icon, a.label) { close(a.onClick) } })
+    val model = MenuModel(
+        hero = if (!isVideo) null else MenuRow(YoinSymbols.Headphones, "仅听声音") {
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            close {
+                nav.push(
+                    Route.Video(
+                        bvid = item.bvid,
+                        aid = item.aid,
+                        cid = item.cid,
+                        cover = item.cover,
+                        title = item.title,
+                        progress = item.progress.coerceAtLeast(0),
+                        audioOnly = true,
+                    ),
+                )
             }
-        }
-        if (item.ownerMid > 0) {
-            add(
-                listOf(
-                    MenuRow(YoinSymbols.Person, "查看 UP 主") {
-                        close { nav.push(Route.Member(item.ownerMid, item.ownerFace, item.ownerName)) }
+        },
+        tiles = if (!isVideo) emptyList() else buildList {
+            if (watchLater && loggedIn) {
+                add(
+                    MenuRow(PiliSymbols.WatchLater, "稍后再看") {
+                        runWrite({ FeedActions.watchLater(item) }) { finisher.finish("稍后再看", "已添加") }
                     },
-                    MenuRow(YoinSymbols.LibraryAdd, "添加到 Feed") { hide { feedOpen = true } },
-                ),
-            )
-        }
-        add(
-            buildList {
-                if (onRemove != null) {
-                    add(
-                        MenuRow(PiliSymbols.ThumbDown, "不感兴趣") {
-                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                            if (dislike == null) close(onRemove) else runWrite(dislike) { close(onRemove) }
-                        },
-                    )
-                }
-                extras.filter { it.destructive }.forEach { a -> add(MenuRow(a.icon, a.label, destructive = true) { close(a.onClick) }) }
-                if (onRemove != null && loggedIn && item.ownerMid > 0 && item.ownerMid != BiliClient.mid) {
-                    add(
-                        MenuRow(BlockGlyph, "拉黑 UP", destructive = true) {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            page = MenuPage.Block
-                        },
-                    )
-                }
-            },
-        )
-    }.filter { it.isNotEmpty() }
+                )
+            }
+            add(MenuRow(YoinSymbols.Star, "收藏") { hide { mixOpen = true } })
+        },
+        rows = extras.filterNot { it.destructive }.map { a -> MenuRow(a.icon, a.label) { close(a.onClick) } },
+        small = if (!isVideo) emptyList() else buildList {
+            add(MenuRow(YoinSymbols.Download, "缓存") { page = MenuPage.Cache })
+            if (url.isNotEmpty()) {
+                add(MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } })
+                add(
+                    MenuRow(PiliSymbols.Link, "复制链接") {
+                        context.getSystemService(ClipboardManager::class.java)
+                            ?.setPrimaryClip(ClipData.newPlainText(item.title, url))
+                        finisher.finish("复制链接", "已复制")
+                    },
+                )
+            }
+        },
+        owner = if (item.ownerMid <= 0) null else OwnerStrip(
+            face = item.ownerFace,
+            name = item.ownerName,
+            caption = "查看 UP 主",
+            onOpen = { close { nav.push(Route.Member(item.ownerMid, item.ownerFace, item.ownerName)) } },
+            action = MenuRow(YoinSymbols.LibraryAdd, "加入 Feed") { hide { feedOpen = true } },
+        ),
+        quiet = buildList {
+            if (onRemove != null) {
+                add(
+                    MenuRow(PiliSymbols.ThumbDown, "不感兴趣") {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        if (dislike == null) close(onRemove) else runWrite(dislike) { close(onRemove) }
+                    },
+                )
+            }
+            extras.filter { it.destructive }.forEach { a -> add(MenuRow(a.icon, a.label, destructive = true) { close(a.onClick) }) }
+            if (onRemove != null && loggedIn && item.ownerMid > 0 && item.ownerMid != BiliClient.mid) {
+                add(
+                    MenuRow(BlockGlyph, "拉黑 UP", destructive = true) {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        page = MenuPage.Block
+                    },
+                )
+            }
+        },
+    )
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -289,7 +282,7 @@ internal fun VideoCardMenu(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = sheetBottomPadding(16.dp)),
         ) {
-            MenuHeader(item)
+            MenuHeader(item, showOwner = model.owner == null, modifier = Modifier.sheetStagger(0))
             Spacer(Modifier.height(16.dp))
             AnimatedContent(
                 targetState = page,
@@ -297,9 +290,7 @@ internal fun VideoCardMenu(
                 label = "videoMenu",
             ) { p ->
                 when (p) {
-                    MenuPage.Actions -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        groups.forEach { rows -> RowGroup(rows, enabled = !busy) }
-                    }
+                    MenuPage.Actions -> MenuBody(model, finisher, enabled = !busy && !finisher.finishing)
                     MenuPage.Cache -> CacheStep(item, close = { close() }, onFail = { msg ->
                         toast(msg)
                         page = MenuPage.Actions
@@ -323,8 +314,8 @@ internal fun VideoCardMenu(
 }
 
 /**
- * The menu for a YouTube card, in the same groups and blocks: 仅听声音 › 稍后再看, 收藏 (the
- * account's playlists and the Mix lists), 分享, 复制链接 › 查看频道 › 不感兴趣, 不看此频道.
+ * The menu for a YouTube card, in the same tiers: 仅听声音 › 稍后再看, 收藏 (the account's
+ * playlists and the Mix lists) › 分享, 复制链接 › the channel › 不感兴趣, 不看此频道.
  */
 @Composable
 private fun YoutubeCardMenu(
@@ -336,6 +327,7 @@ private fun YoutubeCardMenu(
     watchLater: Boolean,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val finisher = rememberSheetFinisher(sheetState, onDismiss)
     val scope = rememberCoroutineScope()
     val toast = rememberToast()
     val haptics = LocalHapticFeedback.current
@@ -358,83 +350,67 @@ private fun YoutubeCardMenu(
     fun hide(then: () -> Unit) {
         scope.launch { sheetState.hide() }.invokeOnCompletion { then() }
     }
-    fun close(then: () -> Unit = {}) = hide {
-        onDismiss()
-        then()
-    }
-    val groups: List<List<MenuRow>> = buildList {
-        add(
-            buildList {
+    fun close(then: () -> Unit = {}) = finisher.close(then)
+    // As the sheet opened: the tile keeps its label (and its tick) after the toggle lands.
+    val inLater = remember(url) { com.gpo.pilipala.yt.feature.library.Library.inWatchLater(url) }
+    val model = MenuModel(
+        hero = MenuRow(YoinSymbols.Headphones, "仅听声音") {
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            close {
+                com.gpo.pilipala.yt.feature.player.Player.play(url, video)
+                com.gpo.pilipala.yt.feature.player.Player.changeAudioOnly(true)
+            }
+        },
+        tiles = buildList {
+            if (watchLater) {
                 add(
-                    MenuRow(YoinSymbols.Headphones, "仅听声音") {
-                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        close {
-                            com.gpo.pilipala.yt.feature.player.Player.play(url, video)
-                            com.gpo.pilipala.yt.feature.player.Player.changeAudioOnly(true)
-                        }
+                    MenuRow(PiliSymbols.WatchLater, if (inLater) "移出稍后再看" else "稍后再看") {
+                        val added = com.gpo.pilipala.yt.feature.library.Library.toggleWatchLater(video)
+                        finisher.finish(if (inLater) "移出稍后再看" else "稍后再看", if (added) "已添加" else "已移出")
                     },
                 )
-                extras.filterNot { it.destructive }.forEach { a -> add(MenuRow(a.icon, a.label) { close(a.onClick) }) }
+            }
+            add(MenuRow(YoinSymbols.Star, "收藏") { hide { saveOpen = true } })
+        },
+        rows = extras.filterNot { it.destructive }.map { a -> MenuRow(a.icon, a.label) { close(a.onClick) } },
+        small = listOf(
+            MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } },
+            MenuRow(PiliSymbols.Link, "复制链接") {
+                context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(item.title, url))
+                finisher.finish("复制链接", "已复制")
             },
-        )
-        add(
-            buildList {
-                if (watchLater) {
-                    val inLater = com.gpo.pilipala.yt.feature.library.Library.inWatchLater(url)
-                    add(
-                        MenuRow(PiliSymbols.WatchLater, if (inLater) "移出稍后再看" else "稍后再看") {
-                            val added = com.gpo.pilipala.yt.feature.library.Library.toggleWatchLater(video)
-                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                            toast(if (added) "已添加到稍后再看" else "已移出稍后再看")
-                            close()
-                        },
-                    )
-                }
-                add(MenuRow(YoinSymbols.Star, "收藏") { hide { saveOpen = true } })
-                add(MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } })
-                add(
-                    MenuRow(PiliSymbols.Link, "复制链接") {
-                        context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(item.title, url))
-                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        toast("已复制")
-                        close()
-                    },
-                )
-            },
-        )
-        if (channelUrl != null) {
-            add(
-                listOf(
-                    MenuRow(YoinSymbols.Person, "查看频道") {
-                        close { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Channel(channelUrl, item.ownerName, item.ownerFace)) }
-                    },
-                ),
+        ),
+        owner = channelUrl?.let { ch ->
+            OwnerStrip(
+                face = item.ownerFace,
+                name = item.ownerName,
+                caption = "查看频道",
+                onOpen = { close { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Channel(ch, item.ownerName, item.ownerFace)) } },
+                action = null,
             )
-        }
-        add(
-            buildList {
-                if (onRemove != null) {
-                    add(
-                        MenuRow(PiliSymbols.ThumbDown, "不感兴趣") {
-                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                            close(onRemove)
-                        },
-                    )
-                }
-                extras.filter { it.destructive }.forEach { a -> add(MenuRow(a.icon, a.label, destructive = true) { close(a.onClick) }) }
-                if (channelUrl != null) {
-                    add(
-                        MenuRow(YoinSymbols.VisibilityOff, "不看此频道", destructive = true) {
-                            com.gpo.pilipala.yt.feature.mute.Mutes.muteChannel(channelUrl, item.ownerName, item.ownerFace)
-                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                            toast("已屏蔽")
-                            close { onRemove?.invoke() }
-                        },
-                    )
-                }
-            },
-        )
-    }.filter { it.isNotEmpty() }
+        },
+        quiet = buildList {
+            if (onRemove != null) {
+                add(
+                    MenuRow(PiliSymbols.ThumbDown, "不感兴趣") {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        close(onRemove)
+                    },
+                )
+            }
+            extras.filter { it.destructive }.forEach { a -> add(MenuRow(a.icon, a.label, destructive = true) { close(a.onClick) }) }
+            if (channelUrl != null) {
+                add(
+                    MenuRow(YoinSymbols.VisibilityOff, "不看此频道", destructive = true) {
+                        com.gpo.pilipala.yt.feature.mute.Mutes.muteChannel(channelUrl, item.ownerName, item.ownerFace)
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        toast("已屏蔽")
+                        close { onRemove?.invoke() }
+                    },
+                )
+            }
+        },
+    )
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -448,11 +424,9 @@ private fun YoutubeCardMenu(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = sheetBottomPadding(16.dp)),
         ) {
-            MenuHeader(item)
+            MenuHeader(item, showOwner = model.owner == null, modifier = Modifier.sheetStagger(0))
             Spacer(Modifier.height(16.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                groups.forEach { rows -> RowGroup(rows, enabled = true) }
-            }
+            MenuBody(model, finisher, enabled = !finisher.finishing)
         }
     }
 }
@@ -464,17 +438,79 @@ private class MenuRow(
     val onClick: () -> Unit,
 )
 
+/** The UP / channel strip: avatar and name open the page; [action] sits at its end. */
+private class OwnerStrip(
+    val face: String,
+    val name: String,
+    val caption: String,
+    val onOpen: () -> Unit,
+    val action: MenuRow?,
+)
+
+/** A menu's tiers; an empty tier is left out. */
+private class MenuModel(
+    val hero: MenuRow?,
+    val tiles: List<MenuRow>,
+    val rows: List<MenuRow>,
+    val small: List<MenuRow>,
+    val owner: OwnerStrip?,
+    val quiet: List<MenuRow>,
+)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MenuHeader(item: VideoItem) {
+private fun MenuBody(model: MenuModel, finisher: SheetFinisher, enabled: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (model.hero != null || model.tiles.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().sheetStagger(1), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                model.hero?.let { h ->
+                    SheetHeroAction(
+                        h.icon,
+                        h.label,
+                        h.onClick,
+                        Modifier.weight(if (model.tiles.size >= 2) 1.6f else 2.4f),
+                        done = finisher.doneLabel(h.label),
+                        enabled = enabled,
+                    )
+                }
+                model.tiles.forEach { t ->
+                    SheetTileAction(t.icon, t.label, t.onClick, Modifier.weight(1f), done = finisher.doneLabel(t.label), enabled = enabled)
+                }
+            }
+        }
+        if (model.rows.isNotEmpty()) RowGroup(model.rows, enabled, Modifier.sheetStagger(2))
+        if (model.small.isNotEmpty()) {
+            SheetIconRow(Modifier.sheetStagger(3).padding(top = 2.dp, bottom = 2.dp)) {
+                model.small.forEach { s ->
+                    SheetIconAction(s.icon, s.label, s.onClick, done = finisher.doneLabel(s.label), enabled = enabled)
+                }
+            }
+        }
+        model.owner?.let { OwnerRow(it, enabled, Modifier.sheetStagger(4)) }
+        if (model.quiet.isNotEmpty()) {
+            FlowRow(
+                Modifier.fillMaxWidth().sheetStagger(5),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                model.quiet.forEach { q -> SheetChipAction(q.icon, q.label, q.onClick, destructive = q.destructive, enabled = enabled) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuHeader(item: VideoItem, showOwner: Boolean, modifier: Modifier = Modifier) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+        modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         NetImage(item.cover, Modifier.width(112.dp).aspectRatio(16f / 10f), shape = CoverShape, thumbWidth = 224.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (item.ownerName.isNotEmpty()) {
+            Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            // The UP strip below names the owner; without one, the header does.
+            if (showOwner && item.ownerName.isNotEmpty()) {
                 Text(
                     item.ownerName,
                     style = MaterialTheme.typography.labelLarge,
@@ -487,10 +523,56 @@ private fun MenuHeader(item: VideoItem) {
     }
 }
 
-/** One group of rows as segmented colour blocks (big outer corners, small inner ones). */
 @Composable
-private fun RowGroup(rows: List<MenuRow>, enabled: Boolean) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+private fun OwnerRow(owner: OwnerStrip, enabled: Boolean, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        onClick = owner.onOpen,
+        enabled = enabled,
+        shape = OwnerShape,
+        color = scheme.surfaceContainerHigh,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.padding(start = 12.dp, end = if (owner.action != null) 10.dp else 16.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (owner.face.isNotEmpty()) {
+                NetImage(owner.face, Modifier.size(40.dp), shape = CircleShape, thumbWidth = 80.dp)
+            } else {
+                Box(Modifier.size(40.dp).clip(CircleShape).background(scheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
+                    Icon(YoinSymbols.Person, null, Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(owner.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(owner.caption, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant, maxLines = 1)
+            }
+            val action = owner.action
+            if (action != null) {
+                FilledTonalButton(
+                    onClick = action.onClick,
+                    enabled = enabled,
+                    shapes = ButtonDefaults.shapes(),
+                    contentPadding = PaddingValues(start = 12.dp, end = 16.dp),
+                    modifier = Modifier.height(40.dp),
+                ) {
+                    Icon(action.icon, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(action.label, style = MaterialTheme.typography.labelLarge)
+                }
+            } else {
+                Icon(YoinSymbols.ChevronRight, null, Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** The list's own rows as segmented colour blocks (big outer corners, small inner ones). */
+@Composable
+private fun RowGroup(rows: List<MenuRow>, enabled: Boolean, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         rows.forEachIndexed { i, r ->
             val top = if (i == 0) 20.dp else 4.dp
             val bottom = if (i == rows.lastIndex) 20.dp else 4.dp
@@ -500,9 +582,9 @@ private fun RowGroup(rows: List<MenuRow>, enabled: Boolean) {
                 Modifier
                     .fillMaxWidth()
                     .clip(shape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     .clickable(enabled = enabled, onClick = r.onClick)
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {

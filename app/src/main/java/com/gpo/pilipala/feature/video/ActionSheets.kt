@@ -269,8 +269,7 @@ internal fun FavSheet(
             .onFailure { error = it.friendlyMessage() }
     }
     val sheetState = rememberModalBottomSheetState()
-    val scope = rememberCoroutineScope()
-    val close: () -> Unit = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } }
+    val finisher = com.gpo.pilipala.ui.components.rememberSheetFinisher(sheetState, onDismiss)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -359,15 +358,25 @@ internal fun FavSheet(
                     val all = folders.orEmpty()
                     val add = all.filter { checked[it.id] == true && !it.faved }.map { it.id }
                     val del = all.filter { checked[it.id] != true && it.faved }.map { it.id }
-                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                    val mixChanged = mixItem != null && mixTicks.isNotEmpty()
                     mixItem?.let { com.gpo.pilipala.feature.sources.applyMixTicks(it, mixTicks, add) }
-                    if (add.isEmpty() && del.isEmpty()) close() else actions.saveFav(add, del, onDone = close)
+                    // The button answers before the sheet goes: 已收藏 / 已取消收藏 / 已保存.
+                    when {
+                        add.isNotEmpty() || del.isNotEmpty() -> actions.saveFav(add, del, announce = false) {
+                            finisher.finish("完成", if (actions.favored) "已收藏" else "已取消收藏")
+                        }
+                        mixChanged -> finisher.finish("完成", "已保存")
+                        else -> {
+                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                            finisher.close()
+                        }
+                    }
                 },
-                enabled = folders != null && !actions.busy,
+                enabled = folders != null && !actions.busy && !finisher.finishing,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).height(52.dp),
                 shapes = ButtonDefaults.shapes(),
             ) {
-                Text("完成", style = MaterialTheme.typography.titleSmall)
+                com.gpo.pilipala.ui.components.SheetButtonLabel("完成", finisher.doneLabel("完成"))
             }
         }
     }

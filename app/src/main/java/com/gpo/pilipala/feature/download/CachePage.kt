@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,9 +50,11 @@ import com.gpo.pilipala.feature.player.PlayTarget
 import com.gpo.pilipala.feature.player.PlayUrlApi
 import com.gpo.pilipala.feature.player.QualityOption
 import com.gpo.pilipala.ui.components.rememberToast
+import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinShapeTokens
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -87,7 +91,11 @@ internal fun CachePage(target: PlayTarget, artist: String, known: PlayInfo?, clo
     val existing = items.firstOrNull { it.id == DownloadStore.idFor(target.cid) }
 
     var pending by remember { mutableStateOf<QualityOption?>(null) }
-    val enqueue: (QualityOption) -> Unit = { q ->
+    // The quality just queued: its row says 已加入 for a beat before the sheet goes.
+    var justAdded by remember { mutableStateOf<Int?>(null) }
+    val scope = rememberCoroutineScope()
+    val enqueue: (QualityOption) -> Unit = enqueue@{ q ->
+        if (justAdded != null) return@enqueue
         val pi = info
         val e = existing
         when {
@@ -114,7 +122,12 @@ internal fun CachePage(target: PlayTarget, artist: String, known: PlayInfo?, clo
                     totalBytes = pi?.let { estimate(it, q.qn) } ?: 0,
                 )
                 DownloadStore.scope.launch { DownloadStore.add(context.applicationContext, item) }
-                toast("已加入离线缓存")
+                justAdded = q.qn
+                scope.launch {
+                    delay(520)
+                    close()
+                }
+                return@enqueue
             }
         }
         close()
@@ -160,6 +173,7 @@ internal fun CachePage(target: PlayTarget, artist: String, known: PlayInfo?, clo
                             label = q.label,
                             size = estimate(pi, q.qn).takeIf { it > 0 }?.let(::formatBytes),
                             tag = when {
+                                justAdded == q.qn -> "已加入"
                                 !cached -> null
                                 existing?.state == DownloadState.Done -> "已缓存"
                                 else -> "缓存中"
@@ -226,12 +240,25 @@ private fun QualityRow(
             Modifier.heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                if (tag == "已缓存") YoinSymbols.DownloadDone else YoinSymbols.Download,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.38f),
-                modifier = Modifier.size(22.dp),
-            )
+            val enter = YoinMotion.defaultEffectsSpec<Float>()
+            val pop = YoinMotion.fastSpatialSpec<Float>()
+            val exit = YoinMotion.fastEffectsSpec<Float>()
+            AnimatedContent(
+                targetState = tag,
+                transitionSpec = { (fadeIn(enter) + scaleIn(pop, initialScale = 0.4f)) togetherWith fadeOut(exit) },
+                label = "qualityIcon",
+            ) { t ->
+                Icon(
+                    when (t) {
+                        "已加入" -> YoinSymbols.Check
+                        "已缓存" -> YoinSymbols.DownloadDone
+                        else -> YoinSymbols.Download
+                    },
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.38f),
+                    modifier = Modifier.size(22.dp),
+                )
+            }
             Spacer(Modifier.width(16.dp))
             Text(
                 label,
