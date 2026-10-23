@@ -461,8 +461,10 @@ object Player {
                     StreamResolver.resolve(info, upstream, AppSettings.preferredHeight.value)
                 }
                 currentHeight = resolved.video?.height ?: 0
-                // Pick up where it was left (history), unless it was watched to the end.
-                exo.setMediaSource(resolved.source, Library.resumeAt(url))
+                // Pick up where it was left (history), unless it was watched to the end; a list
+                // playing through (a Mix, a playlist) plays each video from the top, as tracks.
+                val listed = com.gpo.pilipala.feature.sources.MixPlayback.runs(url)
+                exo.setMediaSource(resolved.source, if (listed) 0L else Library.resumeAt(url))
                 // The speed picked for the last video carries on (the setting's default before that).
                 if (!speedChosen) speed = AppSettings.defaultSpeed.value
                 exo.setPlaybackSpeed(speed)

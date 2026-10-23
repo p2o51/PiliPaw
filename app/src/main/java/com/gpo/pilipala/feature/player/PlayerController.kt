@@ -438,7 +438,9 @@ internal class PiliPlayerController(
                 val duration = pi.timelengthMs
                 val remembered = ResumeMemory.get(t.cid)
                 // Queue items play like tracks: from the top unless the page asks for a position.
-                val queued = fresh || queue?.items?.any { it.bvid == t.bvid && t.bvid.isNotEmpty() } == true
+                // A Mix playing through is a list too (feature/sources/MixPlayback).
+                val queued = fresh || queue?.items?.any { it.bvid == t.bvid && t.bvid.isNotEmpty() } == true ||
+                    (t.bvid.isNotEmpty() && com.gpo.pilipala.feature.sources.MixPlayback.runs("bili:${t.bvid}"))
                 val start = when {
                     keepPosition >= 0 -> keepPosition
                     t.startPositionMs > 0 -> t.startPositionMs

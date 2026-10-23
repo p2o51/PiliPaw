@@ -139,7 +139,7 @@ internal fun ChargeLikeButton(
                     onClick()
                 }
             },
-            shapes = IconButtonDefaults.shapes(),
+            shapes = listenButtonShapes(LocalListenLikeSize.current),
             colors = IconButtonDefaults.filledTonalIconButtonColors(
                 containerColor = lerp(rest, scheme.primary, c),
                 contentColor = lerp(restContent, scheme.onPrimary, c),

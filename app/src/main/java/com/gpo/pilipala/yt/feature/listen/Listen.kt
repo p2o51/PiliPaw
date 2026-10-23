@@ -247,7 +247,7 @@ private class YtListenSource(val url: String, val key: String) : ListenSource {
                 celebration = 0,
             )
         } else {
-            FilledTonalIconButton(onClick = { listSheet = true }, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(LocalListenLikeSize.current)) {
+            FilledTonalIconButton(onClick = { listSheet = true }, shapes = com.gpo.pilipala.feature.listen.listenButtonShapes(LocalListenLikeSize.current), modifier = Modifier.size(LocalListenLikeSize.current)) {
                 Icon(YoinSymbols.Library, contentDescription = "加到 Mix")
             }
         }

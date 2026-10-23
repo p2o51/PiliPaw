@@ -27,7 +27,8 @@ import com.gpo.pilipala.yt.feature.player.Player
  * the ones after it show their pictures again, as a 收藏夹 queue keeps it.
  *
  * With the app away (in the background, the screen off) no page can open, so a B站 video plays
- * where the mini bar keeps one (BiliKeeper), and its page opens on it once the app is back.
+ * in the B站 player that just finished (its page's), else where the mini bar keeps one
+ * (BiliKeeper), and its page opens on it once the app is back.
  */
 object MixPlayback {
     /** The Mix being played through, or null. */
@@ -89,7 +90,8 @@ object MixPlayback {
                 // Back: the video that played meanwhile gets its page, taking over its player.
                 val r = awayRoute ?: return
                 awayRoute = null
-                if (BiliKeeper.held?.target?.bvid == r.bvid) BiliLinks.open(r.copy(audioOnly = BiliKeeper.held?.audioOnly == true))
+                val playing = ((PlayerHost.front as? PlayerSlot.Bili)?.player as? PiliPlayerController) ?: BiliKeeper.held
+                if (playing?.target?.bvid == r.bvid) BiliLinks.open(r.copy(audioOnly = playing.audioOnly))
             }
 
             override fun onActivityStopped(activity: android.app.Activity) {
@@ -201,7 +203,7 @@ object MixPlayback {
         awayJob?.cancel()
         if (MixItems.isBili(item)) {
             val route = Route.Video(bvid = item.key.removePrefix("bili:"), cover = item.thumbnail, title = item.title, audioOnly = listening)
-            if (::app.isInitialized && started == 0) return playAway(route)
+            if (::app.isInitialized && started == 0) return playAway(route, item.channelName)
             // YouTube steps aside; the Bilibili page opens and plays.
             if (Player.session != null) Player.close()
             BiliLinks.open(route)
@@ -219,19 +221,24 @@ object MixPlayback {
      * new one), with no page; YouTube steps aside only once it is ready to start, so the sound
      * never stops long enough for the system to drop the app.
      */
-    private fun playAway(route: Route.Video) {
-        val ctrl = BiliKeeper.held ?: PiliPlayerController(app)
+    private fun playAway(route: Route.Video, artist: String) {
+        // A B站 page's player that just finished the last one: the next plays in it, and the page
+        // (whose Mix step replaces it in place on return) carries on with it, not from the top.
+        val page = ((PlayerHost.front as? PlayerSlot.Bili)?.player as? PiliPlayerController)?.takeIf { it !== BiliKeeper.held }
+        val ctrl = page ?: BiliKeeper.held ?: PiliPlayerController(app)
         awayJob = scope.launch {
             val cid = runCatching { resolveFirstCid(QueueItem(bvid = route.bvid)) }.getOrDefault(0L)
             if (cid <= 0) {
-                if (BiliKeeper.held !== ctrl) ctrl.dispose()
+                if (ctrl !== page && BiliKeeper.held !== ctrl) ctrl.dispose()
                 // 失效 or offline: on to the next, a few in a row at most.
                 if (++awayFailures <= 3) next() else stop()
                 return@launch
             }
             awayFailures = 0
-            BiliKeeper.playAway(ctrl)
+            if (ctrl !== page) BiliKeeper.playAway(ctrl)
             ctrl.load(PlayTarget(bvid = route.bvid, cid = cid, title = route.title, cover = route.cover), fresh = true)
+            // The notification's second line (the page sets it from the video's detail).
+            ctrl.artist = artist
             ctrl.listenOnly(listening)
             ctrl.setBackground(true)
             awayRoute = route

@@ -631,7 +631,7 @@ private fun FlyingCover(flight: ListenFlight, cover: String, origin: () -> Offse
 private fun ListenTopBar(header: String, onCollapse: () -> Unit, onShowVideo: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
-        FilledTonalIconButton(onClick = onCollapse, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp)) {
+        FilledTonalIconButton(onClick = onCollapse, shapes = listenButtonShapes(48.dp), modifier = Modifier.size(48.dp)) {
             Icon(YoinSymbols.ChevronDown, contentDescription = "收起")
         }
         Column(Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -639,7 +639,7 @@ private fun ListenTopBar(header: String, onCollapse: () -> Unit, onShowVideo: ()
             Text(header, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         // 显示画面 up here, out of the thumb's way (a cast button would sit beside it).
-        FilledTonalIconButton(onClick = onShowVideo, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp)) {
+        FilledTonalIconButton(onClick = onShowVideo, shapes = listenButtonShapes(48.dp), modifier = Modifier.size(48.dp)) {
             Icon(YoinSymbols.Tv, contentDescription = "显示画面")
         }
     }
@@ -776,7 +776,7 @@ private fun CompactHeader(
 
 @Composable
 private fun SearchLyricsButton(onClick: () -> Unit) {
-    FilledTonalIconButton(onClick = onClick, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp)) {
+    FilledTonalIconButton(onClick = onClick, shapes = listenButtonShapes(48.dp), modifier = Modifier.size(48.dp)) {
         Icon(YoinSymbols.Search, contentDescription = "搜索歌词")
     }
 }
@@ -1047,3 +1047,15 @@ private fun LyricsSearchSheet(source: ListenSource, durationMs: Long, onDismiss:
         }
     }
 }
+
+/**
+ * The listen page's round buttons, squaring a little under the finger. Their corners are in dp,
+ * not a share of the size: the YouTube page lays out small while the player unfolds from its bar,
+ * and the default shapes, morphed from that size, stayed rounded squares at full size.
+ */
+@Composable
+internal fun listenButtonShapes(size: Dp): androidx.compose.material3.IconButtonShapes =
+    androidx.compose.material3.IconButtonShapes(
+        shape = RoundedCornerShape(size / 2),
+        pressedShape = RoundedCornerShape(size / 4),
+    )
