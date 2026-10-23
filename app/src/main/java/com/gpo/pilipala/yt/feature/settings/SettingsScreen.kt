@@ -19,7 +19,6 @@ import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.BuildConfig
 import com.gpo.pilipala.yt.feature.account.accountItems
 import com.gpo.pilipala.yt.feature.account.signOutItem
-import com.gpo.pilipala.yt.core.util.CrashLog
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.yt.core.settings.AppSettings
 import com.gpo.yoin.symbols.PiliSymbols
@@ -120,21 +119,7 @@ fun SettingsList(title: String, showBack: Boolean = false, bottom: Dp = 0.dp) {
         }
         SettingsGroup("关于") {
             item { SettingsItem(title = "PipePaw", icon = YoinSymbols.Info, summary = BuildConfig.VERSION_NAME) }
-            val crash = CrashLog.read()
-            if (crash != null) {
-                item {
-                    val clipboard = context.getSystemService(ClipboardManager::class.java)
-                    SettingsItem(
-                        title = "上次崩溃",
-                        icon = YoinSymbols.Info,
-                        summary = crash.lineSequence().drop(2).firstOrNull { it.isNotBlank() }?.take(80),
-                        onClick = {
-                            clipboard?.setPrimaryClip(ClipData.newPlainText("PipePaw crash", crash))
-                            toast("已复制崩溃日志")
-                        },
-                    )
-                }
-            }
+            item { CrashLogItem(toast) }
             item {
                 SettingsLinkItem(
                     icon = PiliSymbols.Link,

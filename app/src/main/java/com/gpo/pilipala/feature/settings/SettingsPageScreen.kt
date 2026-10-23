@@ -881,24 +881,50 @@ private fun ColumnScope.ExtraBody() {
                 trailing = { ValueLabel(BuildConfig.VERSION_NAME) },
             )
         }
-        val crash = com.gpo.pilipala.core.util.CrashLog.read()
-        if (crash != null) {
-            item {
-                val clipboard = LocalContext.current.getSystemService(android.content.ClipboardManager::class.java)
-                SettingsItem(
-                    title = "上次崩溃",
-                    icon = YoinSymbols.Info,
-                    summary = crash.lineSequence().drop(2).firstOrNull { it.isNotBlank() }?.take(80),
-                    onClick = {
-                        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("PiliPaw crash", crash))
-                        toast("已复制崩溃日志")
-                    },
-                )
-            }
-        }
+        item { CrashLogItem(toast) }
     }
 }
 
+/**
+ * 崩溃日志 (core/util/CrashLog.kt), always listed so it can be found: the newest crash's line, a tap
+ * copies every kept one.
+ */
+@Composable
+internal fun CrashLogItem(toast: (String) -> Unit) {
+    val context = LocalContext.current
+    val summaries = androidx.compose.runtime.remember { com.gpo.pilipala.core.util.CrashLog.summaries() }
+    SettingsItem(
+        title = "崩溃日志",
+        icon = YoinSymbols.Info,
+        summary = summaries.firstOrNull()?.let { "${summaries.size} 次 · 最近：" + it.substringAfter(" · ") } ?: "没有记录",
+        onClick = {
+            val text = com.gpo.pilipala.core.util.CrashLog.read()
+            if (text == null) {
+                toast("没有崩溃记录")
+            } else {
+                val copied = runCatching {
+                    context.getSystemService(android.content.ClipboardManager::class.java)!!
+                        .setPrimaryClip(android.content.ClipData.newPlainText("PiliPaw crash", text))
+                }.isSuccess
+                if (copied) {
+                    toast("已复制 ${summaries.size} 次崩溃日志")
+                } else {
+                    // The clipboard refused it: hand it to the share sheet instead.
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent.createChooser(
+                                android.content.Intent(android.content.Intent.ACTION_SEND)
+                                    .setType("text/plain")
+                                    .putExtra(android.content.Intent.EXTRA_TEXT, text.take(100_000)),
+                                "崩溃日志",
+                            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }.onFailure { toast("复制失败") }
+                }
+            }
+        },
+    )
+}
 
 // ── 云同步 ──────────────────────────────────────────────────────────────────
 

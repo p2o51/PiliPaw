@@ -177,9 +177,10 @@ fun ContinuousRoundedCornerShape(
 
 private val ZeroCornerSize = CornerSize(0)
 
-// foundation's CornerSize lerp is internal; same trivial px-space blend.
+// foundation's CornerSize lerp is internal; same trivial px-space blend. A spring overshooting
+// past a small corner would go negative, which CornerBasedShape refuses (a crash): never under 0.
 private fun lerpCornerSize(a: CornerSize, b: CornerSize, t: Float): CornerSize =
     object : CornerSize {
         override fun toPx(shapeSize: Size, density: Density): Float =
-            lerp(a.toPx(shapeSize, density), b.toPx(shapeSize, density), t)
+            lerp(a.toPx(shapeSize, density), b.toPx(shapeSize, density), t).coerceAtLeast(0f)
     }
