@@ -397,6 +397,8 @@ internal class PiliPlayerController(
         heartbeatJob?.cancel()
         phase = PlayerPhase.Loading
         target = t
+        // In a Mix or not, the media controls' 下一个 follows the video now loading.
+        updateNeighbours()
         info = null
         positionMs = keepPosition.coerceAtLeast(0L)
         bufferedMs = 0L
@@ -609,17 +611,23 @@ internal class PiliPlayerController(
         }
     }
 
+    /** A Mix playing through this video (feature/sources/MixPlayback): 下一个 is the Mix's next. */
+    private val inMix: Boolean
+        get() = queue == null && target?.bvid?.takeIf { it.isNotEmpty() }?.let { com.gpo.pilipala.feature.sources.MixPlayback.runs("bili:$it") } == true
+
     private fun updateNeighbours() {
         val q = queue
-        hasNext = q != null || pageHasNext
+        hasNext = q != null || inMix || pageHasNext
         hasPrevious = q != null || pageHasPrevious
         refreshSessionControls()
     }
 
-    /** 下一个: the queue's next item, else the page's next 分P / 合集 episode. */
+    /** 下一个: the queue's next item, a Mix's next video, else the page's next 分P / 合集 episode. */
     fun skipNext() {
         if (queue != null) {
             skipQueue(forward = true)
+        } else if (inMix) {
+            com.gpo.pilipala.feature.sources.MixPlayback.next()
         } else if (pageHasNext) {
             hooks?.next?.invoke()
         }

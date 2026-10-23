@@ -384,13 +384,52 @@ object Player {
         }
     }
 
+    /** A Mix playing through this video (feature/sources/MixPlayback). */
+    private fun inMix(): Boolean = com.gpo.pilipala.feature.sources.MixPlayback.runs(session?.url)
+
+    /** [exo] as the media controls see it: in a Mix, 下一个 is the Mix's next video. */
+    private val sessionPlayer: Media3Player by lazy {
+        object : androidx.media3.common.ForwardingPlayer(exo) {
+            override fun getAvailableCommands(): Media3Player.Commands {
+                val c = super.getAvailableCommands()
+                return if (inMix()) c.buildUpon().add(Media3Player.COMMAND_SEEK_TO_NEXT).add(Media3Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM).build() else c
+            }
+
+            override fun isCommandAvailable(command: Int): Boolean = availableCommands.contains(command)
+
+            override fun hasNextMediaItem(): Boolean = inMix() || super.hasNextMediaItem()
+
+            override fun seekToNext() = if (inMix()) com.gpo.pilipala.feature.sources.MixPlayback.next() else super.seekToNext()
+
+            override fun seekToNextMediaItem() = if (inMix()) com.gpo.pilipala.feature.sources.MixPlayback.next() else super.seekToNextMediaItem()
+        }
+    }
+
+    /** The controls' side slots: ±10s, or −10s and 下一个 while a Mix plays through. */
+    private fun refreshSessionButtons() {
+        val s = mediaSession ?: return
+        val buttons = if (inMix()) {
+            listOf(
+                PlaybackService.buttons.first(),
+                androidx.media3.session.CommandButton.Builder(androidx.media3.session.CommandButton.ICON_NEXT)
+                    .setPlayerCommand(Media3Player.COMMAND_SEEK_TO_NEXT)
+                    .setDisplayName("下一个")
+                    .setSlots(androidx.media3.session.CommandButton.SLOT_FORWARD)
+                    .build(),
+            )
+        } else {
+            PlaybackService.buttons
+        }
+        s.setMediaButtonPreferences(buttons)
+    }
+
     /**
      * The media session (notification, lock screen, Bluetooth keys). Made with the player and
      * kept for the process; [PlaybackService] borrows it while background play wants it.
      */
     private val mediaSession: MediaSession? by lazy {
         runCatching {
-            MediaSession.Builder(app, exo)
+            MediaSession.Builder(app, sessionPlayer)
                 .setId("pipepaw-player")
                 .setMediaButtonPreferences(PlaybackService.buttons)
                 .setBitmapLoader(CoilBitmapLoader(app))
@@ -453,6 +492,7 @@ object Player {
         recoveries = 0
         resetTracks(null)
         session = Session(url, preview)
+        refreshSessionButtons()
         syncBackgroundHost()
         loadJob = scope.launch {
             try {
