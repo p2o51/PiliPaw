@@ -87,21 +87,31 @@ internal suspend fun captureVideoFrame(view: View, width: Int, height: Int): Bit
             val holder = view.holder
             if (holder.surface == null || !holder.surface.isValid) return null
             val bitmap = runCatching { Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) }.getOrNull() ?: return null
-            val ok = suspendCancellableCoroutine { cont ->
-                runCatching {
-                    PixelCopy.request(view, bitmap, { result -> cont.resume(result == PixelCopy.SUCCESS) }, Handler(Looper.getMainLooper()))
-                }.onFailure { cont.resume(false) }
-            }
-            if (ok) {
-                bitmap
-            } else {
-                bitmap.recycle()
-                null
+            awaitBitmapCopy(bitmap) { callback ->
+                PixelCopy.request(view, bitmap, callback, Handler(Looper.getMainLooper()))
             }
         }
         else -> null
     }
 }
+
+/** PixelCopy owns the destination until its callback, even if the caller times out. */
+internal suspend fun awaitBitmapCopy(bitmap: Bitmap, request: ((Int) -> Unit) -> Unit): Bitmap? =
+    suspendCancellableCoroutine { continuation ->
+        try {
+            request { result ->
+                if (result == PixelCopy.SUCCESS) {
+                    continuation.resume(bitmap) { _, value, _ -> value.recycle() }
+                } else {
+                    bitmap.recycle()
+                    continuation.resume(null)
+                }
+            }
+        } catch (_: Exception) {
+            bitmap.recycle()
+            continuation.resume(null)
+        }
+    }
 
 /** Writes [bitmap] to Pictures/PiliPaw through MediaStore (as the picture viewers save). */
 internal suspend fun saveScreenshot(context: Context, bitmap: Bitmap, name: String) = withContext(Dispatchers.IO) {

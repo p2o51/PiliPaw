@@ -9,6 +9,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.Settings
 import androidx.annotation.RequiresApi
+import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
@@ -98,6 +99,7 @@ class RichHaptics internal constructor(
         fun supports(primitive: Int): Boolean = this@RichHaptics.supports(primitive)
     }
 
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.R)
     private fun canCompose(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || !hasVibrator) return false
         // Before the touch usage existed (API 33) the touch-feedback switch would not mute a

@@ -58,14 +58,13 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -419,19 +418,20 @@ private fun LazyListLayoutInfo.seatOffset(target: Int, seat: Float): Int {
  */
 private fun Modifier.lyricsEdgeFade(side: Dp): Modifier =
     graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-        .drawWithContent {
-            drawContent()
-            val f = (min(48.dp.toPx(), size.height * 0.22f) / size.height).coerceIn(0f, 0.5f)
-            drawRect(
-                brush = Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    f to Color.Black,
-                    1f - f to Color.Black,
-                    1f to Color.Transparent,
-                ),
-                blendMode = BlendMode.DstIn,
+        .drawWithCache {
+            val f = if (size.height > 0f) (min(48.dp.toPx(), size.height * 0.22f) / size.height).coerceIn(0f, 0.5f) else 0f
+            val vertical = Brush.verticalGradient(
+                0f to Color.Transparent,
+                f to Color.Black,
+                1f - f to Color.Black,
+                1f to Color.Transparent,
             )
-            drawSideFade(side.toPx(), side.toPx())
+            val horizontal = sideFadeBrush(size.width, side.toPx(), side.toPx())
+            onDrawWithContent {
+                drawContent()
+                drawRect(vertical, blendMode = BlendMode.DstIn)
+                horizontal?.let { drawRect(it, blendMode = BlendMode.DstIn) }
+            }
         }
 
 /**
@@ -440,9 +440,12 @@ private fun Modifier.lyricsEdgeFade(side: Dp): Modifier =
  */
 internal fun Modifier.sideFade(start: Dp, end: Dp = start): Modifier =
     graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-        .drawWithContent {
-            drawContent()
-            drawSideFade(start.toPx(), end.toPx())
+        .drawWithCache {
+            val brush = sideFadeBrush(size.width, start.toPx(), end.toPx())
+            onDrawWithContent {
+                drawContent()
+                brush?.let { drawRect(it, blendMode = BlendMode.DstIn) }
+            }
         }
 
 /** Widens a box by [start] / [end] into its neighbours' room, keeping its own footprint. */
@@ -454,18 +457,15 @@ internal fun Modifier.bleed(start: Dp, end: Dp = start): Modifier = layout { m, 
     layout((p.width - s - e).coerceAtLeast(0), p.height) { p.placeRelative(-s, 0) }
 }
 
-private fun DrawScope.drawSideFade(start: Float, end: Float) {
-    if (size.width <= 0f || (start <= 0f && end <= 0f)) return
-    val a = (start / size.width).coerceIn(0f, 0.5f)
-    val b = (end / size.width).coerceIn(0f, 0.5f)
-    drawRect(
-        brush = Brush.horizontalGradient(
-            0f to (if (a > 0f) Color.Transparent else Color.Black),
-            a to Color.Black,
-            1f - b to Color.Black,
-            1f to (if (b > 0f) Color.Transparent else Color.Black),
-        ),
-        blendMode = BlendMode.DstIn,
+private fun sideFadeBrush(width: Float, start: Float, end: Float): Brush? {
+    if (width <= 0f || (start <= 0f && end <= 0f)) return null
+    val a = (start / width).coerceIn(0f, 0.5f)
+    val b = (end / width).coerceIn(0f, 0.5f)
+    return Brush.horizontalGradient(
+        0f to (if (a > 0f) Color.Transparent else Color.Black),
+        a to Color.Black,
+        1f - b to Color.Black,
+        1f to (if (b > 0f) Color.Transparent else Color.Black),
     )
 }
 

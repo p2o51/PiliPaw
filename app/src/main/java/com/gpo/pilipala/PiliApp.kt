@@ -1,10 +1,12 @@
 package com.gpo.pilipala
 
 import android.app.Application
+import android.os.Build
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.gif.AnimatedImageDecoder
+import coil3.gif.GifDecoder
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.transitionFactory
 import com.gpo.pilipala.core.account.Account
@@ -56,7 +58,8 @@ class PiliApp : Application(), SingletonImageLoader.Factory {
         ImageLoader.Builder(context)
             .components {
                 add(OkHttpNetworkFetcherFactory(callFactory = { imageHttp }))
-                add(AnimatedImageDecoder.Factory())
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) add(AnimatedImageDecoder.Factory())
+                else add(GifDecoder.Factory())
             }
             // Fades in only what came over the network; counts what is still loading.
             .transitionFactory(com.gpo.pilipala.ui.components.NetworkCrossfade)

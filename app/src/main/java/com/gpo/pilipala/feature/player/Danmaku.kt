@@ -40,8 +40,7 @@ import com.gpo.pilipala.core.settings.AppSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
-import java.util.zip.Inflater
+import com.gpo.pilipala.core.util.inflateBounded
 
 /**
  * One danmaku. Built from a protobuf `DanmakuElem` (seg.so), an XML `<d p="…">` entry
@@ -147,19 +146,7 @@ internal object DanmakuApi {
     /** list.so answers raw deflate (`Content-Encoding: deflate`), which OkHttp leaves alone. */
     private fun inflate(bytes: ByteArray): String {
         if (bytes.isNotEmpty() && bytes[0] == '<'.code.toByte()) return bytes.toString(Charsets.UTF_8)
-        return runCatching {
-            val inflater = Inflater(true)
-            inflater.setInput(bytes)
-            val out = ByteArrayOutputStream(bytes.size * 4)
-            val buf = ByteArray(16 * 1024)
-            while (!inflater.finished()) {
-                val n = inflater.inflate(buf)
-                if (n == 0 && (inflater.needsInput() || inflater.needsDictionary())) break
-                out.write(buf, 0, n)
-            }
-            inflater.end()
-            out.toString("UTF-8")
-        }.getOrElse { bytes.toString(Charsets.UTF_8) }
+        return inflateBounded(bytes, maxBytes = 16 * 1024 * 1024, raw = true).toString(Charsets.UTF_8)
     }
 
     fun parse(xml: String): List<DanmakuItem> {

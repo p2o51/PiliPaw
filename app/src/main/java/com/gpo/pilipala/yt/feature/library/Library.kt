@@ -1,6 +1,8 @@
 package com.gpo.pilipala.yt.feature.library
 
 import android.content.Context
+import android.util.Log
+import com.gpo.pilipala.core.util.LatestFileWriter
 import com.gpo.pilipala.yt.core.extractor.VideoItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -9,6 +11,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.util.concurrent.Executors
 
 /**
  * One saved video. [key] is source-prefixed ("yt:<id>") so the merged Paw app can keep
@@ -69,6 +72,9 @@ object Library {
     private val json = Json { ignoreUnknownKeys = true }
     private val items = ListSerializer(LibItem.serializer())
     private val lists = ListSerializer(LocalPlaylist.serializer())
+    private val writer = LatestFileWriter(
+        Executors.newSingleThreadExecutor { task -> Thread(task, "library-writer").apply { isDaemon = true } },
+    ) { file, error -> Log.w("Library", "Could not save ${file.name}", error) }
 
     private val _history = MutableStateFlow<List<LibItem>>(emptyList())
     val history: StateFlow<List<LibItem>> = _history.asStateFlow()
@@ -248,8 +254,6 @@ object Library {
         runCatching { File(dir, name).takeIf { it.exists() }?.readText()?.let { json.decodeFromString(serializer, it) } }.getOrNull()
 
     private fun <T> write(name: String, serializer: kotlinx.serialization.KSerializer<T>, value: T) {
-        val tmp = File(dir, "$name.tmp")
-        tmp.writeText(json.encodeToString(serializer, value))
-        tmp.renameTo(File(dir, name))
+        writer.write(File(dir, name)) { json.encodeToString(serializer, value) }
     }
 }

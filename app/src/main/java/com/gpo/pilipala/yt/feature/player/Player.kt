@@ -41,6 +41,7 @@ object Player {
     private lateinit var app: Context
     private val scope = MainScope()
     private var loadJob: Job? = null
+    private var qualityJob: Job? = null
 
     /** What the overlay shows. Null: no player on screen. */
     class Session(
@@ -116,7 +117,8 @@ object Player {
         val info = s.info ?: return
         val position = exo.currentPosition
         val resume = exo.playWhenReady
-        scope.launch {
+        qualityJob?.cancel()
+        qualityJob = scope.launch {
             try {
                 val resolved = withContext(Dispatchers.Default) { StreamResolver.resolve(info, upstream, height) }
                 if (session?.url != s.url) return@launch
@@ -346,6 +348,7 @@ object Player {
         recoveries++
         val position = exo.currentPosition
         val resume = exo.playWhenReady
+        qualityJob?.cancel()
         loadJob?.cancel()
         loadJob = scope.launch {
             try {
@@ -433,6 +436,7 @@ object Player {
         PlayerHost.opened(PlayerSlot.YouTube)
         if (session?.url == url && session?.error == null) return
         savePosition()
+        qualityJob?.cancel()
         loadJob?.cancel()
         exo.stop()
         exo.clearMediaItems()
@@ -512,12 +516,15 @@ object Player {
     fun close() {
         com.gpo.pilipala.feature.sources.WatchTrail.clear()
         savePosition()
+        qualityJob?.cancel()
         loadJob?.cancel()
         exo.stop()
         exo.clearMediaItems()
         expandedState = false
         fullscreen = false
         changeAudioOnly(false)
+        resetTracks(null)
+        durationMs = 0
         session = null
         PlayerHost.released(PlayerSlot.YouTube)
         syncBackgroundHost()

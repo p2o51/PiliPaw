@@ -43,9 +43,7 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 import kotlin.math.min
 
@@ -254,15 +252,12 @@ private suspend fun copyPicture(window: Window, rect: Rect): ImageBitmap? {
     if (w <= 1 || h <= 1) return null
     val bitmap = runCatching { Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) }.getOrNull() ?: return null
     val src = android.graphics.Rect(left, top, left + w, top + h)
-    val ok = withTimeoutOrNull(BridgeCopyTimeoutMs) {
-        suspendCancellableCoroutine { c ->
-            runCatching {
-                PixelCopy.request(window, src, bitmap, { result -> if (c.isActive) c.resume(result == PixelCopy.SUCCESS) }, Handler(Looper.getMainLooper()))
-            }.onFailure { if (c.isActive) c.resume(false) }
+    val copied = withTimeoutOrNull(BridgeCopyTimeoutMs) {
+        com.gpo.pilipala.feature.player.awaitBitmapCopy(bitmap) { callback ->
+            PixelCopy.request(window, src, bitmap, callback, Handler(Looper.getMainLooper()))
         }
-    } == true
-    if (!ok) bitmap.recycle()
-    return if (ok) bitmap.asImageBitmap() else null
+    }
+    return copied?.asImageBitmap()
 }
 
 /** The copy usually lands within a frame; past this the exit goes ahead without the bridge. */

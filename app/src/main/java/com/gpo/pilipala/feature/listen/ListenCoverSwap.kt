@@ -10,10 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -23,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
@@ -31,6 +28,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -39,13 +37,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.SingletonImageLoader
-import coil3.compose.AsyncImage
-import coil3.compose.AsyncImagePainter
+import coil3.compose.asPainter
 import coil3.request.ImageRequest
+import coil3.request.SuccessResult
 import coil3.request.crossfade
 import com.gpo.pilipala.core.util.Images
 import com.gpo.pilipala.ui.components.seam.SeamMotion
 import com.gpo.pilipala.ui.theme.YoinMotion
+import kotlinx.coroutines.CancellationException
 import kotlin.math.PI
 import kotlin.math.ceil
 import kotlin.math.hypot
@@ -71,92 +70,88 @@ internal fun ListenCoverImage(
     onReveal: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
-    val px = with(LocalDensity.current) { thumbWidth.roundToPx() }
-    var settled by remember { mutableStateOf<Painter?>(null) }
+    val px = with(LocalDensity.current) { thumbWidth.roundToPx() }.coerceAtLeast(1)
+    var floor by remember { mutableStateOf<Painter?>(null) }
+    var incoming by remember { mutableStateOf<Painter?>(null) }
+    val progress = remember { Animatable(1f) }
+    var mode by remember { mutableStateOf(reveal) }
+    var revealDirection by remember { mutableStateOf(direction) }
     val fade = YoinMotion.defaultEffectsSpec<Float>()
     val latestOnReveal by rememberUpdatedState(onReveal)
     val primary = MaterialTheme.colorScheme.primary
     val tertiary = MaterialTheme.colorScheme.tertiary
-    Box(modifier) {
-        if (url.isNotBlank()) key(url, px) {
-            // A later skip can turn the direction while this image loads: the reveal keeps its own.
-            val revealDirection = remember { direction }
-            val currentPrimary by rememberUpdatedState(primary)
-            val currentTertiary by rememberUpdatedState(tertiary)
-            var loaded by remember { mutableStateOf<AsyncImagePainter.State.Success?>(null) }
-            val progress = remember { Animatable(0f) }
-            // Battery saver or 移除动画 (SeamMotion, as the seams hold still): a plain crossfade.
-            var mode by remember { mutableStateOf(reveal) }
-            val request = remember(context) { listenCoverRequest(context, url, px) }
-            LaunchedEffect(loaded) {
-                loaded ?: return@LaunchedEffect
-                SeamMotion.ensureWatching(context)
-                if (SeamMotion.reduced(this)) mode = CoverReveal.Crossfade
-                if (settled == null) {
-                    progress.snapTo(1f)
-                    latestOnReveal(url)
-                } else {
-                    // A heavy frame brings the new cover in: start the clock after it, or the
-                    // reveal's opening is lost to it.
-                    repeat(2) { withFrameNanos { } }
-                    // The page's colours turn as the first of the new cover shows.
-                    var told = false
-                    progress.animateTo(1f, if (mode == CoverReveal.Dissolve) CoverDissolveSpring else fade) {
-                        if (!told && value >= RevealVisibleAt) {
-                            told = true
-                            latestOnReveal(url)
-                        }
-                    }
-                    if (!told) latestOnReveal(url)
-                }
-                settled = loaded?.painter
+    val frameLayer = rememberGraphicsLayer()
+    val imageLayer = rememberGraphicsLayer()
+    val halftone = remember { CoverHalftone() }
+
+    LaunchedEffect(url, px) {
+        if (url.isBlank()) return@LaunchedEffect
+        val result = SingletonImageLoader.get(context).execute(listenCoverRequest(context, url, px))
+            as? SuccessResult ?: return@LaunchedEffect
+        val next = result.image.asPainter(context)
+        if (floor == null) {
+            floor = next
+            latestOnReveal(url)
+            return@LaunchedEffect
+        }
+        // A key change cancels the old animation but keeps its pixels on screen while loading.
+        // Flatten an interrupted blend ONCE. Never retain a recursive stack of old painters:
+        // rapid skips must have constant bitmap retention and constant work on later frames.
+        if (incoming != null) {
+            if (frameLayer.size.width <= 0 || frameLayer.size.height <= 0) return@LaunchedEffect
+            val frozen = try {
+                BitmapPainter(frameLayer.toImageBitmap())
+            } catch (c: CancellationException) {
+                throw c
+            } catch (_: Exception) {
+                return@LaunchedEffect // Keep the visible frame if the capture is unavailable.
+            } catch (_: OutOfMemoryError) {
+                return@LaunchedEffect
             }
-            // Interrupted: the blend so far becomes the floor the next cover develops over.
-            DisposableEffect(Unit) {
-                onDispose {
-                    val painter = loaded?.painter
-                    val under = settled
-                    if (painter != null && under != null && progress.value < 1f) {
-                        settled = InterruptedCoverPainter(under, painter, progress.value, mode, revealDirection, currentPrimary, currentTertiary)
-                    }
-                }
+            floor = frozen
+        }
+        progress.snapTo(0f)
+        incoming = next
+        revealDirection = direction
+        SeamMotion.ensureWatching(context)
+        mode = if (SeamMotion.reduced(this)) CoverReveal.Crossfade else reveal
+        repeat(2) { withFrameNanos { } }
+        var told = false
+        progress.animateTo(1f, if (mode == CoverReveal.Dissolve) CoverDissolveSpring else fade) {
+            if (!told && value >= RevealVisibleAt) {
+                told = true
+                latestOnReveal(url)
             }
-            val halftone = remember { CoverHalftone() }
-            val layer = rememberGraphicsLayer()
-            settled?.let { painter ->
-                Image(
-                    painter = painter,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize().drawWithContent {
-                        // Retired only once the new painter is the one on screen.
-                        if (loaded?.painter !== painter || progress.value < 1f) drawContent()
-                    },
-                )
-            }
-            AsyncImage(
-                model = request,
-                contentDescription = null,
+        }
+        if (!told) latestOnReveal(url)
+        floor = next
+        incoming = null
+    }
+    Box(modifier.drawWithContent {
+        frameLayer.record { this@drawWithContent.drawContent() }
+        drawLayer(frameLayer)
+    }) {
+        floor?.let { painter ->
+            Image(painter, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        }
+        incoming?.let { painter ->
+            Image(
+                painter, null,
                 contentScale = ContentScale.Crop,
-                onSuccess = { loaded = it },
                 modifier = Modifier.fillMaxSize().drawWithContent {
-                    val amount = when {
-                        loaded == null -> 0f
-                        settled == null -> 1f
-                        else -> progress.value.coerceIn(0f, 1f)
-                    }
+                    val amount = progress.value.coerceIn(0f, 1f)
                     when {
                         amount >= 1f -> drawContent()
                         amount <= 0f -> Unit
-                        mode == CoverReveal.Dissolve -> {
-                            layer.record { this@drawWithContent.drawContent() }
-                            layer.alpha = CoverHalftone.opacity(amount)
-                            halftone.draw(this, amount, revealDirection, primary, tertiary) { drawLayer(layer) }
-                        }
                         else -> {
-                            layer.record { this@drawWithContent.drawContent() }
-                            layer.alpha = amount
-                            drawLayer(layer)
+                            imageLayer.record { this@drawWithContent.drawContent() }
+                            if (mode == CoverReveal.Dissolve) {
+                                imageLayer.alpha = CoverHalftone.opacity(amount)
+                                halftone.draw(this, amount, revealDirection, primary, tertiary) { drawLayer(imageLayer) }
+                            } else {
+                                imageLayer.alpha = amount
+                                drawLayer(imageLayer)
+                            }
                         }
                     }
                 },
@@ -196,30 +191,6 @@ private val CoverDissolveSpring: FiniteAnimationSpec<Float> = spring(
 
 /** How far into the reveal the new cover first shows (the dissolve's front starts off the edge). */
 private const val RevealVisibleAt = .2f
-
-private class InterruptedCoverPainter(
-    val under: Painter,
-    val over: Painter,
-    val progress: Float,
-    val reveal: CoverReveal,
-    val direction: Int,
-    val primary: Color,
-    val tertiary: Color,
-) : Painter() {
-    override val intrinsicSize: Size get() = over.intrinsicSize
-    private val halftone = CoverHalftone()
-
-    override fun DrawScope.onDraw() {
-        with(under) { draw(size) }
-        if (reveal == CoverReveal.Dissolve) {
-            halftone.draw(this, progress, direction, primary, tertiary) {
-                with(over) { draw(size, alpha = CoverHalftone.opacity(progress)) }
-            }
-        } else {
-            with(over) { draw(size, alpha = progress) }
-        }
-    }
-}
 
 /**
  * Yoin's ArtworkHalftone, ported as is: a fine (6dp) staggered screen-print texture carried by

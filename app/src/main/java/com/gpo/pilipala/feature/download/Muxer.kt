@@ -4,6 +4,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.os.Build
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.io.File
@@ -58,8 +59,12 @@ internal object Muxer {
                     next.done = true
                     continue
                 }
-                val size = ex.sampleSize
-                if (size > buffer.capacity()) buffer = ByteBuffer.allocateDirect(size.toInt() + 1024)
+                // API 26/27 have no getSampleSize; use the track's advertised input size there.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    val size = ex.sampleSize
+                    require(size <= Int.MAX_VALUE - 1024L) { "媒体采样过大" }
+                    if (size > buffer.capacity()) buffer = ByteBuffer.allocateDirect(size.toInt() + 1024)
+                }
                 buffer.clear()
                 val read = ex.readSampleData(buffer, 0)
                 if (read < 0) {

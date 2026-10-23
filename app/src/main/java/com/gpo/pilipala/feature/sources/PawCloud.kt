@@ -221,7 +221,7 @@ object PawCloud {
         Settings.Secure.getString(app.contentResolver, Settings.Secure.ANDROID_ID) ?: "device"
     }
 
-    private fun snapshot() = Snapshot(
+    private suspend fun snapshot() = Snapshot(
         device = deviceId,
         at = System.currentTimeMillis(),
         mix = Library.playlists.value,

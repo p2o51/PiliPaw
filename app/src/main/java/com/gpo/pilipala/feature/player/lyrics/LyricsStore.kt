@@ -47,18 +47,23 @@ internal object LyricsStore {
     private fun file(cid: Long): File? = dir?.let { File(it, "$cid.lrc") }
 
     /** Cloud sync: every picked lyric as cid → LRC text. */
-    fun exportAll(): Map<String, String> =
+    suspend fun exportAll(): Map<String, String> = withContext(Dispatchers.IO) {
         dir?.listFiles { f -> f.extension == "lrc" }.orEmpty()
             .associate { it.nameWithoutExtension to runCatching { it.readText() }.getOrDefault("") }
             .filterValues { it.isNotEmpty() }
+    }
 
     /** Cloud sync: lyrics picked on another device, for parts this one has none for. */
-    fun importMissing(others: Map<String, String>) {
-        others.forEach { (cid, text) ->
-            val id = cid.toLongOrNull() ?: return@forEach
-            val f = file(id) ?: return@forEach
-            if (!f.exists()) runCatching { f.writeText(text) }
-            cache.remove(id)
+    suspend fun importMissing(others: Map<String, String>) {
+        val imported = withContext(Dispatchers.IO) {
+            others.mapNotNull { (cid, text) ->
+                val id = cid.toLongOrNull() ?: return@mapNotNull null
+                val f = file(id) ?: return@mapNotNull null
+                if (!f.exists()) runCatching { f.writeText(text) }
+                id
+            }
         }
+        // Compose state stays on the caller's main dispatcher.
+        imported.forEach { cache.remove(it) }
     }
 }

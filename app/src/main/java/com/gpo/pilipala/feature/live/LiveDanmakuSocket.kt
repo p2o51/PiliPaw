@@ -19,10 +19,8 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
-import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicLong
-import java.util.zip.Inflater
 
 /**
  * Bilibili live danmaku websocket (`wss://<host>/sub`). Packets are a 16-byte
@@ -40,7 +38,7 @@ internal class LiveDanmakuSocket(
 ) {
     private var ws: WebSocket? = null
     private var heartbeat: Job? = null
-    private var closed = false
+    @Volatile private var closed = false
     private val seq = AtomicLong(0)
 
     fun connect(host: String, token: String) {
@@ -52,6 +50,10 @@ internal class LiveDanmakuSocket(
             .build()
         ws = BiliClient.http.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (closed) {
+                    webSocket.cancel()
+                    return
+                }
                 val auth = buildJsonObject {
                     put("uid", BiliClient.mid)
                     put("roomid", roomId)
@@ -64,7 +66,7 @@ internal class LiveDanmakuSocket(
                 webSocket.send(packet(7, auth.toByteArray()))
                 heartbeat?.cancel()
                 heartbeat = scope.launch {
-                    while (isActive) {
+                    while (isActive && !closed) {
                         webSocket.send(packet(2, "[object Object]".toByteArray()))
                         delay(30_000)
                     }
@@ -72,6 +74,7 @@ internal class LiveDanmakuSocket(
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                if (closed) return
                 runCatching { handle(bytes.toByteArray()) }.onFailure { Log.w(TAG, "decode", it) }
             }
 
@@ -108,44 +111,13 @@ internal class LiveDanmakuSocket(
 
     private fun handle(data: ByteArray) {
         val chats = mutableListOf<LiveChat>()
-        parsePackets(data, chats)
-        if (chats.isNotEmpty()) onChat(chats)
-    }
-
-    private fun parsePackets(data: ByteArray, out: MutableList<LiveChat>) {
-        var offset = 0
-        val buf = ByteBuffer.wrap(data)
-        while (offset + 16 <= data.size) {
-            val packLen = buf.getInt(offset)
-            val headLen = buf.getShort(offset + 4).toInt()
-            val ver = buf.getShort(offset + 6).toInt()
-            val op = buf.getInt(offset + 8)
-            if (packLen < headLen || offset + packLen > data.size) break
-            val body = data.copyOfRange(offset + headLen, offset + packLen)
+        LivePackets.decode(data) { op, body ->
             when (op) {
                 8 -> onState(true)
-                5 -> when (ver) {
-                    2 -> parsePackets(inflate(body), out)
-                    0, 1 -> parseCommand(String(body, Charsets.UTF_8), out)
-                    else -> Unit // brotli (3) is not available
-                }
+                5 -> parseCommand(body.toString(Charsets.UTF_8), chats)
             }
-            offset += packLen
         }
-    }
-
-    private fun inflate(body: ByteArray): ByteArray {
-        val inflater = Inflater()
-        inflater.setInput(body)
-        val out = ByteArrayOutputStream(body.size * 4)
-        val chunk = ByteArray(8192)
-        while (!inflater.finished()) {
-            val n = inflater.inflate(chunk)
-            if (n == 0 && (inflater.needsInput() || inflater.needsDictionary())) break
-            out.write(chunk, 0, n)
-        }
-        inflater.end()
-        return out.toByteArray()
+        if (chats.isNotEmpty()) onChat(chats)
     }
 
     private fun parseCommand(text: String, out: MutableList<LiveChat>) {
