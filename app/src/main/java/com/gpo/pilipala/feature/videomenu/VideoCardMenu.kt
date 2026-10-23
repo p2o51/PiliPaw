@@ -280,7 +280,7 @@ internal fun VideoCardMenu(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
-                .padding(bottom = sheetBottomPadding(16.dp)),
+                .padding(bottom = sheetBottomPadding(24.dp)),
         ) {
             MenuHeader(item, showOwner = model.owner == null, modifier = Modifier.sheetStagger(0))
             Spacer(Modifier.height(16.dp))
@@ -422,7 +422,7 @@ private fun YoutubeCardMenu(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
-                .padding(bottom = sheetBottomPadding(16.dp)),
+                .padding(bottom = sheetBottomPadding(24.dp)),
         ) {
             MenuHeader(item, showOwner = model.owner == null, modifier = Modifier.sheetStagger(0))
             Spacer(Modifier.height(16.dp))

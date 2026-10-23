@@ -463,7 +463,7 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
                     result.onSuccess {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                         laterDone = "已添加"
-                        kotlinx.coroutines.delay(520)
+                        kotlinx.coroutines.delay(820)
                         onClose()
                     }.onFailure { toast(it.message ?: "添加失败") }
                 }

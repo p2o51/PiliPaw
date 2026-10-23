@@ -124,7 +124,7 @@ internal fun CachePage(target: PlayTarget, artist: String, known: PlayInfo?, clo
                 DownloadStore.scope.launch { DownloadStore.add(context.applicationContext, item) }
                 justAdded = q.qn
                 scope.launch {
-                    delay(520)
+                    delay(820)
                     close()
                 }
                 return@enqueue

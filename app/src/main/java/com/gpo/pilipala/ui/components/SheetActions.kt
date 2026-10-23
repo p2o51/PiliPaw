@@ -3,6 +3,7 @@ package com.gpo.pilipala.ui.components
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -63,7 +64,7 @@ import kotlinx.coroutines.launch
 private val TileShape = ContinuousRoundedCornerShape(20.dp)
 
 /** How long a done block stays on screen before the sheet slides down. */
-private const val DoneHoldMillis = 520L
+private const val DoneHoldMillis = 820L
 
 /**
  * Ends a sheet after an action: [finish] marks the action's block done (tick + label, with a
@@ -145,11 +146,11 @@ private fun DoneIcon(icon: ImageVector, done: Boolean, tint: Color, size: Dp) {
 
 @Composable
 private fun DoneText(text: String, done: String?, color: Color, style: androidx.compose.ui.text.TextStyle, align: TextAlign? = null) {
-    val enter = YoinMotion.defaultEffectsSpec<Float>()
-    val exit = YoinMotion.fastEffectsSpec<Float>()
+    // One label at a time: the old one is gone before the new one fades in, so the two never
+    // sit on top of each other mid-swap.
     AnimatedContent(
         targetState = done ?: text,
-        transitionSpec = { fadeIn(enter) togetherWith fadeOut(exit) },
+        transitionSpec = { fadeIn(tween(180, delayMillis = 90)) togetherWith fadeOut(tween(90)) },
         label = "doneText",
     ) { t -> Text(t, style = style, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = align) }
 }
