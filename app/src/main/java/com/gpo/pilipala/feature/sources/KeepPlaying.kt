@@ -347,6 +347,17 @@ internal object BiliKeeper {
         return ctrl.keepable && !t.isPgc && t.bvid.isNotEmpty() && KeepPlaying.mode.value != 1
     }
 
+    /**
+     * A Mix's next B站 video while the app is away (MixPlayback): [ctrl] plays it from the bar's
+     * place, with no page; the page opened when the app is back takes it over ([take]).
+     */
+    internal fun playAway(ctrl: PiliPlayerController) {
+        PlayerHost.opened(PlayerSlot.Bili(ctrl))
+        PlayerHost.dock(PlayerSlot.Bili(ctrl))
+        held?.takeIf { it !== ctrl }?.dispose()
+        held = ctrl
+    }
+
     internal fun take(bvid: String): PiliPlayerController? {
         val c = held ?: return null
         if (bvid.isEmpty() || c.target?.bvid != bvid) return null

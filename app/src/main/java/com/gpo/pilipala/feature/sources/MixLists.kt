@@ -258,70 +258,86 @@ private fun MixCover(list: LocalPlaylist, modifier: Modifier = Modifier) {
 
 private val CoverShape = ContinuousRoundedCornerShape(10.dp)
 
-/** One Mix list, newest additions last. A row opens in its own part; long press removes it. */
-@OptIn(ExperimentalFoundationApi::class)
+/**
+ * One Mix list, laid out as a 收藏夹 is (VideoListPage): 搜索, 排序 and 关联 in the bar, 改名 and
+ * 删除 under ⋯; how it splits between the sources and what it follows over the play buttons.
+ * A long press offers 从 Mix 移除 with the card menu.
+ */
 @Composable
 fun MixListScreen(route: Route.MixList) {
     val nav = LocalNavigator.current
     val toast = rememberToast()
     val lists by Library.playlists.collectAsState()
     val list = lists.firstOrNull { it.id == route.id }
-    var menu by remember { mutableStateOf<LibItem?>(null) }
     var deleting by remember { mutableStateOf(false) }
     var linking by remember { mutableStateOf(false) }
-    // 仅听声音 for the run, as a 收藏夹's: 播放全部 / 随机播放 / a row then open each video listening.
-    var listen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    var more by remember { mutableStateOf(false) }
     // Opening a Mix that follows something brings it up to date.
     LaunchedEffect(route.id) { if (list?.links?.isNotEmpty() == true) MixSync.sync(route.id) }
     // The page takes its colours from the first video's cover, as a 收藏夹 does.
     CoverTheme(list?.items?.firstOrNull()?.thumbnail?.let(MixItems::secure)) {
-    LibraryScaffold(
-        title = list?.name ?: route.title.ifEmpty { "Mix" },
-        subtitle = list?.let { "${it.items.size} 个视频" },
-        actions = {
-            if (list != null) {
-                IconButton(onClick = { linking = true }, shapes = IconButtonDefaults.shapes()) {
-                    Icon(PiliSymbols.Link, contentDescription = "关联")
+        VideoListPage(
+            id = MixIdPrefix + route.id,
+            title = list?.name ?: route.title.ifEmpty { "Mix" },
+            subtitle = list?.let { "${it.items.size} 个视频" },
+            items = list?.items ?: emptyList(),
+            orders = MixOrders,
+            actions = {
+                if (list != null) {
+                    IconButton(onClick = { linking = true }, shapes = IconButtonDefaults.shapes()) {
+                        Icon(PiliSymbols.Link, contentDescription = "关联")
+                    }
+                    Box {
+                        IconButton(onClick = { more = true }, shapes = IconButtonDefaults.shapes()) {
+                            Icon(YoinSymbols.MoreVertical, contentDescription = "更多")
+                        }
+                        androidx.compose.material3.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("改名") },
+                                leadingIcon = { Icon(YoinSymbols.Edit, null) },
+                                onClick = {
+                                    more = false
+                                    renaming = true
+                                },
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("删除这个 Mix") },
+                                leadingIcon = { Icon(YoinSymbols.Delete, null) },
+                                onClick = {
+                                    more = false
+                                    deleting = true
+                                },
+                            )
+                        }
+                    }
                 }
-                IconButton(onClick = { deleting = true }, shapes = IconButtonDefaults.shapes()) {
-                    Icon(YoinSymbols.Delete, contentDescription = "删除这个 Mix")
-                }
-            }
-        },
-    ) { padding ->
-        if (list == null || list.items.isEmpty()) {
-            EmptyState("还没有视频", Modifier.padding(padding), icon = YoinSymbols.Library)
-        } else {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp)) {
-                item(key = "head") {
-                    MixHead(list, listen, onListenChange = { listen = it }, onLinks = { linking = true })
-                }
-                itemsIndexed(list.items, key = { _, it -> it.key }) { i, item ->
-                    MixRow(
-                        item,
-                        Modifier.animateItem(),
-                        playing = MixPlayback.listId == list.id && MixPlayback.index == i,
-                        // From here on through the rest of the Mix.
-                        onClick = { MixPlayback.start(list.id, i, listen) },
-                        onLongClick = { menu = item },
-                    )
-                }
-            }
-        }
-    }
+            },
+            head = { if (list != null) MixHead(list, onLinks = { linking = true }) },
+            extras = { item ->
+                listOf(
+                    com.gpo.pilipala.feature.videomenu.VideoMenuAction("从 Mix 移除", YoinSymbols.Delete, destructive = true) {
+                        Library.removeFromPlaylist(route.id, item.key)
+                        toast("已移除")
+                    },
+                )
+            },
+        )
     }
     if (linking && list != null) MixLinkSheet(list, onDismiss = { linking = false })
-    menu?.let { item ->
-        ItemActionSheet(
-            title = item.title,
-            cover = MixItems.secure(item.thumbnail),
-            actions = listOf(
-                SheetAction("从 Mix 移除", YoinSymbols.Delete, destructive = true) {
-                    Library.removeFromPlaylist(route.id, item.key)
-                    toast("已移除")
-                },
-            ),
-            onDismiss = { menu = null },
+    if (renaming && list != null) {
+        var name by remember { mutableStateOf(list.name) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { renaming = false },
+            title = { Text("改名") },
+            text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, placeholder = { Text("名字") }) },
+            confirmButton = {
+                TextButton(enabled = name.isNotBlank(), onClick = {
+                    Library.renamePlaylist(list.id, name)
+                    renaming = false
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = false }) { Text("取消") } },
         )
     }
     if (deleting && list != null) {
@@ -440,24 +456,17 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
 }
 
 /**
- * Under the title: 播放全部 / 随机播放 with 仅听声音, how the Mix splits between the two sources (each count
- * with its own weight, no "·" between them), and the lists it follows as chips.
+ * Over the play buttons: how the Mix splits between the two sources (each count with its own
+ * weight, no "·" between them), and the lists it follows as chips.
  */
 @Composable
-private fun MixHead(list: LocalPlaylist, listen: Boolean, onListenChange: (Boolean) -> Unit, onLinks: () -> Unit) {
+private fun MixHead(list: LocalPlaylist, onLinks: () -> Unit) {
     val bili = list.items.count(MixItems::isBili)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
             SourceCount(bili, "哔哩哔哩")
             SourceCount(list.items.size - bili, "YouTube")
         }
-        com.gpo.pilipala.feature.library.QueuePlayButtons(
-            loading = false,
-            listening = listen,
-            onListeningChange = onListenChange,
-            onPlay = { MixPlayback.start(list.id, 0, listen) },
-            onShuffle = { MixPlayback.shuffle(list.id, listen) },
-        )
         if (list.links.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 list.links.forEach { l ->
@@ -494,48 +503,5 @@ private fun SourceCount(n: Int, label: String) {
     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("$n", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 2.dp))
-    }
-}
-
-/** A Mix row: cover, title, who made it and the source; the one playing shows a live equalizer. */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun MixRow(item: LibItem, modifier: Modifier, playing: Boolean = false, onClick: () -> Unit, onLongClick: () -> Unit) {
-    val source = MixItems.source(item)
-    Row(
-        modifier
-            .fillMaxWidth()
-            .combinedClickable(onLongClick = onLongClick, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        NetImage(MixItems.secure(item.thumbnail), Modifier.width(160.dp).aspectRatio(16f / 10f), shape = CoverShape, thumbWidth = 320.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                item.title,
-                style = MaterialTheme.typography.titleSmall,
-                color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (item.channelName.isNotEmpty()) {
-                Text(
-                    item.channelName,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Text(source.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-        }
-        if (playing) {
-            Icon(
-                com.gpo.yoin.symbols.rememberEqualizerSymbolPainter(playing = true),
-                contentDescription = "正在播放",
-                tint = MaterialTheme.colorScheme.primary,
-            )
-        }
     }
 }

@@ -42,6 +42,8 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.CoverTheme
 import com.gpo.pilipala.yt.core.extractor.VideoItem
 import com.gpo.pilipala.yt.core.extractor.Yt
+import com.gpo.pilipala.yt.feature.library.LibItem
+import com.gpo.pilipala.yt.feature.library.Library
 import com.gpo.pilipala.yt.core.extractor.YtAccount
 import com.gpo.pilipala.yt.feature.player.Player
 import com.gpo.yoin.symbols.YoinSymbols
@@ -86,47 +88,33 @@ internal fun LazyGridScope.youtubeSection(lists: List<YtAccount.Playlist>?, onOp
     }
 }
 
-/** A YouTube playlist: its videos in order; a row plays in the YouTube player over this page. */
-@OptIn(ExperimentalFoundationApi::class)
+/**
+ * A YouTube playlist, laid out as a 收藏夹 is (VideoListPage): 搜索 and 排序, 播放全部 / 随机播放
+ * with 仅听声音, and the videos playing through one after another (MixPlayback), so the listen
+ * page has its 播放列表.
+ */
 @Composable
 fun YtPlaylistScreen(route: Route.YtPlaylist) {
-    var videos by remember { mutableStateOf<List<VideoItem>?>(null) }
+    var videos by remember { mutableStateOf<List<LibItem>?>(null) }
     var title by remember { mutableStateOf(route.title) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(route.url) {
         runCatching { Yt.playlist(route.url) }
             .onSuccess { (t, v) ->
                 if (t.isNotEmpty()) title = t
-                videos = v
+                // Each video's key once (a playlist may hold one twice; the grid keys by it).
+                videos = v.map { Library.itemOf(it) }.distinctBy { it.key }
             }
             .onFailure { error = it.friendlyMessage() }
     }
     CoverTheme(route.cover.ifEmpty { videos?.firstOrNull()?.thumbnail }) {
-        LibraryScaffold(title = title.ifEmpty { "播放列表" }, subtitle = videos?.let { "${it.size} 个视频" }) { padding ->
-            val list = videos
-            when {
-                error != null -> ErrorState(error.orEmpty(), Modifier.padding(padding))
-                list == null -> LoadingState(Modifier.padding(padding))
-                list.isEmpty() -> EmptyState("还没有视频", Modifier.padding(padding), icon = YoinSymbols.Playlist)
-                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp)) {
-                    itemsIndexed(list, key = { i, v -> "$i:${v.url}" }) { _, v ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .combinedClickable { Player.play(v.url, v) }
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            NetImage(v.thumbnail, Modifier.width(160.dp).aspectRatio(16f / 10f), shape = ContinuousRoundedCornerShape(10.dp), thumbWidth = 320.dp)
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(v.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(v.channelName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        VideoListPage(
+            id = "yt:${route.url}",
+            title = title.ifEmpty { "播放列表" },
+            subtitle = videos?.let { "${it.size} 个视频" },
+            items = videos,
+            orders = PlaylistOrders,
+            error = error,
+        )
     }
 }

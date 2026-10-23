@@ -33,6 +33,8 @@ class PiliApp : Application(), SingletonImageLoader.Factory {
         com.gpo.pilipala.yt.YtApp.init(this, active = com.gpo.pilipala.core.source.Sources.isOn(com.gpo.pilipala.core.source.VideoSource.YouTube))
         // Mix lists that follow a 收藏夹 or a playlist catch up once per launch.
         com.gpo.pilipala.feature.sources.MixSync.syncAll()
+        // A Mix playing on with the app away (its B站 videos then play without a page).
+        com.gpo.pilipala.feature.sources.MixPlayback.init(this)
         // 云同步, when it is on: merge what other devices left in Drive, leave this one's.
         com.gpo.pilipala.feature.sources.PawCloud.init(this)
         com.gpo.pilipala.feature.sources.PawCloud.syncIfOn()

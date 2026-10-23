@@ -407,8 +407,12 @@ fun PlayerOverlayHost() {
                         last = dy
                     }
 
-                    // Cut short (0, 0): the player settles from where it got to.
-                    override fun end(dy: Float, vy: Float) = latestSettle(vy)
+                    // As the B站 page's swipe down decides (96dp, or a flick past 24dp): the player
+                    // docks, else it springs open again (cut short, 0 / 0: open).
+                    override fun end(dy: Float, vy: Float) {
+                        val goes = with(density) { dy > 96.dp.toPx() || (dy > 24.dp.toPx() && vy > 800.dp.toPx()) }
+                        latestSettle(if (goes) maxOf(vy, FlingVelocity + 1f) else -(FlingVelocity + 1f))
+                    }
                 }
             }
 

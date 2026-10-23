@@ -7,6 +7,12 @@ import androidx.compose.runtime.setValue
 import androidx.media3.common.Player as Media3Player
 import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.feature.player.PlayMode
+import com.gpo.pilipala.feature.player.PlayTarget
+import com.gpo.pilipala.feature.player.QueueItem
+import com.gpo.pilipala.feature.player.resolveFirstCid
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.yt.feature.library.LibItem
 import com.gpo.pilipala.yt.feature.library.Library
@@ -19,6 +25,9 @@ import com.gpo.pilipala.yt.feature.player.Player
  * plays by [mode] like a 收藏夹 queue: the list round again, a random order, or one video over.
  * Started with 仅听声音 ([listening]), every video opens listening; turned off (显示画面) on one,
  * the ones after it show their pictures again, as a 收藏夹 queue keeps it.
+ *
+ * With the app away (in the background, the screen off) no page can open, so a B站 video plays
+ * where the mini bar keeps one (BiliKeeper), and its page opens on it once the app is back.
  */
 object MixPlayback {
     /** The Mix being played through, or null. */
@@ -27,13 +36,19 @@ object MixPlayback {
     var index by mutableIntStateOf(-1)
         private set
 
+    /**
+     * A list played as it was handed over (a YouTube playlist, or a Mix sorted or searched on its
+     * page): its name and videos. Null: the Mix [listId] itself, as the list has it now.
+     */
+    private var fixed by mutableStateOf<Pair<String, List<LibItem>>?>(null)
+
     /** The Mix's videos, as the list has them now. */
     val items: List<LibItem>
-        get() = Library.playlists.value.firstOrNull { it.id == listId }?.items.orEmpty()
+        get() = fixed?.second ?: Library.playlists.value.firstOrNull { it.id == listId }?.items.orEmpty()
 
     /** The Mix's name, for the listen page's header and the 播放列表 sheet. */
     val title: String
-        get() = Library.playlists.value.firstOrNull { it.id == listId }?.name.orEmpty()
+        get() = fixed?.first ?: Library.playlists.value.firstOrNull { it.id == listId }?.name.orEmpty()
 
     var mode by mutableStateOf(PlayMode.ListLoop)
         private set
@@ -55,9 +70,44 @@ object MixPlayback {
 
     private var hooked = false
 
+    private lateinit var app: android.app.Application
+    private val scope = MainScope()
+
+    /** Activities on screen: none, the app is away and a page cannot open (see [playAway]). */
+    private var started = 0
+
+    /** The B站 video played while away, whose page opens once the app is back. */
+    private var awayRoute: Route.Video? = null
+    private var awayJob: Job? = null
+    private var awayFailures = 0
+
+    fun init(application: android.app.Application) {
+        app = application
+        application.registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: android.app.Activity) {
+                started++
+                // Back: the video that played meanwhile gets its page, taking over its player.
+                val r = awayRoute ?: return
+                awayRoute = null
+                if (BiliKeeper.held?.target?.bvid == r.bvid) BiliLinks.open(r.copy(audioOnly = BiliKeeper.held?.audioOnly == true))
+            }
+
+            override fun onActivityStopped(activity: android.app.Activity) {
+                started = (started - 1).coerceAtLeast(0)
+            }
+
+            override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) = Unit
+            override fun onActivityResumed(activity: android.app.Activity) = Unit
+            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+        })
+    }
+
     /** Plays Mix [id] from [start] on ([listen]: 仅听声音). */
     fun start(id: String, start: Int = 0, listen: Boolean = false) {
         hook()
+        fixed = null
         listId = id
         listening = listen
         if (mode == PlayMode.Shuffle) mode = PlayMode.ListLoop
@@ -68,6 +118,7 @@ object MixPlayback {
     /** Plays Mix [id] in a random order ([listen]: 仅听声音). */
     fun shuffle(id: String, listen: Boolean = false) {
         hook()
+        fixed = null
         listId = id
         listening = listen
         mode = PlayMode.Shuffle
@@ -75,7 +126,29 @@ object MixPlayback {
         order.firstOrNull()?.let(::play) ?: stop()
     }
 
+    /**
+     * Plays [list] as handed over, under [id] and [name] (a YouTube playlist's page, a Mix's page
+     * sorted or searched), from [start], or in a random order with [shuffle].
+     */
+    fun play(id: String, name: String, list: List<LibItem>, start: Int = 0, listen: Boolean = false, shuffle: Boolean = false) {
+        if (list.isEmpty()) return
+        hook()
+        fixed = name to list
+        listId = id
+        listening = listen
+        if (shuffle) {
+            mode = PlayMode.Shuffle
+            order = list.indices.shuffled()
+            play(order.first())
+        } else {
+            if (mode == PlayMode.Shuffle) mode = PlayMode.ListLoop
+            order = list.indices.toList()
+            play(start)
+        }
+    }
+
     fun stop() {
+        fixed = null
         listId = null
         index = -1
         order = emptyList()
@@ -115,7 +188,8 @@ object MixPlayback {
     private fun listeningNow(): Boolean {
         val cur = current ?: return listening
         return if (MixItems.isBili(cur)) {
-            ((PlayerHost.front as? PlayerSlot.Bili)?.player as? PiliPlayerController)?.audioOnly ?: listening
+            val front = (PlayerHost.front as? PlayerSlot.Bili)?.player as? PiliPlayerController
+            (front ?: BiliKeeper.held?.takeIf { it.target?.bvid == cur.key.removePrefix("bili:") })?.audioOnly ?: listening
         } else {
             if (Player.session?.url == cur.url) Player.audioOnly else listening
         }
@@ -124,15 +198,43 @@ object MixPlayback {
     private fun play(i: Int) {
         val item = items.getOrNull(i) ?: return stop()
         index = i
+        awayJob?.cancel()
         if (MixItems.isBili(item)) {
+            val route = Route.Video(bvid = item.key.removePrefix("bili:"), cover = item.thumbnail, title = item.title, audioOnly = listening)
+            if (::app.isInitialized && started == 0) return playAway(route)
             // YouTube steps aside; the Bilibili page opens and plays.
             if (Player.session != null) Player.close()
-            BiliLinks.open(Route.Video(bvid = item.key.removePrefix("bili:"), cover = item.thumbnail, title = item.title, audioOnly = listening))
+            BiliLinks.open(route)
         } else {
+            awayRoute = null
             // A kept Bilibili player steps aside; YouTube plays over whatever page is up.
             BiliKeeper.close()
             Player.play(item.url, item.toVideo())
             Player.changeAudioOnly(listening)
+        }
+    }
+
+    /**
+     * The app is away: [route]'s video plays in the mini bar's player (the one kept there, else a
+     * new one), with no page; YouTube steps aside only once it is ready to start, so the sound
+     * never stops long enough for the system to drop the app.
+     */
+    private fun playAway(route: Route.Video) {
+        val ctrl = BiliKeeper.held ?: PiliPlayerController(app)
+        awayJob = scope.launch {
+            val cid = runCatching { resolveFirstCid(QueueItem(bvid = route.bvid)) }.getOrDefault(0L)
+            if (cid <= 0) {
+                if (BiliKeeper.held !== ctrl) ctrl.dispose()
+                // 失效 or offline: on to the next, a few in a row at most.
+                if (++awayFailures <= 3) next() else stop()
+                return@launch
+            }
+            awayFailures = 0
+            BiliKeeper.playAway(ctrl)
+            ctrl.load(PlayTarget(bvid = route.bvid, cid = cid, title = route.title, cover = route.cover), fresh = true)
+            ctrl.listenOnly(listening)
+            ctrl.setBackground(true)
+            awayRoute = route
         }
     }
 
