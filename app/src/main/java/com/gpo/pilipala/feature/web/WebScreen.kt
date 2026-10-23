@@ -194,6 +194,9 @@ fun WebScreen(route: Route.Web) {
                             }
                         }
                         webViewClient = object : WebViewClient() {
+                            // A renderer the system killed would otherwise take the app down with it.
+                            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean = true
+
                             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                                 val url = request.url.toString()
                                 val scheme = request.url.scheme.orEmpty()

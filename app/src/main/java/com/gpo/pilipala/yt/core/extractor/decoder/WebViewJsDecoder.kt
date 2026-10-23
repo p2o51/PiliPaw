@@ -31,6 +31,8 @@ class WebViewJsDecoder(context: Context) : YoutubeJavaScriptDecoder {
     private var preparedPlayerId: String? = null
     private var preparedPlayerCode: String? = null
     private var warmed = false
+    /** The runtime's page the solver and player went into; a new page has neither. */
+    private var loadedGeneration = -1L
 
     /** Loads V8, the solver and the current player ahead of the first video (background thread). */
     @Synchronized
@@ -114,8 +116,12 @@ class WebViewJsDecoder(context: Context) : YoutubeJavaScriptDecoder {
     }
 
     private fun ensureSolver() {
-        if (solverLoaded) return
         runtime.ensureReady(TimeoutMs, "V8 initialization")
+        if (runtime.generation != loadedGeneration) {
+            solverLoaded = false
+            loadedPlayerId = null
+        }
+        if (solverLoaded) return
         runtime.evaluateBlocking(
             "if(!Object.hasOwn){Object.hasOwn=function(o,p){return Object.prototype.hasOwnProperty.call(o,p)}};" +
                 "if(!Array.prototype.at){Array.prototype.at=function(i){i=Math.trunc(i)||0;if(i<0)i+=this.length;return this[i]}};" +
@@ -132,6 +138,7 @@ class WebViewJsDecoder(context: Context) : YoutubeJavaScriptDecoder {
         )
         if (ok != "true") throw ParsingException("EJS initialization returned $ok")
         solverLoaded = true
+        loadedGeneration = runtime.generation
     }
 
     /** The first call for a player preprocesses it into solver functions; later calls only run them. */

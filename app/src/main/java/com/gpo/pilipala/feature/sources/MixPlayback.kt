@@ -252,7 +252,8 @@ object MixPlayback {
         PiliPlayerController.completionHook = hook@{ ctrl, bvid ->
             val cur = current ?: return@hook false
             if (!MixItems.isBili(cur) || cur.key != "bili:$bvid") return@hook false
-            if (mode == PlayMode.RepeatOne) ctrl.play() else next()
+            // After this callback, not in it: the next may release the very player calling it.
+            if (mode == PlayMode.RepeatOne) ctrl.play() else scope.launch { if (current === cur) next() }
             true
         }
         // YouTube: its one player reached the end of the video this run asked for.
@@ -265,7 +266,8 @@ object MixPlayback {
                     Player.exo.seekTo(0)
                     Player.exo.play()
                 } else {
-                    next()
+                    // After the listener, not in it: the next may release this player's session.
+                    scope.launch { if (current === cur) next() }
                 }
             }
         })

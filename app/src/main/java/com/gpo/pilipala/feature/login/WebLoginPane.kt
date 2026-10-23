@@ -139,6 +139,9 @@ internal fun WebLoginPane(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                         }
                     }
                     webViewClient = object : WebViewClient() {
+                        // A renderer the system killed would otherwise take the app down with it.
+                        override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean = true
+
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                             val scheme = request.url.scheme.orEmpty()
                             // App schemes (bilibili://, intent://) would leave the login flow.

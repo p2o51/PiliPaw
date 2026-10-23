@@ -100,6 +100,7 @@ internal fun AboutContent(showBack: Boolean) {
                     trailing = { ValueLabel("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})") },
                 )
             }
+            item { CrashLogItem(com.gpo.pilipala.ui.components.rememberToast()) }
             item {
                 SettingsItem(
                     title = "开源许可",

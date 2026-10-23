@@ -6,7 +6,9 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import com.gpo.pilipala.BuildConfig
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -29,6 +31,10 @@ class WebViewRuntime private constructor(context: Context) {
     private var attempt = 0L
     private var view: WebView? = null
     @Volatile private var ready = false
+
+    /** Bumped whenever a new page comes up: what was loaded into the last one is gone. */
+    @Volatile var generation = 0L
+        private set
 
     /** Waits (up to [timeoutMs]) until the page is up, starting it if nobody has. */
     fun ensureReady(timeoutMs: Long, operation: String) {
@@ -94,6 +100,22 @@ class WebViewRuntime private constructor(context: Context) {
             userAgentString = UserAgent
         }
         v.addJavascriptInterface(Bridge(id, v), BridgeName)
+        // The system may kill the renderer (memory, the app away): unhandled, Chromium then aborts
+        // the whole app. Drop the page instead; the next call starts a new one.
+        v.webViewClient = object : WebViewClient() {
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                Log.w(Tag, "WebView renderer gone (crashed=${detail.didCrash()})")
+                synchronized(lock) {
+                    if (this@WebViewRuntime.view === view) {
+                        this@WebViewRuntime.view = null
+                        ready = false
+                        latch = null
+                    }
+                }
+                runCatching { view.destroy() }
+                return true
+            }
+        }
         v.loadDataWithBaseURL(
             "https://www.youtube.com/",
             "<!doctype html><html><head><script>$BridgeName.ready('$id');</script></head><body></body></html>",
@@ -132,6 +154,7 @@ class WebViewRuntime private constructor(context: Context) {
                     if (ready || attempt != id || attemptId != id.toString()) return@post
                     view = v
                     ready = true
+                    generation++
                     latch?.countDown()
                 }
             }
