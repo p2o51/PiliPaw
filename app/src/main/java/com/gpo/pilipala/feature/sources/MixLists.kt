@@ -355,7 +355,8 @@ fun MixListScreen(route: Route.MixList) {
 }
 
 /**
- * 关联: follow a Bilibili 收藏夹 (the signed-in account's own) or a YouTube playlist (its link).
+ * 关联: follow a Bilibili 收藏夹 (the signed-in account's own) or a YouTube playlist (the
+ * signed-in account's own, or any by its link).
  * What is linked shows with 取消关联; a new link pulls its videos in at once.
  */
 @Composable
@@ -376,6 +377,12 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
             ).asObj.arr("list").objects().map { it.toFavFolder() }
         }.getOrDefault(emptyList())
     }
+    // The signed-in YouTube account's playlists (none signed out).
+    val ytProfile by com.gpo.pilipala.yt.core.account.Accounts.youtube.collectAsState()
+    val ytSignedIn = ytProfile is com.gpo.pilipala.yt.core.account.Profile.SignedIn
+    val ytCached by YtLibraryCache.lists.collectAsState()
+    val ytAccountLists = if (ytSignedIn) ytCached else null
+    LaunchedEffect(ytSignedIn) { if (ytSignedIn) YtLibraryCache.refresh() }
     val done: (Result<Int>) -> Unit = { r ->
         r.onSuccess { n -> toast(if (n > 0) "加入 $n 个视频" else "已关联") }
             .onFailure { toast(it.friendlyMessage()) }
@@ -435,6 +442,37 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
                 }
             }
             Text("YouTube 播放列表", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp, top = 8.dp))
+            // The signed-in account's own playlists to pick, as the 收藏夹 above; any other by its link.
+            val ytLists = ytAccountLists
+            if (!ytLists.isNullOrEmpty()) {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
+                    items(ytLists, key = { it.id }) { pl ->
+                        val link = MixSync.youtubePlaylistLink(pl.url, pl.title)
+                        val linked = list.links.any { it.id == link.id }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(20.dp))
+                                .combinedClickable(enabled = !linked) {
+                                    MixSync.link(list.id, link, done)
+                                    close()
+                                }
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            NetImage(MixItems.secure(pl.thumbnail), Modifier.width(72.dp).aspectRatio(16f / 10f), shape = CoverShape, thumbWidth = 144.dp)
+                            Column(Modifier.weight(1f)) {
+                                Text(pl.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (pl.count.isNotEmpty()) {
+                                    Text(pl.count, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            if (linked) Icon(YoinSymbols.Check, contentDescription = "已关联", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = url,
