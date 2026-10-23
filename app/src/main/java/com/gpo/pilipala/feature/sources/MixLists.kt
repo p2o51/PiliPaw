@@ -269,6 +269,8 @@ fun MixListScreen(route: Route.MixList) {
     var menu by remember { mutableStateOf<LibItem?>(null) }
     var deleting by remember { mutableStateOf(false) }
     var linking by remember { mutableStateOf(false) }
+    // 仅听声音 for the run, as a 收藏夹's: 播放全部 / 随机播放 / a row then open each video listening.
+    var listen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     // Opening a Mix that follows something brings it up to date.
     LaunchedEffect(route.id) { if (list?.links?.isNotEmpty() == true) MixSync.sync(route.id) }
     // The page takes its colours from the first video's cover, as a 收藏夹 does.
@@ -292,7 +294,7 @@ fun MixListScreen(route: Route.MixList) {
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp)) {
                 item(key = "head") {
-                    MixHead(list, onLinks = { linking = true })
+                    MixHead(list, listen, onListenChange = { listen = it }, onLinks = { linking = true })
                 }
                 itemsIndexed(list.items, key = { _, it -> it.key }) { i, item ->
                     MixRow(
@@ -300,7 +302,7 @@ fun MixListScreen(route: Route.MixList) {
                         Modifier.animateItem(),
                         playing = MixPlayback.listId == list.id && MixPlayback.index == i,
                         // From here on through the rest of the Mix.
-                        onClick = { MixPlayback.start(list.id, i) },
+                        onClick = { MixPlayback.start(list.id, i, listen) },
                         onLongClick = { menu = item },
                     )
                 }
@@ -438,22 +440,23 @@ private fun MixLinkSheet(list: LocalPlaylist, onDismiss: () -> Unit) {
 }
 
 /**
- * Under the title: 播放全部 / 随机播放, how the Mix splits between the two sources (each count
+ * Under the title: 播放全部 / 随机播放 with 仅听声音, how the Mix splits between the two sources (each count
  * with its own weight, no "·" between them), and the lists it follows as chips.
  */
 @Composable
-private fun MixHead(list: LocalPlaylist, onLinks: () -> Unit) {
+private fun MixHead(list: LocalPlaylist, listen: Boolean, onListenChange: (Boolean) -> Unit, onLinks: () -> Unit) {
     val bili = list.items.count(MixItems::isBili)
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
             SourceCount(bili, "哔哩哔哩")
             SourceCount(list.items.size - bili, "YouTube")
         }
-        com.gpo.pilipala.feature.library.QueueSplitButton(
+        com.gpo.pilipala.feature.library.QueuePlayButtons(
             loading = false,
-            compact = com.gpo.pilipala.ui.components.widthClass() == com.gpo.pilipala.ui.components.WidthClass.Compact,
-            onPlay = { MixPlayback.start(list.id, 0) },
-            onShuffle = { MixPlayback.shuffle(list.id) },
+            listening = listen,
+            onListeningChange = onListenChange,
+            onPlay = { MixPlayback.start(list.id, 0, listen) },
+            onShuffle = { MixPlayback.shuffle(list.id, listen) },
         )
         if (list.links.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -220,10 +220,10 @@ private val LocalListenFlight = staticCompositionLocalOf<ListenFlight?> { null }
  * cover, the title, the lyrics, Yoin's transport, and the ways on — 播放列表 and 评论 as
  * sheets, 显示画面 back to the video. 展开歌词 gives the lyrics the page, with 搜索歌词 beside
  * 点赞 at the top. Wide windows put the cover and transport left and the lyrics / list /
- * comments right.
+ * comments right. A swipe down on it ([swipeDown]) leaves as 收起 does, with the finger.
  */
 @Composable
-internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
+internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null, swipeDown: ListenSwipeDown? = null) {
     var sheet by remember { mutableStateOf<ListenSheet?>(null) }
     val title = source.title
     val subtitle = source.subtitle
@@ -245,6 +245,7 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null) {
         Modifier
             .fillMaxSize()
             .onGloballyPositioned { rootOrigin = it.positionInWindow() }
+            .listenSwipeDown(swipeDown)
             // Swallow touches so nothing reaches the video beneath.
             .clickable(interactionSource = null, indication = null) {},
     ) {

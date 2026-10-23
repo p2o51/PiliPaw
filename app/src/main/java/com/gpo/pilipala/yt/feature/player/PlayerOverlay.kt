@@ -390,6 +390,28 @@ fun PlayerOverlayHost() {
                 }
             }
 
+            val latestSettle by androidx.compose.runtime.rememberUpdatedState(settle)
+            val listenSwipe = remember(drag) {
+                object : com.gpo.pilipala.feature.listen.ListenSwipeDown {
+                    var last = 0f
+
+                    override fun start(): Boolean {
+                        if (!Player.expanded || Player.fullscreen) return false
+                        last = 0f
+                        dragging = true
+                        return true
+                    }
+
+                    override fun drag(dy: Float) {
+                        drag.dispatchRawDelta(dy - last)
+                        last = dy
+                    }
+
+                    // Cut short (0, 0): the player settles from where it got to.
+                    override fun end(dy: Float, vy: Float) = latestSettle(vy)
+                }
+            }
+
             // Collapsed, the app's one mini bar (feature/sources/KeepPlaying.kt) stands for the player;
             // this overlay only shows while it opens, is open, or is being dragged.
             if (p <= 0.001f && !expanded && !dragging) return@BoxWithConstraints
@@ -495,7 +517,8 @@ fun PlayerOverlayHost() {
                 if (p > 0.99f && !Player.fullscreen) SeekBubbleLayer(seek, frames, big = false)
                 // 仅听声音: the listen page over the open player; the picture flies into its cover,
                 // and the page folds back into the picture as the player docks.
-                ListenScreen(overlay = { progress.value }, from = { pictureRect })
+                // A swipe down on it folds the player toward its bar with the finger, as one on the picture does.
+                ListenScreen(overlay = { progress.value }, from = { pictureRect }, swipeDown = listenSwipe)
             }
         }
         // The back menu, out of the picture's back button (its top start, 10dp in).

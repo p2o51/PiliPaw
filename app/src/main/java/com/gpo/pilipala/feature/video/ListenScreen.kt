@@ -70,7 +70,8 @@ import com.gpo.yoin.symbols.rememberPlayModeSymbolPainter
 /**
  * Bilibili's 仅听声音, over the video page (which stays composed beneath, player and all): the
  * shared listen page ([ListenPage]) on this page's player, detail and queue. 收起 leaves the
- * page; 显示画面 brings the picture back; holding 点赞 asks for a 三连 ([onTriple]).
+ * page (so does a swipe down on it); 显示画面 brings the picture back; holding 点赞 asks for a
+ * 三连 ([onTriple]).
  */
 @Composable
 internal fun ListenScreen(
@@ -89,7 +90,18 @@ internal fun ListenScreen(
     source.index = index
     source.gate = gate
     source.onTriple = onTriple
-    ListenPage(source, flight)
+    // A swipe down on the page leaves it as one on the picture does (the page closes under the finger).
+    val pictureSwipe = com.gpo.pilipala.feature.player.LocalPictureSwipeDown.current
+    val swipeDown = remember(pictureSwipe, ctrl) {
+        pictureSwipe?.let { s ->
+            object : com.gpo.pilipala.feature.listen.ListenSwipeDown {
+                override fun start(): Boolean = s.start(ctrl)
+                override fun drag(dy: Float) = s.drag(dy)
+                override fun end(dy: Float, vy: Float) = s.end(dy, vy)
+            }
+        }
+    }
+    ListenPage(source, flight, swipeDown)
 }
 
 @Stable

@@ -59,7 +59,8 @@ internal fun Modifier.pageClosingTransform(t: PageTransitions): Modifier = graph
     // Out in the first tenth of the ride (~45 ms): the page and the list beneath, riding home,
     // never stand half over each other for long (a double exposure read as a jolt).
     alpha = max(1f - 10f * t.exit.value, 0f)
-    shape = RoundedCornerShape(BackMotionTokens.PopPageCornerRadius * p)
+    // A cancelled back springs home and may dip under 0 on the way: never a negative corner.
+    shape = RoundedCornerShape(BackMotionTokens.PopPageCornerRadius * p.coerceAtLeast(0f))
     clip = p > 0f
 }
 

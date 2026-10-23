@@ -66,7 +66,8 @@ internal fun Modifier.pageClosingTransform(t: PageTransitions): Modifier = graph
     translationY = verticalFollow(t.touchYDelta, size.height, scale, marginPx)
 
     alpha = max(1f - 5f * t.exit.value, 0f)
-    shape = RoundedCornerShape(BackMotionTokens.PopPageCornerRadius * p)
+    // A cancelled back springs home and may dip under 0 on the way: never a negative corner.
+    shape = RoundedCornerShape(BackMotionTokens.PopPageCornerRadius * p.coerceAtLeast(0f))
     clip = p > 0f
 }
 

@@ -74,10 +74,11 @@ import kotlinx.coroutines.launch
  * player. The picture ([from]: its window rect) flies into the cover on the way in, and the
  * cover back into the picture for 显示画面. [overlay] is the player's own open progress (1 open,
  * 0 the mini bar): as a back or 收起 docks the player, the page folds into the picture all the
- * way down to the bar; opening the bar unfolds it.
+ * way down to the bar; opening the bar unfolds it. [swipeDown] is the player's own drag down
+ * (the page folds with the finger).
  */
 @Composable
-fun ListenScreen(overlay: () -> Float, from: () -> Rect?) {
+internal fun ListenScreen(overlay: () -> Float, from: () -> Rect?, swipeDown: com.gpo.pilipala.feature.listen.ListenSwipeDown? = null) {
     val session = Player.session ?: return
     val listening = Player.audioOnly
     val own = remember { Animatable(if (listening) 1f else 0f) }
@@ -169,7 +170,7 @@ fun ListenScreen(overlay: () -> Float, from: () -> Rect?) {
     source.lines = lines
     val flight = remember { ListenFlight(progress, { latestFrom() }, { shot }) }
     flight.pinchOut = pinchOut
-    ListenPage(source, flight)
+    ListenPage(source, flight, swipeDown)
 }
 
 /** The YouTube picture's pinch into 仅听声音 (PlayerOverlay), filled in by [ListenScreen]. */

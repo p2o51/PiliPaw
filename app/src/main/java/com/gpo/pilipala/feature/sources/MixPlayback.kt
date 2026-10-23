@@ -17,6 +17,8 @@ import com.gpo.pilipala.yt.feature.player.Player
  * own source's player (Bilibili's video page, YouTube's player over the page); when one reaches
  * its end, the next starts in whichever player it needs, and the other one steps aside. It
  * plays by [mode] like a 收藏夹 queue: the list round again, a random order, or one video over.
+ * Started with 仅听声音 ([listening]), every video opens listening; turned off (显示画面) on one,
+ * the ones after it show their pictures again, as a 收藏夹 queue keeps it.
  */
 object MixPlayback {
     /** The Mix being played through, or null. */
@@ -36,6 +38,10 @@ object MixPlayback {
     var mode by mutableStateOf(PlayMode.ListLoop)
         private set
 
+    /** 仅听声音 for the run: each video opens audio-only. */
+    var listening by mutableStateOf(false)
+        private set
+
     /** The play order over [items] (shuffled for 随机播放); [index] is a position in the list itself. */
     private var order: List<Int> = emptyList()
 
@@ -49,19 +55,21 @@ object MixPlayback {
 
     private var hooked = false
 
-    /** Plays Mix [id] from [start] on. */
-    fun start(id: String, start: Int = 0) {
+    /** Plays Mix [id] from [start] on ([listen]: 仅听声音). */
+    fun start(id: String, start: Int = 0, listen: Boolean = false) {
         hook()
         listId = id
+        listening = listen
         if (mode == PlayMode.Shuffle) mode = PlayMode.ListLoop
         order = items.indices.toList()
         play(start)
     }
 
-    /** Plays Mix [id] in a random order. */
-    fun shuffle(id: String) {
+    /** Plays Mix [id] in a random order ([listen]: 仅听声音). */
+    fun shuffle(id: String, listen: Boolean = false) {
         hook()
         listId = id
+        listening = listen
         mode = PlayMode.Shuffle
         order = items.indices.shuffled()
         order.firstOrNull()?.let(::play) ?: stop()
@@ -85,6 +93,7 @@ object MixPlayback {
     fun playAt(i: Int) {
         if (listId == null || i == index) return
         if (order.size != items.size) order = items.indices.toList()
+        listening = listeningNow()
         play(i)
     }
 
@@ -93,6 +102,7 @@ object MixPlayback {
         if (listId == null) return
         val n = items.size
         if (n == 0) return stop()
+        listening = listeningNow()
         if (order.size != n) order = if (mode == PlayMode.Shuffle) (0 until n).shuffled() else (0 until n).toList()
         val at = order.indexOf(index)
         val following = order.getOrNull(at + 1)
@@ -101,17 +111,28 @@ object MixPlayback {
         play(order.first())
     }
 
+    /** Whether the video playing now is listening (the run follows a 显示画面 or 仅听声音 on it). */
+    private fun listeningNow(): Boolean {
+        val cur = current ?: return listening
+        return if (MixItems.isBili(cur)) {
+            ((PlayerHost.front as? PlayerSlot.Bili)?.player as? PiliPlayerController)?.audioOnly ?: listening
+        } else {
+            if (Player.session?.url == cur.url) Player.audioOnly else listening
+        }
+    }
+
     private fun play(i: Int) {
         val item = items.getOrNull(i) ?: return stop()
         index = i
         if (MixItems.isBili(item)) {
             // YouTube steps aside; the Bilibili page opens and plays.
             if (Player.session != null) Player.close()
-            BiliLinks.open(Route.Video(bvid = item.key.removePrefix("bili:"), cover = item.thumbnail, title = item.title))
+            BiliLinks.open(Route.Video(bvid = item.key.removePrefix("bili:"), cover = item.thumbnail, title = item.title, audioOnly = listening))
         } else {
             // A kept Bilibili player steps aside; YouTube plays over whatever page is up.
             BiliKeeper.close()
             Player.play(item.url, item.toVideo())
+            Player.changeAudioOnly(listening)
         }
     }
 
