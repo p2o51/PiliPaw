@@ -201,9 +201,13 @@ object MixPlayback {
         val item = items.getOrNull(i) ?: return stop()
         index = i
         awayJob?.cancel()
+        // The run sits in the mini bar (no page or open player in front): the next video stays
+        // there too, in the bar's player, instead of opening its page or the player over the page.
+        val docked = PlayerHost.front == null && PlayerHost.docked != null
         if (MixItems.isBili(item)) {
             val route = Route.Video(bvid = item.key.removePrefix("bili:"), cover = item.thumbnail, title = item.title, audioOnly = listening)
-            if (::app.isInitialized && started == 0) return playAway(route, item.channelName)
+            val away = ::app.isInitialized && started == 0
+            if (away || (docked && ::app.isInitialized)) return playAway(route, item.channelName, away)
             // YouTube steps aside; the Bilibili page opens and plays.
             if (Player.session != null) Player.close()
             BiliLinks.open(route)
@@ -212,16 +216,19 @@ object MixPlayback {
             // A kept Bilibili player steps aside; YouTube plays over whatever page is up.
             BiliKeeper.close()
             Player.play(item.url, item.toVideo())
+            // Played from the bar: back into the bar, the player never opening over the page.
+            if (docked) Player.expanded = false
             Player.changeAudioOnly(listening)
         }
     }
 
     /**
-     * The app is away: [route]'s video plays in the mini bar's player (the one kept there, else a
-     * new one), with no page; YouTube steps aside only once it is ready to start, so the sound
-     * never stops long enough for the system to drop the app.
+     * The app is away ([away]), or the run sits in the mini bar: [route]'s video plays in the mini
+     * bar's player (the one kept there, else a new one), with no page; YouTube steps aside only
+     * once it is ready to start, so the sound never stops long enough for the system to drop the
+     * app. Away, its page opens on it once the app is back.
      */
-    private fun playAway(route: Route.Video, artist: String) {
+    private fun playAway(route: Route.Video, artist: String, away: Boolean = true) {
         // A B站 page's player that just finished the last one: the next plays in it, and the page
         // (whose Mix step replaces it in place on return) carries on with it, not from the top.
         val page = ((PlayerHost.front as? PlayerSlot.Bili)?.player as? PiliPlayerController)?.takeIf { it !== BiliKeeper.held }
@@ -240,8 +247,9 @@ object MixPlayback {
             // The notification's second line (the page sets it from the video's detail).
             ctrl.artist = artist
             ctrl.listenOnly(listening)
-            ctrl.setBackground(true)
-            awayRoute = route
+            // Away, its picture rests; in the bar (the app on screen) the tile shows it.
+            ctrl.setBackground(away)
+            if (away) awayRoute = route
         }
     }
 
