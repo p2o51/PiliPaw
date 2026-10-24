@@ -24,9 +24,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.gpo.pilipala.core.net.str
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -101,6 +104,7 @@ internal fun AboutContent(showBack: Boolean) {
                     trailing = { ValueLabel("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})") },
                 )
             }
+            item { UpdateItem(open) }
             item { CrashLogItem(com.gpo.pilipala.ui.components.rememberToast()) }
             item {
                 SettingsItem(
@@ -111,6 +115,73 @@ internal fun AboutContent(showBack: Boolean) {
                 )
             }
         }
+    }
+}
+
+/** 检查更新: asks GitHub for PiliPaw's latest release; a newer one opens its page. */
+@Composable
+private fun UpdateItem(open: (String) -> Unit) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var state by remember { mutableStateOf<UpdateCheck.State>(UpdateCheck.State.Idle) }
+    val s = state
+    SettingsItem(
+        title = if (s is UpdateCheck.State.Newer) "有新版本 ${s.version}" else "检查更新",
+        icon = YoinSymbols.Refresh,
+        summary = if (s is UpdateCheck.State.Newer) "点开去 GitHub 下载" else null,
+        onClick = {
+            when (s) {
+                is UpdateCheck.State.Newer -> open(s.url)
+                UpdateCheck.State.Checking -> Unit
+                else -> scope.launch {
+                    state = UpdateCheck.State.Checking
+                    state = UpdateCheck.latest()
+                }
+            }
+        },
+        trailing = {
+            when (s) {
+                UpdateCheck.State.Checking -> ValueLabel("检查中…")
+                UpdateCheck.State.Latest -> ValueLabel("已是最新")
+                UpdateCheck.State.Failed -> ValueLabel("检查失败")
+                is UpdateCheck.State.Newer -> LaunchGlyph()
+                UpdateCheck.State.Idle -> Unit
+            }
+        },
+    )
+}
+
+internal object UpdateCheck {
+    private const val LatestUrl = "https://api.github.com/repos/p2o51/PiliPaw/releases/latest"
+
+    sealed interface State {
+        data object Idle : State
+        data object Checking : State
+        data object Latest : State
+        data object Failed : State
+        data class Newer(val version: String, val url: String) : State
+    }
+
+    suspend fun latest(): State = try {
+        val o = com.gpo.pilipala.core.net.BiliClient.getText(LatestUrl, headers = mapOf("Accept" to "application/vnd.github+json"))
+            .let { com.gpo.pilipala.core.net.BiliJson.parseToJsonElement(it) as kotlinx.serialization.json.JsonObject }
+        val tag = o.str("tag_name").removePrefix("v")
+        if (tag.isNotBlank() && newer(tag, BuildConfig.VERSION_NAME)) State.Newer(tag, o.str("html_url")) else State.Latest
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (_: Throwable) {
+        State.Failed
+    }
+
+    /** 0.5.12 > 0.5.11 by numbers; a suffix after '-' is ignored. */
+    fun newer(a: String, b: String): Boolean {
+        fun parts(v: String) = v.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+        val x = parts(a)
+        val y = parts(b)
+        for (i in 0 until maxOf(x.size, y.size)) {
+            val d = x.getOrElse(i) { 0 } - y.getOrElse(i) { 0 }
+            if (d != 0) return d > 0
+        }
+        return false
     }
 }
 
