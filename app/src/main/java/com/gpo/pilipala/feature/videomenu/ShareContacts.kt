@@ -1,5 +1,17 @@
 package com.gpo.pilipala.feature.videomenu
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.graphics.Color
+import com.gpo.pilipala.ui.theme.YoinMotion
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -112,8 +124,11 @@ internal object ShareContactsApi {
 }
 
 /**
- * 分享's first line: the people you last 私信'd, a face and a name each; a tap sends them the
- * video's title and link, ticks, and the sheet goes. Nothing shows signed out or with no chats.
+ * 分享's first line: the people you last 私信'd, a face and a name each. A tap picks one (a ring
+ * round the face, like the official app); a second tap lets go. While someone is picked, a
+ * 说点什么 field and 发送 open under the faces, so nothing goes out without that confirm. 发送 sends
+ * the note (if any) with the video's title and link, ticks the face, and the sheet goes.
+ * Nothing shows signed out or with no chats.
  */
 @Composable
 internal fun ShareContactsRow(target: ShareTarget, finisher: SheetFinisher, modifier: Modifier = Modifier) {
@@ -129,22 +144,95 @@ internal fun ShareContactsRow(target: ShareTarget, finisher: SheetFinisher, modi
     if (contacts.isEmpty()) return
     val scope = rememberCoroutineScope()
     val toast = rememberToast()
-    var sending by remember { mutableStateOf<Long?>(null) }
+    var picked by remember { mutableStateOf<ShareContact?>(null) }
+    var note by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
     var sent by remember { mutableStateOf<Long?>(null) }
-    Row(
-        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        contacts.forEach { c ->
-            Column(
-                Modifier
-                    .width(64.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .clickable(enabled = sending == null && !finisher.finishing) {
-                        sending = c.mid
+    val idle = !sending && !finisher.finishing && sent == null
+    // The faces and their confirm are one group: tight between them.
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            contacts.forEach { c ->
+                val selected = picked?.mid == c.mid
+                val ring by animateColorAsState(
+                    if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    YoinMotion.defaultEffectsSpec(),
+                    label = "contactRing",
+                )
+                Column(
+                    Modifier
+                        .width(64.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                        .clickable(enabled = idle) { picked = if (selected) null else c }
+                        .padding(vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Box(Modifier.size(56.dp).border(2.dp, ring, CircleShape).padding(4.dp)) {
+                        NetImage(c.face, Modifier.fillMaxSize(), shape = CircleShape, thumbWidth = 96.dp)
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = sent == c.mid,
+                            enter = fadeIn() + scaleIn(initialScale = 0.6f),
+                            exit = fadeOut() + scaleOut(targetScale = 0.6f),
+                        ) {
+                            Box(
+                                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary, CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(YoinSymbols.Check, null, tint = MaterialTheme.colorScheme.onPrimary)
+                            }
+                        }
+                    }
+                    Text(
+                        c.name,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = picked != null,
+            enter = fadeIn(YoinMotion.defaultEffectsSpec()) + expandVertically(YoinMotion.defaultSpatialSpec()),
+            exit = fadeOut(YoinMotion.fastEffectsSpec()) + shrinkVertically(YoinMotion.defaultSpatialSpec()),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    enabled = idle,
+                    singleLine = true,
+                    placeholder = { Text("说点什么（可不填）", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    shape = CircleShape,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
+                    modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                )
+                Button(
+                    onClick = {
+                        val c = picked ?: return@Button
+                        sending = true
                         scope.launch {
                             try {
-                                ShareContactsApi.send(c.mid, "${target.title} ${target.url}")
+                                val link = "${target.title} ${target.url}"
+                                ShareContactsApi.send(c.mid, note.trim().let { if (it.isEmpty()) link else "$it\n$link" })
                                 sent = c.mid
                                 finisher.close { toast("已发给 ${c.name}") }
                             } catch (e: CancellationException) {
@@ -152,37 +240,13 @@ internal fun ShareContactsRow(target: ShareTarget, finisher: SheetFinisher, modi
                             } catch (e: Throwable) {
                                 toast(e.friendlyMessage())
                             }
-                            sending = null
+                            sending = false
                         }
-                    }
-                    .padding(vertical = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Box(Modifier.size(52.dp)) {
-                    NetImage(c.face, Modifier.fillMaxSize(), shape = CircleShape, thumbWidth = 104.dp)
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = sent == c.mid,
-                        enter = fadeIn() + scaleIn(initialScale = 0.6f),
-                        exit = fadeOut() + scaleOut(targetScale = 0.6f),
-                    ) {
-                        Box(
-                            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary, CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(YoinSymbols.Check, null, tint = MaterialTheme.colorScheme.onPrimary)
-                        }
-                    }
-                }
-                Text(
-                    c.name,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                    },
+                    enabled = idle,
+                    modifier = Modifier.height(52.dp),
+                    shapes = ButtonDefaults.shapes(),
+                ) { Text(if (sending) "发送中" else "发送", style = MaterialTheme.typography.titleSmall) }
             }
         }
     }

@@ -124,9 +124,7 @@ internal object NotesApi {
  * video plays on; 写笔记 floats at the bottom end.
  */
 @Composable
-internal fun NotesPane(aid: Long, pad: PaddingValues, modifier: Modifier = Modifier) {
-    var reload by remember { mutableStateOf(0) }
-    val notes by produceState<VideoNotes?>(null, aid, reload) { value = NotesApi.load(aid) }
+internal fun NotesPane(aid: Long, notes: VideoNotes?, onChanged: () -> Unit, pad: PaddingValues, modifier: Modifier = Modifier) {
     var open by remember { mutableStateOf<String?>(null) }
     val dir = LocalLayoutDirection.current
     Box(modifier.fillMaxSize()) {
@@ -187,7 +185,7 @@ internal fun NotesPane(aid: Long, pad: PaddingValues, modifier: Modifier = Modif
     open?.let { url ->
         NoteWebSheet(url, onDismiss = {
             open = null
-            reload++
+            onChanged()
         })
     }
 }
