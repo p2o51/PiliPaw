@@ -108,7 +108,7 @@ internal class MiniGeo(
     val right: Rect,
     val sideAlpha: Float,
     val tileCorner: Float,
-    /** Where touches land: the drawn blocks, never more. */
+    /** Where touches land: the drawn blocks (merged: with the nav bar's margin around the circle). */
     val hit: Rect,
     val merge: Float,
     val windowed: Boolean,
@@ -212,6 +212,9 @@ internal fun miniGeo(
     val right = folded(r0)
     val sideAlpha = (1f - fold * 1.6f).coerceIn(0f, 1f)
     val hit = when {
+        // Merged: the circle plus the nav bar's margin around it, for the sideways swipe; never
+        // past the circle's right edge (the first tab starts there).
+        !windowed && m >= 0.999f && nav != null -> Rect(minOf(nav.left, tile.left), minOf(nav.top, tile.top), tile.right, maxOf(nav.bottom, tile.bottom))
         windowed || m >= 0.999f -> tile
         sideAlpha <= 0f -> tile
         else -> tile.union(left).union(pause).union(right)
@@ -246,7 +249,7 @@ internal fun Rect.union(o: Rect) = Rect(minOf(left, o.left), minOf(top, o.top), 
 internal enum class MiniKey { Play, Close }
 
 /** What one finger's drag does, decided once it passes touch slop. */
-internal enum class MiniDragIntent { MoveWindow, SwipeAway, PopOut, None }
+internal enum class MiniDragIntent { MoveWindow, SwipeAway, PopOut, DockSwipe, None }
 
 /** What one gesture on the bar or the window was, once every finger is up. */
 internal enum class MiniGestureKind { Tap, Pinch, Drag, None }
@@ -309,10 +312,11 @@ internal object MiniGestures {
     /**
      * One finger past slop, [travel] from where it went down: the window moves; on the bar a
      * sideways drag swipes it away and an upward one that started on the picture pops it out as a
-     * window under the finger; the merged circle does nothing (scrolling owns it).
+     * window under the finger; the merged circle only answers a sideways drag, which closes it.
      */
     fun dragIntent(travel: Offset, windowed: Boolean, merged: Boolean, onPicture: Boolean): MiniDragIntent = when {
         windowed -> MiniDragIntent.MoveWindow
+        merged && kotlin.math.abs(travel.x) > kotlin.math.abs(travel.y) -> MiniDragIntent.DockSwipe
         merged -> MiniDragIntent.None
         kotlin.math.abs(travel.x) > kotlin.math.abs(travel.y) -> MiniDragIntent.SwipeAway
         travel.y < 0f && onPicture -> MiniDragIntent.PopOut
@@ -334,6 +338,9 @@ internal object MiniGestures {
 
     /** How far across the bar a plain release must go to swipe it away. */
     const val SwipeAwayAt = 0.35f
+
+    /** The merged circle's sideways swipe against [range] (px): 1 is where letting go closes it. */
+    fun dockSwipeProgress(dx: Float, range: Float): Float = (kotlin.math.abs(dx) / range.coerceAtLeast(1f)).coerceAtMost(1.5f)
 
     /**
      * True when [before] → [after] crosses [at] either way: the drag just passed the point where

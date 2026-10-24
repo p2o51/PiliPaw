@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,12 +47,20 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.isSpecified
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -60,17 +69,22 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.VelocityTracker1D
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
+import androidx.graphics.shapes.Morph
+import androidx.graphics.shapes.toPath
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.source.VideoSource
 import com.gpo.pilipala.feature.player.PiliPlayerController
@@ -81,7 +95,10 @@ import com.gpo.pilipala.ui.components.WidthClass
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.yt.feature.player.Player
+import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.debounce
@@ -156,7 +173,27 @@ object KeepPlaying {
 
     /** The room the nav bar makes at its start for the merged circle (0..1 of it). */
     val navRoom: Float
-        get() = if (BiliKeeper.held != null || (Player.session != null && !Player.expanded)) mergeRaw else 0f
+        get() = if (BiliKeeper.held != null || (Player.session != null && !Player.expanded)) mergeRaw else navRoomLeaving.value
+
+    /** A circle swiped off the nav bar: the room it leaves behind closes on a spring (else 0 at once). */
+    private val navRoomLeaving = Animatable(0f)
+
+    // Outlives the bar: it leaves composition once faded, well before the room has closed.
+    private val roomScope = CoroutineScope(SupervisorJob() + AndroidUiDispatcher.Main)
+
+    /**
+     * Call on the main thread just before the player closes: the room the circle had springs shut
+     * instead of vanishing, and the next bar starts with none.
+     */
+    internal fun closeNavRoom() {
+        val from = navRoom
+        // Undispatched: the room holds from this frame on, before the player is gone.
+        roomScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            navRoomLeaving.snapTo(from)
+            navRoomLeaving.animateTo(0f, MiniSprings.liq())
+        }
+        mergeRaw = 0f
+    }
 
     /** Scrolling's ask (down: fold into the nav bar); the bar follows once it holds for a moment. */
     internal var scrollWantsMerge by mutableStateOf(false)
@@ -510,6 +547,24 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
     var swipeDrag by mutableStateOf<Float?>(null)
     val swipeNow: Float get() = swipeDrag ?: swipe.value
 
+    /** The merged circle's sideways swipe (px under the finger; null when not dragged), as progress. */
+    var dockDrag by mutableStateOf<Float?>(null)
+    val dockSwipe = Animatable(0f)
+    var dockRange = 1f
+    val dockNow: Float get() = dockDrag?.let { MiniGestures.dockSwipeProgress(it, dockRange) } ?: dockSwipe.value
+
+    /** Which way the circle is swiped (−1 left, 1 right): the scrim darkens from where it started. */
+    var dockDir by mutableFloatStateOf(1f)
+
+    /** Letting go now closes it: the scrim turns solid and the circle a cookie. */
+    var dockArmed by mutableStateOf(false)
+
+    /** The circle's own scale while it springs away (1 at rest). */
+    val dockScale = Animatable(1f)
+
+    /** Swiped off the nav bar: the bar sinks no lower while it fades, the circle shrinks instead. */
+    var dockClosing by mutableStateOf(false)
+
     /** The window's centre under the finger (window px); null when not dragged. */
     var dragCenter by mutableStateOf<Offset?>(null)
     var flingJob: Job? = null
@@ -623,7 +678,8 @@ private fun rememberVideoAspect(player: androidx.media3.common.Player?): Float {
  * on a tablet. Scrolling down pours the picture into a 48dp circle at the nav bar's start, with a
  * progress ring; scrolling up brings it out again. Two fingers run one size axis: circle ← bar →
  * a floating window of the video's own shape (drag or fling it to a corner; pinch it small to dock)
- * (rubber-banding past its largest size). Tapping the picture is what opens the video.
+ * (rubber-banding past its largest size). Tapping the picture is what opens the video; tapping
+ * the circle opens it out into the bar.
  */
 @OptIn(FlowPreview::class)
 @Composable
@@ -752,6 +808,7 @@ fun MiniBarHost() {
         // Without a nav bar (a pushed page) the bottom corners sit just above the system's inset.
         val restBottom = if (nav != null) nav.top - with(density) { 32.dp.toPx() } else h - with(density) { 16.dp.toPx() }
         frame.restArea = Rect(margin, statusTop + margin, w - margin, restBottom)
+        frame.dockRange = with(density) { DockSwipeAt.toPx() }
         frame.px = with(density) { MiniPx(BlockGap.toPx(), InnerCorner.toPx(), WindowCorner.toPx(), margin, 8.dp.toPx(), 32.dp.toPx(), 8.dp.toPx()) }
 
         // The bar follows the nav bar (a page opening hides it, coming back shows it) on a spring.
@@ -761,7 +818,8 @@ fun MiniBarHost() {
         // Rest changes from outside a gesture (scrolling, a new video, the nav bar going): spring there.
         val restAxis = frame.restAxis(KeepPlaying.rest, density.density)
         LaunchedEffect(restAxis) {
-            if (frame.pinchAxis != null) return@LaunchedEffect
+            // A circle swiped away shrinks where it is (a scroll to the top must not open it out).
+            if (frame.pinchAxis != null || frame.dockClosing) return@LaunchedEffect
             if (frame.axis.isRunning && frame.axis.targetValue == restAxis) return@LaunchedEffect
             frame.axis.animateTo(restAxis, MiniSprings.liq())
         }
@@ -787,7 +845,7 @@ fun MiniBarHost() {
         // carries on from whatever it was doing).
         LaunchedEffect(frame) {
             snapshotFlow { KeepPlaying.scrollWantsMerge }.drop(1).debounce(130).collect { want ->
-                if (frame.gesturing || KeepPlaying.rest is MiniRest.Window) return@collect
+                if (frame.gesturing || frame.dockClosing || KeepPlaying.rest is MiniRest.Window) return@collect
                 KeepPlaying.rest = if (want && frame.canMerge) MiniRest.Merged else MiniRest.Row
             }
         }
@@ -845,6 +903,8 @@ fun MiniBarHost() {
                     if (frame.geo.windowed) {
                         scaleX = frame.press.value * going
                         scaleY = frame.press.value * going
+                    } else if (frame.dockClosing) {
+                        // Swiped off the nav bar: the circle shrinks about its own centre instead.
                     } else {
                         translationY = (1f - shown) * barH
                         scaleX = going
@@ -883,6 +943,8 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
     val minSpan = 48f * density
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        // Swiped away and going: a tap must not open it again on its way out.
+        if (frame.dockClosing) return@awaitEachGesture
         frame.flingJob?.cancel()
         val g0 = frame.geo
         val windowAtDown = MiniGestures.isWindow(KeepPlaying.rest is MiniRest.Window, g0.windowed)
@@ -902,6 +964,8 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
         var popped = false
         var popProgress = 0f
         val popRange = 48f * density
+        // Swiped sideways off the merged circle: closing it once past its range.
+        var docking = false
         // Dragged down from a bottom corner: merging back into the bar as the finger goes.
         var merging = false
         var mergeFromAxis = 0f
@@ -945,6 +1009,10 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                     frame.dragCenter = null
                     frame.swipeDrag?.let { x -> scope.launch { frame.swipe.snapTo(x); frame.swipe.animateTo(0f, MiniSprings.def()) } }
                     frame.swipeDrag = null
+                    if (docking) {
+                        cancelDockSwipe(frame, scope)
+                        docking = false
+                    }
                     dragging = false
                     startSpan = span.coerceAtLeast(minSpan)
                     startAxis = frame.axisNow
@@ -1003,6 +1071,11 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             if (!dragging && !giveUp && travel.getDistance() > viewConfiguration.touchSlop) {
                 when (MiniGestures.dragIntent(travel, windowAtDown, mergedAtDown, g0.tile.contains(downAt))) {
                     MiniDragIntent.MoveWindow, MiniDragIntent.SwipeAway -> dragging = true
+                    MiniDragIntent.DockSwipe -> {
+                        dragging = true
+                        docking = true
+                        scope.launch { frame.dockSwipe.stop() }
+                    }
                     MiniDragIntent.PopOut -> {
                         dragging = true
                         popped = true
@@ -1031,6 +1104,16 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                 if (MiniGestures.crosses(was, mergeProgress, MiniGestures.MergeAt)) frame.haptic(dock = false)
                 frame.pinchAxis = lerp(mergeFromAxis, frame.dims.row, mergeProgress)
                 frame.dragCenter = lerpOffset(mergeFrom, mergeTo, mergeProgress)
+                c.consume()
+            } else if (dragging && docking) {
+                // The circle stays put; only what is drawn over it follows the finger.
+                frame.dockDrag = travel.x
+                if (travel.x != 0f) frame.dockDir = sign(travel.x)
+                val armed = MiniGestures.dockSwipeProgress(travel.x, frame.dockRange) >= 1f
+                if (armed != frame.dockArmed) {
+                    frame.dockArmed = armed
+                    frame.haptic(dock = armed)
+                }
                 c.consume()
             } else if (dragging) {
                 velocity.addPosition(c.uptimeMillis, finger)
@@ -1065,6 +1148,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             tapTimeoutMs = viewConfiguration.longPressTimeoutMillis,
         )
         when {
+            docking && !pinching -> releaseDockSwipe(frame, scope, latest)
             merging && !pinching -> releaseMerge(frame, scope, mergeProgress, velocity.calculateVelocity().y, mergeFromAxis, mergeRange, density)
             pinching -> releasePinch(frame, scope, raw, axisVelocity.calculateVelocity().takeIf { it.isFinite() } ?: 0f, density, latest)
             popped -> releasePop(frame, scope, popProgress, velocity.calculateVelocity(), density, latest)
@@ -1093,6 +1177,9 @@ private const val BottomRight = 3
 /** How far a held window gives under the finger. */
 private const val PressScale = 0.97f
 
+/** How far the merged circle must be swiped sideways for letting go to close it. */
+private val DockSwipeAt = 56.dp
+
 /** The floating window's shadow at rest and under a finger. */
 private val WindowShadow = 6.dp
 private val WindowShadowHeld = 14.dp
@@ -1101,11 +1188,15 @@ private val WindowShadowHeld = 14.dp
 private const val RingTickMs = 520
 private const val RingBreathMs = 1100
 
-/** A tap, by where it landed: the picture opens the video, the side blocks seek, pause pauses. */
+/**
+ * A tap, by where it landed: the picture opens the video (the merged circle opens out into the
+ * bar first), the side blocks seek, pause pauses.
+ */
 private fun tapAt(frame: MiniFrame, at: Offset, p: Playing) {
     val g = frame.geo
     val sides = g.sideAlpha > 0.5f && !g.windowed
     when {
+        g.tile.contains(at) && g.merge > 0.5f -> expandCircle()
         g.tile.contains(at) -> {
             openDock(frame, p)
         }
@@ -1113,6 +1204,13 @@ private fun tapAt(frame: MiniFrame, at: Offset, p: Playing) {
         sides && g.pause.contains(at) -> p.toggle()
         sides && g.right.contains(at) -> p.seekBy(15_000)
     }
+}
+
+/** The merged circle splits back out into the bar; the next scroll down folds it in again. */
+private fun expandCircle() {
+    MiniLog.event("circle opens out", "tap")
+    KeepPlaying.scrollWantsMerge = false
+    KeepPlaying.rest = MiniRest.Row
 }
 
 /** Touch and accessibility opens must remember the same return geometry. */
@@ -1289,6 +1387,39 @@ private fun releaseSwipe(frame: MiniFrame, scope: CoroutineScope, vx: Float, den
 }
 
 /**
+ * The merged circle let go: armed, it pops a little and springs down to nothing while the nav
+ * bar closes the room it leaves, and the video stops; else what was drawn over it lets go.
+ */
+private fun releaseDockSwipe(frame: MiniFrame, scope: CoroutineScope, latest: () -> Playing) {
+    frame.gesturing = false
+    if (!frame.dockArmed) {
+        cancelDockSwipe(frame, scope)
+        return
+    }
+    val at = frame.dockNow
+    MiniLog.event("circle swiped off the nav bar", "")
+    frame.dockClosing = true
+    scope.launch {
+        frame.dockSwipe.snapTo(at)
+        frame.dockDrag = null
+        frame.dockScale.animateTo(1.12f, MiniSprings.fast())
+        KeepPlaying.closeNavRoom()
+        latest().close()
+        frame.dockScale.animateTo(0f, MiniSprings.slow())
+    }
+}
+
+private fun cancelDockSwipe(frame: MiniFrame, scope: CoroutineScope) {
+    val at = frame.dockNow
+    frame.dockArmed = false
+    scope.launch {
+        frame.dockSwipe.snapTo(at)
+        frame.dockDrag = null
+        frame.dockSwipe.animateTo(0f, MiniSprings.def())
+    }
+}
+
+/**
  * The floating window's keys: play / pause bottom left, close bottom right. Small circles on a
  * scrim so they read on any frame; they grow and shrink with the window (the detector owns
  * their presses).
@@ -1392,26 +1523,44 @@ private fun Tile(p: Playing, frame: MiniFrame) {
     }
     // A floating window sits above the page: a soft shadow, deeper while a finger holds it.
     val lift by animateFloatAsState(if (frame.geo.windowed) 1f else 0f, MiniSprings.def(), label = "windowLift")
+    // The merged circle swiped far enough to close: it turns into a cookie (and back).
+    val armed = remember(frame) { Animatable(0f) }
+    LaunchedEffect(frame, frame.dockArmed) { armed.animateTo(if (frame.dockArmed) 1f else 0f, MiniSprings.def()) }
+    val morph = remember { Morph(MaterialShapes.Circle, MaterialShapes.Cookie9Sided) }
+    val cookie = remember(morph) { CookieMorphShape(morph, 1f) }
     Box(
         Modifier
             .graphicsLayer {
-                shape = RoundedCornerShape(frame.geo.tileCorner)
+                val a = armed.value
+                shape = when {
+                    a <= 0f -> RoundedCornerShape(frame.geo.tileCorner)
+                    a >= 1f -> cookie
+                    else -> CookieMorphShape(morph, a)
+                }
                 clip = true
+                val s = frame.dockScale.value.coerceAtLeast(0f)
+                scaleX = s
+                scaleY = s
                 val held = ((1f - frame.press.value) / (1f - PressScale)).coerceIn(0f, 1f)
                 shadowElevation = lift * (WindowShadow + (WindowShadowHeld - WindowShadow) * held).toPx()
             }
             .background(track)
             .then(p.route?.let { Modifier.pageSharedSource(it) } ?: Modifier)
-            .a11yClick(p.title.ifEmpty { "打开视频" }) { openDock(frame, p) }
+            .then(
+                if (KeepPlaying.rest == MiniRest.Merged) Modifier.a11yClick("展开迷你播放器") { expandCircle() }
+                else Modifier.a11yClick(p.title.ifEmpty { "打开视频" }) { openDock(frame, p) },
+            )
             .drawWithContent {
                 drawContent()
                 val stroke = ProgressStroke.toPx()
                 val path = edgePath(size, frame.geo.tileCorner, stroke / 2f)
-                drawPath(path, primary.copy(alpha = 0.25f), style = Stroke(stroke))
+                // Swiping the circle away, the ring gives way to the scrim.
+                val ring = 1f - frame.dockNow.coerceIn(0f, 1f)
+                drawPath(path, primary.copy(alpha = 0.25f * ring), style = Stroke(stroke))
                 val measure = PathMeasure().apply { setPath(path, false) }
                 val seg = Path()
                 val head = measure.length * shown.value
-                val strength = breath.value
+                val strength = breath.value * ring
                 measure.getSegment(0f, head, seg, true)
                 drawPath(seg, primary.copy(alpha = strength), style = Stroke(stroke, cap = StrokeCap.Round))
                 // A bright head where the line is: a dot a little wider than the line, in a soft halo.
@@ -1473,6 +1622,45 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                 NetImage(p.cover, stillModifier, contentDescription = p.title, shape = androidx.compose.ui.graphics.RectangleShape, thumbWidth = 640.dp)
             }
         }
+        DockSwipeScrim(frame, armed)
+    }
+}
+
+/**
+ * Over the merged circle while it is swiped sideways: a scrim darkening from where the swipe
+ * started, with a back arrow growing in; armed, both turn solid (primaryContainer).
+ */
+@Composable
+private fun DockSwipeScrim(frame: MiniFrame, armed: Animatable<Float, *>) {
+    val solid = MaterialTheme.colorScheme.primaryContainer
+    val onSolid = MaterialTheme.colorScheme.onPrimaryContainer
+    val back = rememberVectorPainter(YoinSymbols.Back)
+    Box(
+        Modifier.fillMaxSize().drawBehind {
+            val p = frame.dockNow.coerceIn(0f, 1f)
+            val a = armed.value.coerceIn(0f, 1f)
+            if (p <= 0f && a <= 0f) return@drawBehind
+            val deep = Color.Black.copy(alpha = 0.7f * p)
+            val light = Color.Black.copy(alpha = 0.25f * p)
+            drawRect(Brush.horizontalGradient(if (frame.dockDir > 0f) listOf(deep, light) else listOf(light, deep)))
+            drawRect(solid, alpha = a)
+            val s = DockIcon.toPx() * (0.6f + 0.4f * p + 0.1f * a)
+            val tint = androidx.compose.ui.graphics.lerp(Color.White, onSolid, a)
+            translate((size.width - s) / 2f, (size.height - s) / 2f) {
+                with(back) { draw(Size(s, s), alpha = maxOf(p, a), colorFilter = ColorFilter.tint(tint)) }
+            }
+        },
+    )
+}
+
+private val DockIcon = 24.dp
+
+/** The circle → cookie [Morph] at [progress], scaled from the unit square to the tile. */
+private class CookieMorphShape(private val morph: Morph, private val progress: Float) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val path = morph.toPath(progress).asComposePath()
+        path.transform(Matrix().apply { scale(size.width, size.height, 1f) })
+        return Outline.Generic(path)
     }
 }
 

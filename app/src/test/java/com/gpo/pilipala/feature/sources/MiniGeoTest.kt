@@ -54,7 +54,8 @@ class MiniGeoTest {
         assertRect(circle, g.tile)
         assertEquals(24f, g.tileCorner, 0.01f)
         assertEquals(0f, g.sideAlpha, 0f)
-        assertRect(circle, g.hit)
+        // Touches take the nav bar's margin around the circle too, never past its right edge.
+        assertRect(Rect(nav.left, nav.top, circle.right, nav.bottom), g.hit)
     }
 
     @Test fun halfwayMergingPoursThroughTheGoo() {
