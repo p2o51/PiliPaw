@@ -700,7 +700,8 @@ private fun SubReplyPreview(reply: Reply, actions: ReplyActions, modifier: Modif
                 ReplyRichText(
                     content = sub.content,
                     prefix = RichPrefix(sub.member.name, sub.member.mid, sub.member.face, sub.isUp, actions.relationOf(sub.member.mid)),
-                    style = MaterialTheme.typography.bodySmall,
+                    // 15% more than bodySmall's 16sp, so a line with an inline tag still breathes.
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.5.sp),
                     maxLines = 2,
                     onTimestampClick = actions.onTimestampClick,
                     onEmoteLongPress = subLongPress,

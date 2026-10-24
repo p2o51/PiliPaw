@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -542,13 +543,13 @@ object TagDefaults {
         @Composable get() = MaterialTheme.typography.labelSmall.centered()
 
     /**
-     * A tag inside a line of text ([Tag] with inline = true): set on a line box just its
-     * font's height with 1dp above and below, so it stays inside a bodySmall line (16sp)
-     * and the line it sits on is no taller than the lines under it.
+     * A tag inside a line of text ([Tag] with inline = true): a slimmer tag, 10sp at regular
+     * weight on a line box just its font's height with 1dp above and below, so it sits well
+     * inside the line with room before the next one.
      */
     val InlineVerticalPadding = 1.dp
     val inlineTextStyle: TextStyle
-        @Composable get() = textStyle.let { it.copy(lineHeight = it.fontSize * 1.1f) }
+        @Composable get() = textStyle.copy(fontSize = 10.sp, lineHeight = 11.sp, fontWeight = FontWeight.Normal)
 }
 
 /**
