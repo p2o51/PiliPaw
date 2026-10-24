@@ -118,6 +118,7 @@ internal fun SettingsPageContent(page: String, showBack: Boolean) {
             SettingsPageId.Style -> StyleBody()
             SettingsPageId.Play -> PlayBody()
             SettingsPageId.Danmaku -> DanmakuBody()
+            SettingsPageId.Skip -> SkipBody()
             SettingsPageId.Recommend -> RecommendBody()
             SettingsPageId.Habit -> HabitBody()
             SettingsPageId.Network -> NetworkBody()

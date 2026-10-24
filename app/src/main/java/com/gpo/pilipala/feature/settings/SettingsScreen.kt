@@ -119,6 +119,7 @@ private fun SettingsList(
     val qn by AppSettings.defaultVideoQuality.state.collectAsState()
     val dmOn by AppSettings.danmakuEnabled.state.collectAsState()
     val rcmd by AppSettings.rcmdSource.state.collectAsState()
+    val skipValue = skipSummary()
     val toast = rememberToast()
     val scope = rememberCoroutineScope()
     val twoPane = selected != null
@@ -155,6 +156,7 @@ private fun SettingsList(
                 SettingsPageId.Style to SettingsChoices.themeMode.firstOrNull { it.value == themeMode }?.label,
                 SettingsPageId.Play to SettingsChoices.videoQuality.firstOrNull { it.value == qn }?.label,
                 SettingsPageId.Danmaku to if (dmOn) "开启" else "关闭",
+                SettingsPageId.Skip to skipValue,
                 SettingsPageId.Recommend to SettingsChoices.rcmdSource.firstOrNull { it.value == rcmd }?.label,
                 SettingsPageId.Habit to null,
                 SettingsPageId.Network to when (com.gpo.pilipala.feature.player.cdn.CdnSettings.mode.value) {

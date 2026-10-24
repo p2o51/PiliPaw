@@ -128,6 +128,16 @@ internal fun PlayerSeekBar(
     val chapters = ctrl.chapters
     val latestChapters by rememberUpdatedState(chapters)
     val latestPoke by rememberUpdatedState(onPoke)
+    // 跳过片段 as blocks in the tertiary colour; one just skipped closes up about its middle.
+    val skips = ctrl.skips
+    val skipColor = MaterialTheme.colorScheme.tertiary
+    val closing = remember { androidx.compose.animation.core.Animatable(1f) }
+    val lastSkip = ctrl.lastSkip
+    val closeSpec = YoinMotion.slowSpatialSpec<Float>(YoinMotionRole.Standard)
+    androidx.compose.runtime.LaunchedEffect(lastSkip) {
+        closing.snapTo(1f)
+        if (lastSkip != null) closing.animateTo(0f, closeSpec)
+    }
     Box(
         modifier
             .fillMaxWidth()
@@ -216,6 +226,22 @@ internal fun PlayerSeekBar(
                 thickness = (3.dp + 5.dp * g).toPx(),
                 grow = g,
                 chapterStarts = if (d > 0) chapters.mapNotNull { c -> (c.fromMs.toFloat() / d).takeIf { it > 0.002f && it < 0.998f } } else emptyList(),
+                segments = if (d > 0) {
+                    skips.map { sk ->
+                        var a = (sk.startMs.toFloat() / d).coerceIn(0f, 1f)
+                        var b = (sk.endMs.toFloat() / d).coerceIn(0f, 1f)
+                        if (sk.id == lastSkip?.id) {
+                            val mid = (a + b) / 2f
+                            val half = (b - a) / 2f * closing.value
+                            a = mid - half
+                            b = mid + half
+                        }
+                        a to b
+                    }
+                } else {
+                    emptyList()
+                },
+                segmentColor = skipColor,
             )
         }
     }
@@ -229,6 +255,8 @@ private fun DrawScope.drawSeekTrack(
     thickness: Float,
     grow: Float,
     chapterStarts: List<Float>,
+    segments: List<Pair<Float, Float>> = emptyList(),
+    segmentColor: Color = Color.Unspecified,
 ) {
     val w = size.width
     val cy = size.height / 2f
@@ -243,6 +271,9 @@ private fun DrawScope.drawSeekTrack(
     bar(ink.trackRest, 0f, w)
     bar(ink.trackBuffered, 0f, w * buffered)
     bar(ink.trackPlayed, 0f, w * played)
+    for ((a, b) in segments) {
+        if (w * (b - a) > 0.5f) drawRect(segmentColor, Offset(w * a, top), Size(w * (b - a), th))
+    }
     // Chapter starts: 2dp gaps through the whole track.
     val gap = 2.dp.toPx()
     for (c in chapterStarts) {

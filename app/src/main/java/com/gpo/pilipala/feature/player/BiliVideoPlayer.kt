@@ -540,6 +540,23 @@ fun BiliVideoPlayer(
     val latestFit by rememberUpdatedState(pictureFit)
     val haptics = LocalHapticFeedback.current
     val toast = rememberToast()
+    // 跳过片段: one quiet line with 撤销 after a skip (the bar closes the segment up); a
+    // 提示我 segment offers 跳过 while the playhead is in it.
+    val snackbar = com.gpo.pilipala.ui.components.LocalSnackbarHost.current
+    val lastSkip = ctrl.lastSkip
+    LaunchedEffect(lastSkip) {
+        val s = lastSkip ?: return@LaunchedEffect
+        snackbar.currentSnackbarData?.dismiss()
+        val r = snackbar.showSnackbar("已跳过${s.kind.label}", actionLabel = "撤销", duration = androidx.compose.material3.SnackbarDuration.Short)
+        if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) ctrl.undoSkip()
+    }
+    val askSkip = ctrl.askSkip
+    LaunchedEffect(askSkip) {
+        val s = askSkip ?: return@LaunchedEffect
+        snackbar.currentSnackbarData?.dismiss()
+        val r = snackbar.showSnackbar("${s.kind.label}片段", actionLabel = "跳过", duration = androidx.compose.material3.SnackbarDuration.Indefinite)
+        if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) ctrl.acceptSkip()
+    }
     val shot = remember { ShotFeedback() }
     // The picture's window rect, for finding the view the video is drawn into.
     val shotBox = remember { arrayOfNulls<Rect>(1) }

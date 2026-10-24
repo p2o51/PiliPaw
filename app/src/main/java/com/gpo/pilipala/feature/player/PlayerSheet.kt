@@ -100,7 +100,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
 
-internal enum class SheetPage { Main, Quality, Audio, Codec, Speed, Danmaku, Sleep, Subtitle, DanmakuBlock, Chapters, Cache }
+internal enum class SheetPage { Main, Quality, Audio, Codec, Speed, Skip, Danmaku, Sleep, Subtitle, DanmakuBlock, Chapters, Cache }
 
 private val SleepOptions = listOf(0, 15, 30, 45, 60, 90)
 
@@ -248,6 +248,7 @@ internal fun PlayerSheetPages(
                     SheetPage.Audio -> "音质"
                     SheetPage.Codec -> "解码格式"
                     SheetPage.Speed -> "播放速度"
+                    SheetPage.Skip -> "跳过片段"
                     SheetPage.Danmaku -> "弹幕设置"
                     SheetPage.Sleep -> "定时关闭"
                     SheetPage.Subtitle -> "字幕"
@@ -271,6 +272,7 @@ internal fun PlayerSheetPages(
                 SheetPage.Audio -> AudioPage(ctrl, close)
                 SheetPage.Codec -> CodecPage(ctrl, close)
                 SheetPage.Speed -> SpeedSliderPage(ctrl)
+                SheetPage.Skip -> SkipPage(ctrl)
                 SheetPage.Danmaku -> DanmakuPage(onOpenBlock = { page = SheetPage.DanmakuBlock })
                 SheetPage.Sleep -> SleepPage(ctrl, close)
                 SheetPage.Subtitle -> SubtitlePage(ctrl, close)
@@ -459,6 +461,10 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
         buildList {
             add(RowSpec(PiliSymbols.Hd, "画质", value = Qualities.videoShort(ctrl.currentQn)) { onOpen(SheetPage.Quality) })
             add(RowSpec(YoinSymbols.Speed, "倍速", value = speedLabel(ctrl.speed)) { onOpen(SheetPage.Speed) })
+            if (t != null) {
+                val found = ctrl.skips.size
+                add(RowSpec(YoinSymbols.SkipNext, "跳过片段", value = if (found > 0) "$found 段" else null) { onOpen(SheetPage.Skip) })
+            }
             if (ctrl.subtitles.isNotEmpty()) {
                 add(
                     RowSpec(
@@ -817,6 +823,51 @@ private fun SubtitlePage(ctrl: PiliPlayerController, close: () -> Unit) {
         }
     }
     SegmentedGroup(rows)
+}
+
+/**
+ * 跳过片段 for the video playing: how each kind it can have is handled (自动跳过 / 提示我 /
+ * 只标出), the kinds this video has first. Uploads also get the 空降助手 switch; every kind is
+ * on 设置 › 跳过片段.
+ */
+@Composable
+private fun SkipPage(ctrl: PiliPlayerController) {
+    val pgc = ctrl.target?.isPgc == true
+    val community by BiliSkips.community.state.collectAsState()
+    val present = ctrl.skips.map { it.kind }.distinct()
+    val kinds = when {
+        pgc -> BiliSkipKind.entries.filter { it.official }
+        present.isNotEmpty() -> present
+        else -> listOf(BiliSkipKind.Sponsor, BiliSkipKind.SelfPromo, BiliSkipKind.Interaction)
+    }
+    val choices = SkipMode.entries.map { com.gpo.pilipala.feature.settings.Choice(it.name, it.label) }
+    Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
+        if (!pgc) {
+            SegmentedGroup(
+                listOf(
+                    RowSpec(null, "空降助手", switch = community) { AppSettings.set(BiliSkips.community, !community) },
+                ),
+            )
+        }
+        kinds.forEach { kind ->
+            val mode by kind.modeKey.state.collectAsState()
+            val count = ctrl.skips.count { it.kind == kind }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (count > 0) "${kind.label} · 本视频 $count 段" else kind.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+                com.gpo.pilipala.feature.settings.ConnectedToggleRow(
+                    choices = choices,
+                    selected = mode,
+                    enabled = pgc || community,
+                    onSelect = { AppSettings.set(kind.modeKey, it) },
+                )
+            }
+        }
+    }
 }
 
 /**

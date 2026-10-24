@@ -198,6 +198,21 @@ internal class PiliPlayerController(
     var heat by mutableStateOf<HeatCurve?>(null)
         private set
 
+    /** 跳过片段 of the current video: 番剧 片头 / 片尾 and 空降助手 (SkipSegments.kt). */
+    var skips by mutableStateOf<List<BiliSkip>>(emptyList())
+        private set
+
+    /** The segment just skipped (the bar closes it up; 撤销 goes back into it). */
+    var lastSkip by mutableStateOf<BiliSkip?>(null)
+        private set
+
+    /** A 提示我 segment the playhead has entered: the player offers 跳过. */
+    var askSkip by mutableStateOf<BiliSkip?>(null)
+        private set
+
+    private val skipsHandled = HashSet<String>()
+    private var skipWatch: Job? = null
+
     /** Fullscreen that came from rotating the phone (so rotating back exits it). */
     var fullscreenByRotation = false
 
@@ -416,6 +431,11 @@ internal class PiliPlayerController(
         chapters = emptyList()
         shots = null
         heat = null
+        skips = emptyList()
+        lastSkip = null
+        askSkip = null
+        skipsHandled.clear()
+        skipWatch?.cancel()
         seekGeneration++
         exo?.stop()
         exo?.clearMediaItems()
@@ -434,6 +454,7 @@ internal class PiliPlayerController(
                 val pi = local?.playInfo() ?: PlayUrlApi.fetch(t, wish)
                 withContext(Dispatchers.Default) { CodecSupport.warm(pi) }
                 info = pi
+                if (pi.clips.isNotEmpty()) addSkips(pi.clips)
                 currentQn = StreamPicker.videoQn(pi, wish)
                 if (!pi.isDash) currentQn = pi.quality
                 currentCodec = Qualities.codecIdForSetting(AppSettings.preferredCodec.value)
@@ -485,6 +506,63 @@ internal class PiliPlayerController(
         sideJobs += scope.launch {
             runCatching { HeatApi.get(t) }.onSuccess { heat = it }
         }
+        if (!t.isPgc && t.bvid.isNotBlank() && !preview) {
+            sideJobs += scope.launch {
+                val found = BiliSkips.community(t.bvid, t.cid)
+                if (found.isNotEmpty()) addSkips(found)
+            }
+        }
+    }
+
+    private fun addSkips(more: List<BiliSkip>) {
+        skips = (skips + more).distinctBy { it.id }.sortedBy { it.startMs }
+        watchSkips()
+    }
+
+    /**
+     * 跳过片段: four times a second, a playhead inside a segment whose kind is 自动跳过 jumps to
+     * its end; one set to 提示我 raises [askSkip]. Each segment acts once per video, so 撤销 and
+     * seeking back into it stay put.
+     */
+    private fun watchSkips() {
+        skipWatch?.cancel()
+        if (preview || skips.isEmpty()) return
+        skipWatch = scope.launch {
+            while (isActive) {
+                delay(250)
+                val p = exo ?: continue
+                val at = p.currentPosition
+                askSkip?.let { a -> if (at < a.startMs || at >= a.endMs) askSkip = null }
+                if (!p.isPlaying) continue
+                val s = skips.firstOrNull {
+                    at >= it.startMs && at < it.endMs - 500 && it.id !in skipsHandled && it.kind.mode != SkipMode.Mark
+                } ?: continue
+                skipsHandled += s.id
+                when (s.kind.mode) {
+                    SkipMode.Skip -> {
+                        seekTo(s.endMs)
+                        lastSkip = s
+                    }
+                    SkipMode.Ask -> askSkip = s
+                    SkipMode.Mark -> Unit
+                }
+            }
+        }
+    }
+
+    /** 撤销: back to the start of the segment just skipped, which then plays. */
+    fun undoSkip() {
+        val s = lastSkip ?: return
+        lastSkip = null
+        seekTo(s.startMs)
+    }
+
+    /** 跳过 on a 提示我 segment. */
+    fun acceptSkip() {
+        val s = askSkip ?: return
+        askSkip = null
+        seekTo(s.endMs)
+        lastSkip = s
     }
 
     fun retry() {

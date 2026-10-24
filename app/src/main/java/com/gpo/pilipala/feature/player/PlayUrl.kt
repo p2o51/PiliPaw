@@ -39,6 +39,8 @@ internal data class PlayInfo(
     val durl: List<DurlSegment>,
     val timelengthMs: Long,
     val lastPlayTimeMs: Long,
+    /** 番剧 片头 / 片尾 Bilibili marks (pgc only). */
+    val clips: List<BiliSkip> = emptyList(),
 ) {
     val isDash: Boolean get() = videos.isNotEmpty()
 }
@@ -162,10 +164,15 @@ internal object PlayUrlApi {
             put("from_client", "BROWSER")
             put("drm_tech_type", 2)
         }
-        val v2 = runCatching {
-            BiliClient.getData("/pgc/player/web/v2/playurl", params).asObj?.obj("video_info")
+        val v2root = runCatching {
+            BiliClient.getData("/pgc/player/web/v2/playurl", params).asObj
         }.getOrNull()
-        if (v2 != null && (v2.has("dash") || v2.has("durl"))) return v2
+        val v2 = v2root?.obj("video_info")
+        if (v2 != null && (v2.has("dash") || v2.has("durl"))) {
+            // 片头 / 片尾 sit beside video_info in v2; parse() reads them off the stream object.
+            val clips = v2root?.get("clip_info_list") ?: v2root.obj("play_view_business_info")?.get("clip_info_list")
+            return if (clips != null && !v2.has("clip_info_list")) JsonObject(v2 + ("clip_info_list" to clips)) else v2
+        }
         return BiliClient.getData("/pgc/player/web/playurl", params).asObj
             ?: throw BiliException(-1, "播放地址解析失败")
     }
@@ -207,6 +214,7 @@ internal object PlayUrlApi {
             durl = durl,
             timelengthMs = o.long("timelength"),
             lastPlayTimeMs = o.long("last_play_time"),
+            clips = BiliSkips.clips(o.arr("clip_info_list")),
         )
     }
 
