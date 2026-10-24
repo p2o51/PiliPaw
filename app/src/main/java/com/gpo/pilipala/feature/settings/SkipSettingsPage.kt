@@ -49,7 +49,7 @@ internal fun ColumnScope.SkipBody() {
                     summary = "观众标出的片段，来自 sponsor.ajay.app",
                     checked = sb,
                     onCheckedChange = {
-                        AppSettings.set(Segments.enabled, it)
+                        com.gpo.pilipala.yt.core.settings.AppSettings.set(Segments.enabled, it)
                         Segments.configure()
                     },
                 )
@@ -62,7 +62,7 @@ internal fun ColumnScope.SkipBody() {
                         choices = ytModes,
                         selected = skip,
                         enabled = sb,
-                        onSelect = { AppSettings.set(c.skip, it) },
+                        onSelect = { com.gpo.pilipala.yt.core.settings.AppSettings.set(c.skip, it) },
                     )
                 }
             }

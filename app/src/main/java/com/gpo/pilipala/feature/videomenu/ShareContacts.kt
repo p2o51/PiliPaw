@@ -1,6 +1,5 @@
 package com.gpo.pilipala.feature.videomenu
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -162,7 +161,7 @@ internal fun ShareContactsRow(target: ShareTarget, finisher: SheetFinisher, modi
             ) {
                 Box(Modifier.size(52.dp)) {
                     NetImage(c.face, Modifier.fillMaxSize(), shape = CircleShape, thumbWidth = 104.dp)
-                    AnimatedVisibility(
+                    androidx.compose.animation.AnimatedVisibility(
                         visible = sent == c.mid,
                         enter = fadeIn() + scaleIn(initialScale = 0.6f),
                         exit = fadeOut() + scaleOut(targetScale = 0.6f),
