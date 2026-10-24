@@ -63,8 +63,11 @@ sealed interface Route : NavKey {
     @Serializable data class DynamicDetail(val id: String) : Route
     /** New dynamic (text, emotes, up to 9 pictures); grows out of the 动态 tab's FAB. */
     @Serializable data object DynamicCompose : Route
-    /** Reply thread. type: 1 = video, 11/17 = dynamic, 12 = article … */
-    @Serializable data class ReplyDetail(val oid: Long, val type: Int, val rpid: Long) : Route
+    /**
+     * Reply thread. type: 1 = video, 11/17 = dynamic, 12 = article … [focus]: a reply inside
+     * the thread to scroll to and mark (a notification's), 0 without one.
+     */
+    @Serializable data class ReplyDetail(val oid: Long, val type: Int, val rpid: Long, val focus: Long = 0L) : Route
     @Serializable data class Opus(val id: String, val title: String = "") : Route
     @Serializable data class Read(val cvid: Long, val title: String = "") : Route
     /** Native vote page (t.bilibili.com/vote links, the vote block of a dynamic). */

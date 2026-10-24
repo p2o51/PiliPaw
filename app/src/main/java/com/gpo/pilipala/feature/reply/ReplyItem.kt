@@ -130,7 +130,8 @@ private const val ClampLines = 6
 /**
  * One comment. Avatar column on the left, everything else stacked on the right:
  * name + level/UP/置顶 tags, time and IP location as separate quiet labels,
- * rich body, pictures, actions, then the sub-reply preview block.
+ * rich body, pictures, actions, then the sub-reply preview block. [mark]: the comment a
+ * notification points at, marked while it plays.
  */
 @Composable
 internal fun ReplyRow(
@@ -140,6 +141,7 @@ internal fun ReplyRow(
     avatarSize: Dp = 36.dp,
     showPreview: Boolean = true,
     clampLines: Boolean = true,
+    mark: AnchorMark? = null,
     onClick: () -> Unit,
 ) {
     val nav = LocalNavigator.current
@@ -154,12 +156,13 @@ internal fun ReplyRow(
         modifier = modifier
             .entrance(entrance, actions.layout)
             .fillMaxWidth()
+            .anchorWash(mark)
             .combinedClickable(onClick = onClick, onLongClick = longPress)
             .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box {
-            Avatar(reply.member.face, avatarSize) {
+            Avatar(reply.member.face, avatarSize, Modifier.anchorCrown(mark)) {
                 nav.push(Route.Member(reply.member.mid, reply.member.face, reply.member.name))
             }
             if (reply.member.officialType >= 0) {
@@ -186,7 +189,7 @@ internal fun ReplyRow(
                     color = if (reply.member.vip) scheme.primary else scheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.weight(1f, fill = false).anchorWave(mark),
                 )
                 LevelTag(reply.member.level)
                 if (reply.isUp) Tag("UP", container = scheme.primaryContainer, content = scheme.onPrimaryContainer)

@@ -33,10 +33,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -45,6 +47,7 @@ import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.navigation.transition.LocalPageSettled
 import com.gpo.pilipala.ui.components.LoadMoreEffect
 import com.gpo.pilipala.ui.components.PiliTopBar
 import com.gpo.pilipala.ui.components.RefreshBox
@@ -52,12 +55,13 @@ import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.yoin.symbols.YoinSymbols
+import kotlinx.coroutines.flow.first
 
 /** Reply thread ("楼中楼") as a pushed page (phones; message notifications). */
 @Composable
 fun ReplyDetailScreen(route: Route.ReplyDetail) {
     val nav = LocalNavigator.current
-    ReplyThreadPane(oid = route.oid, type = route.type, rpid = route.rpid, onClose = { nav.pop() })
+    ThreadPane(oid = route.oid, type = route.type, rpid = route.rpid, onClose = { nav.pop() }, focusRpid = route.focus)
 }
 
 /**
@@ -88,7 +92,11 @@ fun ReplyThreadPane(
     ThreadPane(oid, type, rpid, onClose, modifier, inline, contentPadding, onTimestampClick, onChange = null)
 }
 
-/** [ReplyThreadPane] plus [onChange]: sends and deletes made in the thread, for the list it covers. */
+/**
+ * [ReplyThreadPane] plus [onChange]: sends and deletes made in the thread, for the list it
+ * covers; and [focusRpid]: a reply a notification points at, scrolled to and marked once
+ * the thread has arrived.
+ */
 @Composable
 internal fun ThreadPane(
     oid: Long,
@@ -100,6 +108,7 @@ internal fun ThreadPane(
     contentPadding: PaddingValues = PaddingValues(),
     onTimestampClick: ((seconds: Long) -> Unit)? = null,
     onChange: ((ReplyChange) -> Unit)? = null,
+    focusRpid: Long = 0L,
 ) {
     val vm: ReplyThreadViewModel = viewModel(key = "reply_thread_${oid}_${type}_$rpid") {
         ReplyThreadViewModel(oid, type, rpid)
@@ -137,6 +146,34 @@ internal fun ThreadPane(
     }
     LaunchedEffect(vm) { vm.changes.collect { change?.invoke(it) } }
 
+    val focusMark = rememberAnchorMark()
+    val pageSettled by rememberUpdatedState(LocalPageSettled.current)
+    val focusGapPx = with(LocalDensity.current) { FocusGap.roundToPx() }
+    LaunchedEffect(vm, focusRpid) {
+        if (focusRpid == 0L) return@LaunchedEffect
+        if (!vm.focusHandled) {
+            snapshotFlow { pageSettled }.first { it }
+            val found = findFocus(vm, focusRpid)
+            vm.focusHandled = true
+            if (found < 0) return@LaunchedEffect
+            repeat(2) { withFrameNanos { } }
+            val index = found + FIRST_REPLY_INDEX
+            val info = listState.layoutInfo
+            val shown = info.visibleItemsInfo.firstOrNull { it.index == index }
+            val fullyShown = shown != null && shown.offset >= 0 &&
+                shown.offset + shown.size <= info.viewportEndOffset - info.afterContentPadding
+            if (!fullyShown) listState.animateScrollToItem(index, -focusGapPx)
+            vm.focusLanded = focusRpid
+        }
+        if (vm.focusLanded != 0L) {
+            try {
+                focusMark.play()
+            } finally {
+                vm.focusLanded = 0L
+            }
+        }
+    }
+
     val replyToRoot = {
         val root = vm.root
         if (requireLogin(nav, toast)) {
@@ -165,6 +202,7 @@ internal fun ThreadPane(
                     bottom = 8.dp,
                 ),
                 showCount = false,
+                focusMark = focusMark,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
             // The pill's own 8dp margin counts toward the pane's bottom inset.
@@ -199,6 +237,7 @@ internal fun ThreadPane(
                 listState = listState,
                 padding = padding,
                 showCount = true,
+                focusMark = focusMark,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -208,7 +247,32 @@ internal fun ThreadPane(
 
 private const val KEY_THREAD_HEADER = "thread:header"
 
-/** Root comment, the 相关回复 block, then the paged replies. */
+/** The paged replies' first index in the thread's list: after the root and the header. */
+private const val FIRST_REPLY_INDEX = 2
+
+/** Pages the thread loads looking for a notification's reply before it gives up. */
+private const val FOCUS_MAX_PAGES = 10
+
+/** Room left above the reply scrolled to, so the one before it still shows. */
+private val FocusGap = 56.dp
+
+/**
+ * Pages through [vm]'s thread until [rpid] is listed: its index among the replies, or -1
+ * when the thread ends, a page fails, or [FOCUS_MAX_PAGES] pass without it.
+ */
+private suspend fun findFocus(vm: ReplyThreadViewModel, rpid: Long): Int {
+    val pager = vm.pager
+    repeat(FOCUS_MAX_PAGES + 1) {
+        snapshotFlow { pager.initialLoading || pager.isRefreshing || pager.isLoadingMore }.first { !it }
+        val i = pager.items.indexOfFirst { it.rpid == rpid }
+        if (i >= 0) return i
+        if (!pager.hasMore || pager.error != null) return -1
+        pager.loadMore()
+    }
+    return -1
+}
+
+/** Root comment, the 相关回复 block, then the paged replies; [focusMark] marks the reply a notification points at. */
 @Composable
 private fun ThreadBody(
     vm: ReplyThreadViewModel,
@@ -216,6 +280,7 @@ private fun ThreadBody(
     listState: LazyListState,
     padding: PaddingValues,
     showCount: Boolean,
+    focusMark: AnchorMark,
     modifier: Modifier = Modifier,
 ) {
     val pager = vm.pager
@@ -265,6 +330,7 @@ private fun ThreadBody(
                             avatarSize = 32.dp,
                             showPreview = false,
                             clampLines = false,
+                            mark = focusMark.takeIf { r.rpid == vm.focusLanded },
                         ) { actions.onReply(r) }
                     }
                     item(key = "thread:footer") { PagerFooter(pager, Modifier.readingWidth()) }

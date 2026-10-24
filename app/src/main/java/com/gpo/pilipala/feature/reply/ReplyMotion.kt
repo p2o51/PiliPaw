@@ -3,19 +3,26 @@ package com.gpo.pilipala.feature.reply
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector
+import androidx.compose.animation.core.EaseInOutCubic
+import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.TwoWayConverter
 import androidx.compose.animation.core.VectorizedFiniteAnimationSpec
+import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,14 +32,26 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.graphics.shapes.Morph
+import com.gpo.pilipala.ui.theme.MorphShape
 import com.gpo.pilipala.ui.theme.YoinMotion
+import kotlin.math.PI
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -173,6 +192,115 @@ private class GatedPlacementSpec(
     override fun <V : AnimationVector> vectorize(converter: TwoWayConverter<IntOffset, V>): VectorizedFiniteAnimationSpec<V> =
         if (motion.resizing > 0) snap<IntOffset>().vectorize(converter) else spec.vectorize(converter)
 }
+
+// ── The comment a notification points at ────────────────────────────────────
+
+/**
+ * Marks the comment a notification opened the comments for: a light primaryContainer
+ * wash behind the row, and when [full] (the comment itself, not the thread around it)
+ * the avatar turning into a cookie (the home avatar's shape) and a flowing wave under the
+ * name (the listen scrubber's wave). Drawn and layered only: nothing in the row moves.
+ */
+@Stable
+internal class AnchorMark(val full: Boolean) {
+    /** 0 … 1: the wash, the cookie, the wave's ink. */
+    val presence = Animatable(0f)
+
+    /** The wave's travel, in wavelengths. */
+    val phase = Animatable(0f)
+
+    /** Eases in, holds briefly while the comment is read, then eases out. */
+    suspend fun play() = coroutineScope {
+        val flow = launch {
+            phase.animateTo(1f, infiniteRepeatable(tween(AnchorWavePeriodMs, easing = LinearEasing)))
+        }
+        show()
+        delay(AnchorHoldMs)
+        hide()
+        flow.cancel()
+    }
+
+    suspend fun show() {
+        presence.animateTo(1f, tween(AnchorInMs, easing = EaseOutCubic))
+    }
+
+    suspend fun hide() {
+        presence.animateTo(0f, tween(AnchorOutMs, easing = EaseInOutCubic))
+    }
+}
+
+@Composable
+internal fun rememberAnchorMark(full: Boolean = true): AnchorMark = remember(full) { AnchorMark(full) }
+
+/** The wash behind a marked row: a primaryContainer rounded block, under half strength, faded by [AnchorMark.presence]. */
+@Composable
+internal fun Modifier.anchorWash(mark: AnchorMark?): Modifier {
+    if (mark == null) return this
+    val tint = MaterialTheme.colorScheme.primaryContainer
+    return drawBehind {
+        val p = mark.presence.value
+        if (p <= 0f) return@drawBehind
+        val inset = 4.dp.toPx()
+        drawRoundRect(
+            color = tint.copy(alpha = tint.alpha * AnchorWashAlpha * p),
+            topLeft = Offset(inset, 0f),
+            size = Size(size.width - inset * 2, size.height),
+            cornerRadius = CornerRadius(16.dp.toPx()),
+        )
+    }
+}
+
+/** A marked row's avatar: circle → Cookie9Sided and back. */
+internal fun Modifier.anchorCrown(mark: AnchorMark?): Modifier {
+    if (mark == null || !mark.full) return this
+    return graphicsLayer {
+        val p = mark.presence.value
+        if (p > 0f) {
+            clip = true
+            shape = MorphShape(AnchorCrownMorph, p)
+        }
+    }
+}
+
+/**
+ * The wave under a marked row's name, as wide as the name: on its bottom edge, so it reads
+ * as the name's underline and clears the time below.
+ */
+@Composable
+internal fun Modifier.anchorWave(mark: AnchorMark?): Modifier {
+    if (mark == null || !mark.full) return this
+    val ink = MaterialTheme.colorScheme.primary
+    val path = remember { Path() }
+    return drawBehind {
+        val a = mark.presence.value
+        if (a <= 0f) return@drawBehind
+        val stroke = 1.5.dp.toPx()
+        val length = size.width
+        val wavelength = AnchorWavelength.toPx()
+        val amplitude = AnchorWaveHeight.toPx()
+        val y0 = size.height
+        val shift = mark.phase.value * 2f * PI.toFloat()
+        path.reset()
+        var x = 0f
+        while (x <= length) {
+            val y = y0 + amplitude * sin(x / wavelength * 2f * PI.toFloat() - shift)
+            if (x == 0f) path.moveTo(x, y) else path.lineTo(x, y)
+            x += 1.dp.toPx()
+        }
+        drawPath(path, ink.copy(alpha = ink.alpha * a), style = Stroke(width = stroke, cap = StrokeCap.Round))
+    }
+}
+
+private val AnchorCrownMorph by lazy { Morph(MaterialShapes.Circle, MaterialShapes.Cookie9Sided) }
+private const val AnchorWashAlpha = 0.45f
+private val AnchorWavelength = 8.dp
+private val AnchorWaveHeight = 1.2.dp
+
+/** One wavelength of the wave's flow. */
+private const val AnchorWavePeriodMs = 800
+private const val AnchorInMs = 450
+private const val AnchorHoldMs = 900L
+private const val AnchorOutMs = 700
 
 /** Applies a row's [Entrance]; null leaves it as is. */
 @Composable
