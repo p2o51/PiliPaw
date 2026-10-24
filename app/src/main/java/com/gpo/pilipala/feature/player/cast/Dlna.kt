@@ -81,16 +81,25 @@ object Dlna {
 
     private fun describe(location: String): DlnaDevice? = runCatching {
         val xml = http(Request.Builder().url(location).build())
-        val name = tag(xml, "friendlyName") ?: "未知设备"
-        val model = tag(xml, "modelName").orEmpty()
+        val model = unescape(tag(xml, "modelName").orEmpty())
+        val name = cleanName(unescape(tag(xml, "friendlyName").orEmpty())).ifEmpty { model.ifEmpty { "未知设备" } }
         val udn = tag(xml, "UDN") ?: location
         // The AVTransport service block, then its controlURL.
         val services = Regex("<service>(.*?)</service>", RegexOption.DOT_MATCHES_ALL).findAll(xml).map { it.groupValues[1] }
         val av = services.firstOrNull { it.contains("AVTransport") } ?: return null
         val control = tag(av, "controlURL") ?: return null
         val base = tag(xml, "URLBase")?.takeIf { it.isNotBlank() } ?: location
-        DlnaDevice(udn, unescape(name), unescape(model), URL(URL(base), control).toString())
+        DlnaDevice(udn, name, model, URL(URL(base), control).toString())
     }.getOrNull()
+
+    /**
+     * Some renderers pack the address and a serial into the name ("192.168.0.84 - Sonos Era 300 -
+     * RINCON_…"); keep the part a person would call it.
+     */
+    private fun cleanName(raw: String): String =
+        raw.split(" - ").map { it.trim() }
+            .filterNot { it.isEmpty() || it.matches(Regex("[0-9.:]+")) || it.matches(Regex("[A-Z0-9_:-]{12,}")) }
+            .joinToString(" · ")
 
     private fun tag(xml: String, name: String): String? =
         Regex("<(?:\\w+:)?$name[^>]*>(.*?)</(?:\\w+:)?$name>", RegexOption.DOT_MATCHES_ALL).find(xml)?.groupValues?.get(1)?.trim()

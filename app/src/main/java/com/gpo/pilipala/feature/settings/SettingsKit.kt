@@ -185,7 +185,7 @@ internal fun SettingsScaffold(
                     .seamViewport(scroll, pageColor = page)
                     .verticalScroll(scroll)
                     .readingWidth(760.dp)
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp + inner.calculateBottomPadding()),
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp + inner.calculateBottomPadding() + com.gpo.pilipala.feature.sources.miniBarInset()),
                 verticalArrangement = Arrangement.spacedBy(28.dp),
                 content = content,
             )

@@ -917,17 +917,23 @@ private fun CastPage(ctrl: PiliPlayerController) {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 8.dp))
         }
         val t = ctrl.target
-        val rows = devices.map { d ->
-            RowSpec(
-                YoinSymbols.Cast,
-                d.name,
-                value = if (connecting?.id == d.id) "连接中…" else d.model.takeIf { it.isNotBlank() && it != d.name },
-                enabled = connecting == null && t != null,
-            ) {
-                if (t != null) com.gpo.pilipala.feature.player.cast.CastSession.start(d, t, ctrl.positionMs) { ctrl.pause() }
-            }
-        } + RowSpec(null, if (searching) "搜索中…" else "重新搜索", enabled = !searching) { round++ }
-        SegmentedGroup(rows)
+        if (devices.isNotEmpty()) {
+            SegmentedGroup(
+                devices.map { d ->
+                    RowSpec(
+                        YoinSymbols.Cast,
+                        d.name,
+                        value = if (connecting?.id == d.id) "连接中…" else d.model.takeIf { it.isNotBlank() && !d.name.contains(it) },
+                        enabled = connecting == null && t != null,
+                    ) {
+                        if (t != null) com.gpo.pilipala.feature.player.cast.CastSession.start(d, t, ctrl.positionMs) { ctrl.pause() }
+                    }
+                },
+            )
+        }
+        // 重新搜索 is not a device: its own group, a group's gap below the list.
+        Spacer(Modifier.height(GroupGap - 8.dp))
+        SegmentedGroup(listOf(RowSpec(YoinSymbols.Refresh, if (searching) "搜索中…" else "重新搜索", enabled = !searching) { round++ }))
     }
 }
 

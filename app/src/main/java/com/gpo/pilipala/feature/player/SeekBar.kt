@@ -128,7 +128,8 @@ internal fun PlayerSeekBar(
     val chapters = ctrl.chapters
     val latestChapters by rememberUpdatedState(chapters)
     val latestPoke by rememberUpdatedState(onPoke)
-    // 跳过片段 as blocks in the tertiary colour; one just skipped closes up about its middle.
+    // 跳过片段 as blocks in the tertiary colour; one just skipped closes up about its middle,
+    // then opens again so the bar still shows where it was.
     val skips = ctrl.skips
     val skipColor = MaterialTheme.colorScheme.tertiary
     val closing = remember { androidx.compose.animation.core.Animatable(1f) }
@@ -136,7 +137,10 @@ internal fun PlayerSeekBar(
     val closeSpec = YoinMotion.slowSpatialSpec<Float>(YoinMotionRole.Standard)
     androidx.compose.runtime.LaunchedEffect(lastSkip) {
         closing.snapTo(1f)
-        if (lastSkip != null) closing.animateTo(0f, closeSpec)
+        if (lastSkip != null) {
+            closing.animateTo(0f, closeSpec)
+            closing.animateTo(1f, closeSpec)
+        }
     }
     Box(
         modifier
