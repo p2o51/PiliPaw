@@ -479,6 +479,8 @@ internal class ChromeActions(
     val onNext: () -> Unit,
     val onPlay: () -> Unit,
     val onChapters: () -> Unit,
+    /** 投屏 (the sheet's 投屏 page: devices, or the remote while casting). */
+    val onCast: () -> Unit,
     /** 截图; null while there is no picture to take. */
     val onShot: (() -> Unit)? = null,
 )
@@ -534,6 +536,7 @@ internal fun rememberChromeActions(
             haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
             ui.sheet = SheetPage.Chapters
         },
+        onCast = { ui.sheet = SheetPage.Cast },
         onShot = onShot,
     )
 }
@@ -612,20 +615,32 @@ internal fun InlineCorners(
             CornerButton(YoinSymbols.Back, "返回", actions.onBack)
         }
         Row(
-            Modifier
-                .align(Alignment.TopEnd)
-                .background(CornerPlate, YoinShapeTokens.Full),
+            Modifier.align(Alignment.TopEnd),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val send = actions.onSend
-            if (send != null) {
-                InlineGroupButton(onClick = send) { Icon(YoinSymbols.Edit, contentDescription = "发弹幕", modifier = Modifier.size(22.dp)) }
+            // 投屏 stands apart from the pill: a round button like 返回 (lit while casting).
+            val casting = com.gpo.pilipala.feature.player.cast.CastSession.device != null
+            CornerButton(
+                if (casting) YoinSymbols.CastConnected else YoinSymbols.Cast,
+                "投屏",
+                actions.onCast,
+                tint = if (casting) MaterialTheme.colorScheme.primary else OnVideo,
+            )
+            Row(
+                Modifier.background(CornerPlate, YoinShapeTokens.Full),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val send = actions.onSend
+                if (send != null) {
+                    InlineGroupButton(onClick = send) { Icon(YoinSymbols.Edit, contentDescription = "发弹幕", modifier = Modifier.size(22.dp)) }
+                }
+                InlineGroupButton(onClick = actions.onDanmaku) { DanmakuToggleIcon(danmakuOn) }
+                if (canPip) {
+                    InlineGroupButton(onClick = actions.onPip) { Icon(PiliSymbols.Pip, contentDescription = "画中画", modifier = Modifier.size(22.dp)) }
+                }
+                InlineGroupButton(onClick = actions.onMore) { Icon(YoinSymbols.MoreVertical, contentDescription = "更多", modifier = Modifier.size(22.dp)) }
             }
-            InlineGroupButton(onClick = actions.onDanmaku) { DanmakuToggleIcon(danmakuOn) }
-            if (canPip) {
-                InlineGroupButton(onClick = actions.onPip) { Icon(PiliSymbols.Pip, contentDescription = "画中画", modifier = Modifier.size(22.dp)) }
-            }
-            InlineGroupButton(onClick = actions.onMore) { Icon(YoinSymbols.MoreVertical, contentDescription = "更多", modifier = Modifier.size(22.dp)) }
         }
     }
 }
@@ -893,6 +908,14 @@ internal fun FullscreenTopBar(
                 IconButton(onClick = send, shapes = IconButtonDefaults.shapes()) {
                     Icon(YoinSymbols.Edit, contentDescription = "发弹幕")
                 }
+            }
+            val casting = com.gpo.pilipala.feature.player.cast.CastSession.device != null
+            IconButton(onClick = actions.onCast, shapes = IconButtonDefaults.shapes()) {
+                Icon(
+                    if (casting) YoinSymbols.CastConnected else YoinSymbols.Cast,
+                    contentDescription = "投屏",
+                    tint = if (casting) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                )
             }
             IconButton(onClick = actions.onDanmaku, shapes = IconButtonDefaults.shapes()) {
                 DanmakuToggleIcon(danmakuOn)

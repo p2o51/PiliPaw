@@ -100,7 +100,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
 
-internal enum class SheetPage { Main, Quality, Audio, Codec, Speed, Skip, Danmaku, Sleep, Subtitle, DanmakuBlock, Chapters, Cache }
+internal enum class SheetPage { Main, Quality, Audio, Codec, Speed, Skip, Cast, Danmaku, Sleep, Subtitle, DanmakuBlock, Chapters, Cache }
 
 private val SleepOptions = listOf(0, 15, 30, 45, 60, 90)
 
@@ -249,6 +249,7 @@ internal fun PlayerSheetPages(
                     SheetPage.Codec -> "解码格式"
                     SheetPage.Speed -> "播放速度"
                     SheetPage.Skip -> "跳过片段"
+                    SheetPage.Cast -> "投屏"
                     SheetPage.Danmaku -> "弹幕设置"
                     SheetPage.Sleep -> "定时关闭"
                     SheetPage.Subtitle -> "字幕"
@@ -273,6 +274,7 @@ internal fun PlayerSheetPages(
                 SheetPage.Codec -> CodecPage(ctrl, close)
                 SheetPage.Speed -> SpeedSliderPage(ctrl)
                 SheetPage.Skip -> SkipPage(ctrl)
+                SheetPage.Cast -> CastPage(ctrl)
                 SheetPage.Danmaku -> DanmakuPage(onOpenBlock = { page = SheetPage.DanmakuBlock })
                 SheetPage.Sleep -> SleepPage(ctrl, close)
                 SheetPage.Subtitle -> SubtitlePage(ctrl, close)
@@ -823,6 +825,110 @@ private fun SubtitlePage(ctrl: PiliPlayerController, close: () -> Unit) {
         }
     }
     SegmentedGroup(rows)
+}
+
+/**
+ * 投屏: while nothing is cast, the renderers on the Wi‑Fi as they answer (the search runs a few
+ * seconds; 重新搜索 runs it again); picking one sends the video there and pauses the phone.
+ * While casting, the page is the remote: the position, 播放 / 暂停, and 退出投屏, which brings
+ * the video back to the phone where the TV was.
+ */
+@Composable
+private fun CastPage(ctrl: PiliPlayerController) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val device = com.gpo.pilipala.feature.player.cast.CastSession.device
+    val session = com.gpo.pilipala.feature.player.cast.CastSession
+    if (device != null) {
+        Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
+            Column(Modifier.padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("正在 ${device.name} 上播放", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Text(session.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                val dur = session.durationMs.coerceAtLeast(1L)
+                Slider(
+                    value = (session.positionMs.toFloat() / dur).coerceIn(0f, 1f),
+                    onValueChange = { session.seekTo((it * dur).toLong()) },
+                )
+                Row(Modifier.padding(horizontal = 4.dp)) {
+                    Text(
+                        com.gpo.pilipala.core.util.Fmt.durationMs(session.positionMs),
+                        style = MaterialTheme.typography.labelMedium.withTabularFigures(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        com.gpo.pilipala.core.util.Fmt.durationMs(session.durationMs),
+                        style = MaterialTheme.typography.labelMedium.withTabularFigures(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.FilledTonalButton(
+                    onClick = { session.togglePlay() },
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                ) {
+                    Icon(if (session.playing) YoinSymbols.Pause else YoinSymbols.PlayArrow, null, Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (session.playing) "暂停" else "播放")
+                }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        val at = session.stop()
+                        if (ctrl.target?.cid == session.cid && at > 0) ctrl.seekTo(at)
+                        ctrl.play()
+                    },
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                ) {
+                    Text("退出投屏")
+                }
+            }
+        }
+        return
+    }
+    val devices = remember { androidx.compose.runtime.mutableStateListOf<com.gpo.pilipala.feature.player.cast.DlnaDevice>() }
+    var searching by remember { mutableStateOf(true) }
+    var round by remember { mutableStateOf(0) }
+    androidx.compose.runtime.LaunchedEffect(round) {
+        searching = true
+        runCatching {
+            com.gpo.pilipala.feature.player.cast.Dlna.discover(context) { d ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    if (devices.none { it.id == d.id }) devices += d
+                }
+            }
+        }
+        searching = false
+    }
+    val connecting = session.connecting
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            when {
+                searching -> "正在找同一 Wi‑Fi 下的电视和盒子…"
+                devices.isEmpty() -> "没找到设备。电视要和手机在同一个 Wi‑Fi，并打开投屏（DLNA）。"
+                else -> "选一台设备"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
+        session.error?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 8.dp))
+        }
+        val t = ctrl.target
+        val rows = devices.map { d ->
+            RowSpec(
+                YoinSymbols.Cast,
+                d.name,
+                value = if (connecting?.id == d.id) "连接中…" else d.model.takeIf { it.isNotBlank() && it != d.name },
+                enabled = connecting == null && t != null,
+            ) {
+                if (t != null) com.gpo.pilipala.feature.player.cast.CastSession.start(d, t, ctrl.positionMs) { ctrl.pause() }
+            }
+        } + RowSpec(null, if (searching) "搜索中…" else "重新搜索", enabled = !searching) { round++ }
+        SegmentedGroup(rows)
+    }
 }
 
 /**
