@@ -448,7 +448,7 @@ internal class PiliPlayerController(
                     keepPosition >= 0 -> keepPosition
                     t.startPositionMs > 0 -> t.startPositionMs
                     queued -> 0L
-                    remembered > 0 -> remembered
+                    remembered > 0 && (duration <= 0 || remembered < duration - 5_000) -> remembered
                     pi.lastPlayTimeMs > 0 && (duration <= 0 || pi.lastPlayTimeMs < duration - 5_000) -> pi.lastPlayTimeMs
                     else -> 0L
                 }
