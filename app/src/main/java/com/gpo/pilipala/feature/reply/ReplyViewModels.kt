@@ -167,6 +167,12 @@ internal abstract class BaseReplyViewModel(val oid: Long, val type: Int) : ViewM
     protected abstract fun insertLocally(target: ComposeTarget, reply: Reply)
 }
 
+/**
+ * A notification's pin, from arrival: scrolled to ([Landed]), then either marked and
+ * settled ([Done]) or, for a reply inside it, its thread opened ([Opened]).
+ */
+internal enum class AnchorPhase { Pending, Landed, Opened, Done }
+
 internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid, type) {
     /** 1 = 热门, 0 = 最新 (AppSettings.replySort). */
     var sort by mutableIntStateOf(AppSettings.replySort.value)
@@ -189,9 +195,8 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
     var anchorRpid by mutableLongStateOf(0L)
         private set
 
-    /** The pin was scrolled to / its highlight has settled: not again when the list comes back from a thread. */
-    var anchorScrolled = false
-    var anchorGlowed = false
+    /** How far the pin's arrival has gone: not again when the list comes back from a thread. */
+    var anchorPhase by mutableStateOf(AnchorPhase.Pending)
 
     /**
      * Sort switches: [requestedGen] bumps at the tap, [listGen] once the new
@@ -334,6 +339,12 @@ internal class ReplyThreadViewModel(oid: Long, type: Int, val rootRpid: Long) : 
         private set
     var count by mutableLongStateOf(0L)
         private set
+
+    /** The reply a notification opened this thread for was looked for: not again when the page comes back. */
+    var focusHandled = false
+
+    /** That reply, once scrolled to: its row carries the highlight. */
+    var focusLanded by mutableLongStateOf(0L)
 
     val pager = Pager<Reply>(viewModelScope, dedupKey = { it.rpid }) { cursor ->
         val pn = cursor?.toIntOrNull() ?: 1

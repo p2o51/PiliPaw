@@ -22,14 +22,21 @@ data class ReplyAnchor(val oid: Long, val type: Int, val root: Long, val rpid: L
  * and opens the content's own page; that page checks [has] to switch to its comments,
  * and its comment list [take]s it once. One at a time, and only for a short while, so an
  * anchor the page never used does not turn up in a later list. Snapshot state.
+ *
+ * A page may compose its comments before it asks (a pager keeps the 评论 tab composed next
+ * to 简介, in the same frame the video's aid arrives): an anchor just taken still counts
+ * for [has] a moment longer.
  */
 object ReplyAnchors {
     private var pending by mutableStateOf<ReplyAnchor?>(null)
     private var putAt = 0L
+    private var taken: ReplyAnchor? = null
+    private var takenAt = 0L
 
     fun put(anchor: ReplyAnchor) {
         pending = anchor
         putAt = SystemClock.uptimeMillis()
+        taken = null
     }
 
     private fun live(oid: Long, type: Int): ReplyAnchor? {
@@ -38,9 +45,18 @@ object ReplyAnchors {
         return a.takeIf { it.matches(oid, type) }
     }
 
-    fun has(oid: Long, type: Int): Boolean = live(oid, type) != null
+    private fun justTaken(oid: Long, type: Int): Boolean {
+        val a = taken ?: return false
+        return SystemClock.uptimeMillis() - takenAt <= TakenGraceMs && a.matches(oid, type)
+    }
 
-    fun take(oid: Long, type: Int): ReplyAnchor? = live(oid, type)?.also { pending = null }
+    fun has(oid: Long, type: Int): Boolean = live(oid, type) != null || justTaken(oid, type)
+
+    fun take(oid: Long, type: Int): ReplyAnchor? = live(oid, type)?.also {
+        pending = null
+        taken = it
+        takenAt = SystemClock.uptimeMillis()
+    }
 
     /**
      * The native link a comment notification carries, in either shape:
@@ -75,4 +91,5 @@ object ReplyAnchors {
     }
 
     private const val TtlMs = 30_000L
+    private const val TakenGraceMs = 3_000L
 }

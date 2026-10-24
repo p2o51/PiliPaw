@@ -49,15 +49,8 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -77,6 +70,7 @@ import com.gpo.pilipala.core.account.Account
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
+import com.gpo.pilipala.navigation.transition.LocalPageSettled
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.ErrorState
@@ -92,6 +86,8 @@ import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import com.gpo.pilipala.ui.components.inlineIconSize
 import com.gpo.pilipala.ui.components.centered
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val KEY_BAR = "reply:bar"
 private const val KEY_COMPOSE = "reply:compose"
@@ -102,12 +98,15 @@ private const val KEY_ANCHOR = "reply:anchor"
 /** The list's saveable state (expanded texts, item states) while a thread covers it. */
 private const val LIST_STATE_KEY = "reply:list"
 
-/** A thread open in place: its subject (a row may carry its own oid) and root rpid. */
-private data class OpenThread(val oid: Long, val rpid: Long)
+/**
+ * A thread open in place: its subject (a row may carry its own oid) and root rpid, and
+ * the reply inside it a notification points at (0 without one).
+ */
+private data class OpenThread(val oid: Long, val rpid: Long, val focus: Long = 0L)
 
 private val OpenThreadSaver = Saver<OpenThread?, LongArray>(
-    save = { open -> open?.let { longArrayOf(it.oid, it.rpid) } },
-    restore = { OpenThread(it[0], it[1]) },
+    save = { open -> open?.let { longArrayOf(it.oid, it.rpid, it.focus) } },
+    restore = { OpenThread(it[0], it[1], it[2]) },
 )
 
 /**
@@ -142,19 +141,20 @@ fun ReplyList(
     // would drop the sheet's window and flash.
     val inPlace = threadsInPlace || widthClass() != WidthClass.Compact
     var thread by rememberSaveable(stateSaver = OpenThreadSaver) { mutableStateOf(null) }
+    val openThread = { r: Reply, focus: Long ->
+        val subject = r.oid.takeIf { it != 0L } ?: oid
+        if (inPlace) {
+            thread = OpenThread(subject, r.rpid, focus)
+        } else {
+            nav.push(Route.ReplyDetail(subject, type, r.rpid, focus))
+        }
+    }
 
     val actions = rememberReplyActions(
         vm = vm,
         ui = ui,
         onReply = { r -> ComposeTarget(root = r.rpid, parent = r.rpid, replyTo = r.member.name) },
-        onOpenThread = { r ->
-            val subject = r.oid.takeIf { it != 0L } ?: oid
-            if (inPlace) {
-                thread = OpenThread(subject, r.rpid)
-            } else {
-                nav.push(Route.ReplyDetail(subject, type, r.rpid))
-            }
-        },
+        onOpenThread = { r -> openThread(r, 0L) },
         onTimestampClick = onTimestampClick,
         threadSource = !inPlace,
     )
@@ -173,7 +173,7 @@ fun ReplyList(
 
     // Back leaves the thread only while this pane is mostly on screen: a pager keeps its
     // neighbouring pages composed, and back on the 简介 / 相关 tab must not close an unseen thread.
-    var onScreen by remember { mutableStateOf(true) }
+    var onScreen by remember { mutableStateOf(false) }
     BackHandler(enabled = thread != null && onScreen) { thread = null }
 
     val listHolder = rememberSaveableStateHolder()
@@ -202,6 +202,8 @@ fun ReplyList(
                         listState = listState,
                         contentPadding = contentPadding,
                         header = header,
+                        isOnScreen = { onScreen },
+                        onOpenAnchorThread = openThread,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -230,6 +232,8 @@ private fun CommentList(
     listState: LazyListState,
     contentPadding: PaddingValues,
     header: (LazyListScope.() -> Unit)?,
+    isOnScreen: () -> Boolean,
+    onOpenAnchorThread: (Reply, focus: Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val nav = LocalNavigator.current
@@ -244,18 +248,39 @@ private fun CommentList(
         derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.key == KEY_COMPOSE } }
     }
     val hasContent = pager.items.isNotEmpty() || vm.top.isNotEmpty() || vm.anchored != null
-    // The comment a notification opened this list for lands pinned on top: bring it into
-    // view (a host's header, the dynamic or the article, sits above it in this list).
+    // The comment a notification opened this list for lands pinned on top: once the list is
+    // in view (the page has arrived, the tab has slid over), bring it into view (a host's
+    // header, the dynamic or the article, sits above it in this list). A reply inside that
+    // thread then opens the thread the way a tap would, which goes on to it.
     val anchoredId = vm.anchored?.rpid
+    val pageSettled by rememberUpdatedState(LocalPageSettled.current)
     LaunchedEffect(anchoredId != null) {
-        if (anchoredId == null || vm.anchorScrolled) return@LaunchedEffect
-        vm.anchorScrolled = true
-        repeat(2) { withFrameNanos { } }
-        // Counted from the end: the header's items come first and their number is the host's.
-        val tail = vm.top.size + if (pager.items.isEmpty()) 1 else pager.items.size + 1
-        val anchorIndex = listState.layoutInfo.totalItemsCount - tail - 1
-        val barIndex = anchorIndex - 1 - if (vm.readOnly) 0 else 1
-        if (barIndex > 0) listState.animateScrollToItem(barIndex)
+        if (anchoredId == null) return@LaunchedEffect
+        snapshotFlow { isOnScreen() && pageSettled }.first { it }
+        if (vm.anchorPhase == AnchorPhase.Pending) {
+            repeat(2) { withFrameNanos { } }
+            // Counted from the end: the header's items come first and their number is the host's.
+            val tail = vm.top.size + if (pager.items.isEmpty()) 1 else pager.items.size + 1
+            val anchorIndex = listState.layoutInfo.totalItemsCount - tail - 1
+            val barIndex = anchorIndex - 1 - if (vm.readOnly) 0 else 1
+            if (barIndex > 0) listState.animateScrollToItem(barIndex)
+            vm.anchorPhase = AnchorPhase.Landed
+        }
+        val focus = vm.anchorRpid
+        if (vm.anchorPhase != AnchorPhase.Landed || focus == 0L || focus == anchoredId) return@LaunchedEffect
+        // The reader took over meanwhile (scrolled, left the tab, tapped away): leave the
+        // thread to them, and not again when the list comes back.
+        try {
+            val interrupted = withTimeoutOrNull(AnchorThreadBeatMs) {
+                snapshotFlow { listState.isScrollInProgress || !isOnScreen() }.first { it }
+            } != null
+            if (!interrupted) {
+                vm.anchorPhase = AnchorPhase.Opened
+                vm.anchored?.let { onOpenAnchorThread(it, focus) }
+            }
+        } finally {
+            if (vm.anchorPhase == AnchorPhase.Landed) vm.anchorPhase = AnchorPhase.Done
+        }
     }
     // Rows only fade as they land; placement springs stand down while a row resizes.
     val placement = remember(ui.layout) { ui.layout.gated(motion.offset) }
@@ -361,6 +386,7 @@ private fun InPlaceThread(
             oid = open.oid,
             type = type,
             rpid = open.rpid,
+            focusRpid = open.focus,
             onClose = onClose,
             modifier = Modifier.fillMaxSize(),
             inline = true,
@@ -514,36 +540,30 @@ internal fun PagerFooter(pager: Pager<Reply>, modifier: Modifier = Modifier) {
 }
 
 /**
- * The comment a notification opened the list for: it lands on a primaryContainer block
- * that settles away on a slow spring once it has been seen, the way 官方 marks it.
+ * The comment a notification opened the list for: once the scroll to it has landed, it is
+ * marked ([AnchorMark]) and the mark settles away after it has been seen. When the
+ * notification is about a reply inside it, only its wash shows, until that thread opens;
+ * the reply itself carries the full mark there.
  */
 @Composable
 private fun AnchoredRow(vm: ReplyListViewModel, r: Reply, actions: ReplyActions, modifier: Modifier, onClick: () -> Unit) {
-    val glow = remember { Animatable(if (vm.anchorGlowed) 0f else 1f) }
+    val isTarget = vm.anchorRpid == 0L || vm.anchorRpid == r.rpid
+    val mark = rememberAnchorMark(full = isTarget)
     LaunchedEffect(Unit) {
-        if (vm.anchorGlowed) return@LaunchedEffect
-        delay(AnchorHoldMs)
-        glow.animateTo(0f, spring(stiffness = Spring.StiffnessVeryLow))
-        vm.anchorGlowed = true
+        snapshotFlow { vm.anchorPhase }.first { it != AnchorPhase.Pending }
+        if (vm.anchorPhase != AnchorPhase.Landed) return@LaunchedEffect
+        if (isTarget) {
+            // Settled before it plays: a page left mid-way does not replay it on return.
+            vm.anchorPhase = AnchorPhase.Done
+            mark.play()
+        } else {
+            mark.show()
+            snapshotFlow { vm.anchorPhase }.first { it > AnchorPhase.Landed }
+            mark.hide()
+        }
     }
-    val tint = MaterialTheme.colorScheme.primaryContainer
-    ReplyRow(
-        r,
-        actions,
-        modifier.drawBehind {
-            val a = glow.value
-            if (a > 0f) {
-                val inset = 4.dp.toPx()
-                drawRoundRect(
-                    color = tint.copy(alpha = tint.alpha * a),
-                    topLeft = Offset(inset, 0f),
-                    size = Size(size.width - inset * 2, size.height),
-                    cornerRadius = CornerRadius(16.dp.toPx()),
-                )
-            }
-        },
-        onClick = onClick,
-    )
+    ReplyRow(r, actions, modifier, mark = mark, onClick = onClick)
 }
 
-private const val AnchorHoldMs = 1400L
+/** After the pin lands, before the reply inside it opens: long enough to see where it sits. */
+private const val AnchorThreadBeatMs = 600L

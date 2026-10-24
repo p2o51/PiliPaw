@@ -60,10 +60,8 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -79,8 +77,6 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.graphics.shapes.Morph
-import androidx.graphics.shapes.toPath
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.components.seam.seamText
@@ -721,17 +717,6 @@ internal class LerpShape(private val start: Shape, private val end: Shape, priva
             )
         }
         return if (fraction < 0.5f) a else b
-    }
-}
-
-/** A [Morph] at [progress], scaled from the unit square to the layout bounds. */
-internal class MorphShape(private val morph: Morph, private val progress: Float) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val matrix = Matrix()
-        matrix.scale(size.width, size.height, 1f)
-        val path = morph.toPath(progress).asComposePath()
-        path.transform(matrix)
-        return Outline.Generic(path)
     }
 }
 

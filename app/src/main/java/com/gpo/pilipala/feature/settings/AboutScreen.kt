@@ -43,6 +43,7 @@ import androidx.graphics.shapes.Morph
 import com.gpo.pilipala.BuildConfig
 import com.gpo.pilipala.R
 import com.gpo.pilipala.ui.components.Tag
+import com.gpo.pilipala.ui.theme.MorphShape
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.yoin.symbols.PiliSymbols
