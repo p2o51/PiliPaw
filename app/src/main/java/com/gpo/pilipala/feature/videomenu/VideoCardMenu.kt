@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -109,7 +110,7 @@ internal fun VideoItem.webUrl(): String {
     return if (bv.isEmpty()) "" else "https://www.bilibili.com/video/$bv"
 }
 
-private enum class MenuPage { Actions, Block, Cache }
+private enum class MenuPage { Actions, Block, Cache, Share, Forward }
 
 private val CoverShape = ContinuousRoundedCornerShape(12.dp)
 private val OwnerShape = ContinuousRoundedCornerShape(20.dp)
@@ -194,6 +195,9 @@ internal fun VideoCardMenu(
         }
     }
 
+    val shareTarget = remember(item) {
+        ShareTarget(item.aid.takeIf { it > 0 } ?: item.bvid.takeIf { it.isNotEmpty() }?.let(IdUtils::bv2av) ?: 0L, item.title, item.cover, url)
+    }
     val listen = if (!isVideo) null else MenuRow(YoinSymbols.Headphones, "仅听声音") {
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
         close {
@@ -235,16 +239,8 @@ internal fun VideoCardMenu(
         },
         listen = listen,
         small = if (!isVideo) emptyList() else buildList {
-            if (url.isNotEmpty()) {
-                add(MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } })
-                add(
-                    MenuRow(PiliSymbols.Link, "复制链接") {
-                        context.getSystemService(ClipboardManager::class.java)
-                            ?.setPrimaryClip(ClipData.newPlainText(item.title, url))
-                        finisher.finish("复制链接", "已复制")
-                    },
-                )
-            }
+            // 分享 opens its choices in place: 转发到动态, 复制链接, 更多方式.
+            if (url.isNotEmpty()) add(MenuRow(YoinSymbols.Share, "分享") { page = MenuPage.Share })
             add(MenuRow(YoinSymbols.Download, "缓存") { page = MenuPage.Cache })
         },
         owner = if (item.ownerMid <= 0) null else OwnerGroup(
@@ -275,6 +271,8 @@ internal fun VideoCardMenu(
         Column(
             Modifier
                 .fillMaxWidth()
+                // 转发到动态 has a text field: the menu clears the keyboard.
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
                 .padding(bottom = sheetBottomPadding(24.dp)),
@@ -288,6 +286,8 @@ internal fun VideoCardMenu(
             ) { p ->
                 when (p) {
                     MenuPage.Actions -> MenuBody(model, finisher, enabled = !busy && !finisher.finishing)
+                    MenuPage.Share -> ShareChoices(shareTarget, finisher, enabled = !finisher.finishing) { page = MenuPage.Forward }
+                    MenuPage.Forward -> ForwardStep(shareTarget, finisher) { page = MenuPage.Share }
                     MenuPage.Cache -> CacheStep(item, close = { close() }, onFail = { msg ->
                         toast(msg)
                         page = MenuPage.Actions

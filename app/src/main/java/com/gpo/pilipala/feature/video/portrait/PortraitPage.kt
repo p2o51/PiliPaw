@@ -70,7 +70,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -94,7 +93,6 @@ import com.gpo.pilipala.feature.video.VideoDetail
 import com.gpo.pilipala.feature.video.VideoDetailViewModel
 import com.gpo.pilipala.feature.video.isFameSelf
 import com.gpo.pilipala.feature.video.rememberRichText
-import com.gpo.pilipala.feature.video.shareText
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.FameCount
@@ -157,7 +155,6 @@ internal fun PortraitPage(
     callbacks: PortraitCallbacks,
 ) {
     val nav = LocalNavigator.current
-    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val detail = vm.detail?.takeIf { it.bvid == item.bvid }
     val a = vm.actions
@@ -188,6 +185,18 @@ internal fun PortraitPage(
     val ownerName = detail?.ownerName?.ifEmpty { null } ?: item.ownerName
     val face = detail?.ownerFace?.ifEmpty { null } ?: item.ownerFace
     val title = detail?.title?.ifEmpty { null } ?: item.title
+    var shareOpen by remember { mutableStateOf(false) }
+    if (shareOpen) {
+        com.gpo.pilipala.feature.videomenu.VideoShareSheet(
+            com.gpo.pilipala.feature.videomenu.ShareTarget(
+                detail?.aid ?: item.aid,
+                title,
+                item.cover,
+                "https://www.bilibili.com/video/${item.bvid}",
+            ),
+            onDismiss = { shareOpen = false },
+        )
+    }
     val up = vm.up
     val relationKnown = up.mid == ownerMid && ownerMid > 0
     // 名声模式: popularity counts give way to the action word (the 评论 count is not popularity).
@@ -230,7 +239,7 @@ internal fun PortraitPage(
             onComments = callbacks.onComments,
             onFav = { if (acts) callbacks.onFav() },
             onQuickFav = { if (acts) gate { a.quickFav() } },
-            onShare = { shareText(context, title, "https://www.bilibili.com/video/${item.bvid}") },
+            onShare = { shareOpen = true },
             modifier = m,
             dense = mode == PortraitMode.PhoneLandscape,
         )

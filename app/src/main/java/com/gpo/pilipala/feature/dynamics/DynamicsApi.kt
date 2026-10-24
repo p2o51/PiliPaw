@@ -196,7 +196,20 @@ internal object DynamicsApi {
     }
 
     /** Repost (scene 4) with optional text. */
-    suspend fun forward(dynId: String, text: String) {
+    suspend fun forward(dynId: String, text: String) = repost(text) { put("dyn_id_str", dynId) }
+
+    /** 转发到动态 for a video: the same repost, its source the archive (dyn_type 8, rid = aid). */
+    suspend fun forwardVideo(aid: Long, text: String) = repost(text) {
+        put(
+            "revs_id",
+            buildJsonObject {
+                put("dyn_type", 8)
+                put("rid", aid)
+            },
+        )
+    }
+
+    private suspend fun repost(text: String, source: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit) {
         val uploadId = "${BiliClient.mid}_${System.currentTimeMillis() / 1000}_${Random.nextInt(1000, 9999)}"
         val body = buildJsonObject {
             put(
@@ -237,7 +250,7 @@ internal object DynamicsApi {
                     )
                 },
             )
-            put("web_repost_src", buildJsonObject { put("dyn_id_str", dynId) })
+            put("web_repost_src", buildJsonObject(source))
         }.toString()
         BiliClient.unwrap(
             BiliClient.postJson(

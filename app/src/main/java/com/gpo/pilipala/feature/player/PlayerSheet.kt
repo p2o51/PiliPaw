@@ -457,11 +457,12 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
 
     // 1 · 画质, 播放速度
     val qualities = pi?.qualities.orEmpty().filter { it.available }.sortedByDescending { it.qn }
+    // A speed set on the slider page (1.75, 3.0) joins the strip, so the strip always shows it.
+    val speeds = if (StripSpeeds.any { kotlin.math.abs(ctrl.speed - it) < 0.01f }) StripSpeeds else (StripSpeeds + ctrl.speed).sorted()
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         ChoiceStrip(
             icon = PiliSymbols.Hd,
             title = "画质",
-            value = Qualities.videoShort(ctrl.currentQn).takeIf { pi != null },
             shape = segmentShape(0, 2),
             choices = qualities.map { Qualities.videoShort(it.qn) },
             selected = qualities.indexOfFirst { it.qn == ctrl.currentQn },
@@ -470,14 +471,12 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
         )
         ChoiceStrip(
             icon = YoinSymbols.Speed,
-            title = "播放速度",
-            value = speedLabel(ctrl.speed),
+            title = "倍速",
             shape = segmentShape(1, 2),
-            choices = StripSpeeds.map(::stripFigure),
-            selected = StripSpeeds.indexOfFirst { kotlin.math.abs(ctrl.speed - it) < 0.01f },
-            onPick = { ctrl.changeSpeed(StripSpeeds[it]) },
+            choices = speeds.map(::stripFigure),
+            selected = speeds.indexOfFirst { kotlin.math.abs(ctrl.speed - it) < 0.01f },
+            onPick = { ctrl.changeSpeed(speeds[it]) },
             onMore = { onOpen(SheetPage.Speed) },
-            fill = true,
         )
     }
 
@@ -611,74 +610,79 @@ private fun MoreToggle(open: Boolean, onToggle: () -> Unit) {
     }
 }
 
-/** Speeds offered right in the strip; the rest (1.75, 3.0) are one tap away on the slider page. */
-private val StripSpeeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+/** Speeds offered right in the strip; the rest (0.5, 1.75, 3.0) are one tap away on the slider page. */
+private val StripSpeeds = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
 private fun stripFigure(v: Float): String = if (v == v.toInt().toFloat()) "${v.toInt()}.0" else v.toString()
 
 /**
- * A setting with its common steps in reach: its name and value (tap for the full page), then
- * the steps as pills. [fill] spreads them across the width; otherwise they scroll.
+ * A setting with its common steps in one row: its name (tap it, or the chevron, for the full
+ * page), then the steps as pills, the chosen one filled. The pill is the value, so the row
+ * shows it once.
  */
 @Composable
 private fun ChoiceStrip(
     icon: ImageVector,
     title: String,
-    value: String?,
     shape: Shape,
     choices: List<String>,
     selected: Int,
     onPick: (Int) -> Unit,
     onMore: () -> Unit,
-    fill: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
+    val more = {
+        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        onMore()
+    }
     Surface(shape = shape, color = scheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 8.dp)) {
+        Row(
+            Modifier.heightIn(min = 56.dp).padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(YoinContainerShapes.ListRow)
-                    .clickable {
-                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        onMore()
-                    }
-                    .padding(start = 8.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+                Modifier.clip(YoinContainerShapes.ListRow).clickable(onClick = more).padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(icon, null, Modifier.size(22.dp), tint = scheme.onSurfaceVariant)
                 Spacer(Modifier.width(16.dp))
-                Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                if (value != null) Text(value, style = MaterialTheme.typography.labelLarge, color = scheme.primary)
-                Icon(YoinSymbols.ChevronRight, null, Modifier.padding(start = 4.dp).size(18.dp), tint = scheme.onSurfaceVariant)
+                Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
             }
-            if (choices.size > 1) {
-                val rowModifier = if (fill) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                Row(rowModifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    choices.forEachIndexed { i, label ->
-                        val on = i == selected
-                        val spec = YoinMotion.defaultEffectsSpec<Color>()
-                        val container by animateColorAsState(if (on) scheme.primary else scheme.surfaceContainerHighest, spec, label = "stripPill")
-                        val content by animateColorAsState(if (on) scheme.onPrimary else scheme.onSurfaceVariant, spec, label = "stripPillText")
-                        Box(
-                            (if (fill) Modifier.weight(1f) else Modifier.widthIn(min = 64.dp))
-                                .height(40.dp)
-                                .clip(YoinShapeTokens.Full)
-                                .background(container)
-                                .clickable {
-                                    if (!on) {
-                                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                                        onPick(i)
-                                    }
+            Spacer(Modifier.width(12.dp))
+            Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                choices.forEachIndexed { i, label ->
+                    val on = i == selected
+                    val spec = YoinMotion.defaultEffectsSpec<Color>()
+                    val container by animateColorAsState(if (on) scheme.primary else Color.Transparent, spec, label = "stripPill")
+                    val content by animateColorAsState(if (on) scheme.onPrimary else scheme.onSurfaceVariant, spec, label = "stripPillText")
+                    Box(
+                        Modifier
+                            .height(34.dp)
+                            .clip(YoinShapeTokens.Full)
+                            .background(container)
+                            .clickable {
+                                if (!on) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    onPick(i)
                                 }
-                                .padding(horizontal = 12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(label, style = MaterialTheme.typography.labelLarge.withTabularFigures(), color = content, maxLines = 1)
-                        }
+                            }
+                            .padding(horizontal = 9.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(label, style = MaterialTheme.typography.labelLarge.withTabularFigures(), color = content, maxLines = 1)
                     }
                 }
+            }
+            Box(
+                Modifier.size(36.dp).clip(YoinShapeTokens.Full).clickable(onClick = more),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(YoinSymbols.ChevronRight, "更多$title", Modifier.size(18.dp), tint = scheme.onSurfaceVariant)
             }
         }
     }

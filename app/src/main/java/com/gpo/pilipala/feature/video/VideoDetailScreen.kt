@@ -110,7 +110,7 @@ import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.flow.merge
 
-private enum class VideoSheet { Coin, Fav, Pages, Season, Triple, Queue }
+private enum class VideoSheet { Coin, Fav, Pages, Season, Triple, Queue, Share }
 
 @Composable
 fun VideoDetailScreen(route: Route.Video) {
@@ -635,6 +635,12 @@ private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
             onDismiss = { sheet = null },
             mixItem = d?.let { com.gpo.pilipala.feature.sources.MixItems.bili(it.bvid, it.title, it.pic, it.ownerName, it.ownerMid, it.duration) },
         )
+        VideoSheet.Share -> if (d != null) {
+            com.gpo.pilipala.feature.videomenu.VideoShareSheet(
+                com.gpo.pilipala.feature.videomenu.ShareTarget(d.aid, d.title, d.pic, "https://www.bilibili.com/video/${d.bvid}"),
+                onDismiss = { sheet = null },
+            )
+        }
         VideoSheet.Triple -> TripleSheet(
             liked = a.liked,
             coined = a.coined,
@@ -861,7 +867,7 @@ private fun VideoActions(
                 label = label(a.shareCount, "分享"),
                 icon = YoinSymbols.Share,
                 toggle = false,
-                onClick = { shareText(context, d.title, "https://www.bilibili.com/video/${d.bvid}") },
+                onClick = { onSheet(VideoSheet.Share) },
             ),
         ),
         Modifier.padding(horizontal = 16.dp),
