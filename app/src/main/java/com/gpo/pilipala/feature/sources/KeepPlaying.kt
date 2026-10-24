@@ -678,7 +678,8 @@ private fun rememberVideoAspect(player: androidx.media3.common.Player?): Float {
  * on a tablet. Scrolling down pours the picture into a 48dp circle at the nav bar's start, with a
  * progress ring; scrolling up brings it out again. Two fingers run one size axis: circle ← bar →
  * a floating window of the video's own shape (drag or fling it to a corner; pinch it small to dock)
- * (rubber-banding past its largest size). Tapping the picture is what opens the video.
+ * (rubber-banding past its largest size). Tapping the picture is what opens the video; tapping
+ * the circle opens it out into the bar.
  */
 @OptIn(FlowPreview::class)
 @Composable
@@ -1187,11 +1188,15 @@ private val WindowShadowHeld = 14.dp
 private const val RingTickMs = 520
 private const val RingBreathMs = 1100
 
-/** A tap, by where it landed: the picture opens the video, the side blocks seek, pause pauses. */
+/**
+ * A tap, by where it landed: the picture opens the video (the merged circle opens out into the
+ * bar first), the side blocks seek, pause pauses.
+ */
 private fun tapAt(frame: MiniFrame, at: Offset, p: Playing) {
     val g = frame.geo
     val sides = g.sideAlpha > 0.5f && !g.windowed
     when {
+        g.tile.contains(at) && g.merge > 0.5f -> expandCircle()
         g.tile.contains(at) -> {
             openDock(frame, p)
         }
@@ -1199,6 +1204,13 @@ private fun tapAt(frame: MiniFrame, at: Offset, p: Playing) {
         sides && g.pause.contains(at) -> p.toggle()
         sides && g.right.contains(at) -> p.seekBy(15_000)
     }
+}
+
+/** The merged circle splits back out into the bar; the next scroll down folds it in again. */
+private fun expandCircle() {
+    MiniLog.event("circle opens out", "tap")
+    KeepPlaying.scrollWantsMerge = false
+    KeepPlaying.rest = MiniRest.Row
 }
 
 /** Touch and accessibility opens must remember the same return geometry. */
@@ -1534,7 +1546,10 @@ private fun Tile(p: Playing, frame: MiniFrame) {
             }
             .background(track)
             .then(p.route?.let { Modifier.pageSharedSource(it) } ?: Modifier)
-            .a11yClick(p.title.ifEmpty { "打开视频" }) { openDock(frame, p) }
+            .then(
+                if (KeepPlaying.rest == MiniRest.Merged) Modifier.a11yClick("展开迷你播放器") { expandCircle() }
+                else Modifier.a11yClick(p.title.ifEmpty { "打开视频" }) { openDock(frame, p) },
+            )
             .drawWithContent {
                 drawContent()
                 val stroke = ProgressStroke.toPx()
