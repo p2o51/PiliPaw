@@ -65,35 +65,40 @@ import kotlinx.coroutines.launch
 internal class ShareTarget(val aid: Long, val title: String, val cover: String, val url: String)
 
 /**
- * 分享's choices, a standard button group of equal tonal buttons: 转发到动态 (signed in, opens
- * [onForward]), 复制链接 (a tick, then the sheet goes) and 更多方式 (the system share sheet).
+ * 分享's choices: the recent 私信 contacts ([ShareContactsRow]), then a standard button group of
+ * equal tonal buttons: 转发到动态 (signed in, opens [onForward]), 复制链接 (a tick, then the
+ * sheet goes) and 更多方式 (the system share sheet).
  */
 @Composable
 internal fun ShareChoices(target: ShareTarget, finisher: SheetFinisher, enabled: Boolean, onForward: () -> Unit) {
     val context = LocalContext.current
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(SheetGroupSpacing)) {
-        if (BiliClient.isLoggedIn && target.aid > 0) {
-            SheetGroupButton(PiliSymbols.Forward, "转发到动态", onForward, Modifier.weight(1f), enabled = enabled)
+    // Two groups: the people (one tap sends it), then the ways to share; loose between them.
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        ShareContactsRow(target, finisher)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(SheetGroupSpacing)) {
+            if (BiliClient.isLoggedIn && target.aid > 0) {
+                SheetGroupButton(PiliSymbols.Forward, "转发到动态", onForward, Modifier.weight(1f), enabled = enabled)
+            }
+            SheetGroupButton(
+                PiliSymbols.Link,
+                "复制链接",
+                {
+                    context.getSystemService(ClipboardManager::class.java)
+                        ?.setPrimaryClip(ClipData.newPlainText(target.title, target.url))
+                    finisher.finish("复制链接", "已复制")
+                },
+                Modifier.weight(1f),
+                done = finisher.doneLabel("复制链接"),
+                enabled = enabled,
+            )
+            SheetGroupButton(
+                YoinSymbols.Share,
+                "更多方式",
+                { finisher.close { shareText(context, target.title, target.url) } },
+                Modifier.weight(1f),
+                enabled = enabled,
+            )
         }
-        SheetGroupButton(
-            PiliSymbols.Link,
-            "复制链接",
-            {
-                context.getSystemService(ClipboardManager::class.java)
-                    ?.setPrimaryClip(ClipData.newPlainText(target.title, target.url))
-                finisher.finish("复制链接", "已复制")
-            },
-            Modifier.weight(1f),
-            done = finisher.doneLabel("复制链接"),
-            enabled = enabled,
-        )
-        SheetGroupButton(
-            YoinSymbols.Share,
-            "更多方式",
-            { finisher.close { shareText(context, target.title, target.url) } },
-            Modifier.weight(1f),
-            enabled = enabled,
-        )
     }
 }
 
