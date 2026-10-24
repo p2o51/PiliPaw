@@ -289,7 +289,7 @@ private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
     val onFollow: () -> Unit = {
         gate { if (vm.up.following) confirmUnfollow = true else vm.up.toggle() }
     }
-    val compactPagerState = rememberPagerState { 2 }
+    val compactPagerState = rememberPagerState { 3 }
 
     // Back flies the picture's current frame home into the card it was opened from, or into the
     // bar or window it was opened from (PageHero.kt): the classic layout's inline picture or the
@@ -444,7 +444,7 @@ private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
                         }
                         if (hosts) player(report, PlayerChrome.Full) else PlayerSlot(report)
                     },
-                    compactTabs = listOf(DetailTab("简介"), DetailTab("评论", replyCount)),
+                    compactTabs = listOf(DetailTab("简介"), DetailTab("评论", replyCount), DetailTab("笔记")),
                     compactPagerState = compactPagerState,
                     compactPage = { page, pad ->
                         if (page == 0) {
@@ -452,8 +452,10 @@ private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
                                 vm, pad, includeRelated = true, onSeek = seek, gate = gate, onSheet = openSheet, onFollow = onFollow, context = context,
                                 queue = queue, player = playerState,
                             )
-                        } else {
+                        } else if (page == 1) {
                             CommentsPane(vm, pad, seek)
+                        } else {
+                            NotesTab(vm, pad)
                         }
                     },
                     expandedMain = { pad ->
@@ -461,13 +463,15 @@ private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
                     },
                     sideTabs = buildList {
                         add(DetailTab("评论", replyCount))
+                        add(DetailTab("笔记"))
                         add(DetailTab("相关"))
                         if (queue != null) add(DetailTab("播放列表", "${queue.size}"))
                     },
                     sidePage = { page, pad ->
                         when {
                             page == 0 -> CommentsPane(vm, pad, seek)
-                            page == 2 && queue != null -> QueueTab(queue, playerState, pad)
+                            page == 1 -> NotesTab(vm, pad)
+                            page == 3 && queue != null -> QueueTab(queue, playerState, pad)
                             else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
                                 relatedItems(vm) { playerState.listening }
                             }
@@ -895,6 +899,17 @@ private fun CommentsPane(vm: VideoDetailViewModel, pad: PaddingValues, onSeek: (
                 )
             }
         }
+    }
+}
+
+/** 笔记 once the video is known. */
+@Composable
+private fun NotesTab(vm: VideoDetailViewModel, pad: PaddingValues) {
+    val aid = vm.detail?.aid ?: 0L
+    if (aid == 0L) {
+        if (vm.error != null) ErrorState(vm.error.orEmpty(), onRetry = { vm.load() }) else LoadingState()
+    } else {
+        key(aid) { NotesPane(aid, pad, Modifier.readingWidth()) }
     }
 }
 
