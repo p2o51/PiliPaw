@@ -8,17 +8,22 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -46,7 +51,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CoroutineScope
@@ -54,14 +58,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /*
- * Action blocks for menu sheets, so a sheet reads in tiers instead of one stack of equal rows:
- * a wide [SheetHeroAction] beside square [SheetTileAction]s, a lighter row of round
- * [SheetIconAction]s, then quiet [SheetChipAction]s. A write that lands answers inside the
- * sheet first ([SheetFinisher]: the block turns into a tick and its done label), then the
- * sheet slides away; it never just vanishes into a snackbar.
+ * Actions for menu sheets, by M3's button rules: [SheetGroupButton]s in a standard button
+ * group (tonal for the main action, outlined beside it) and a lighter row of round
+ * [SheetIconAction]s. A write that lands answers inside the sheet first ([SheetFinisher]: the
+ * button turns into a tick and its done label), then the sheet slides away; it never just
+ * vanishes into a snackbar.
  */
-
-private val TileShape = ContinuousRoundedCornerShape(20.dp)
 
 /** How long a done block stays on screen before the sheet slides down. */
 private const val DoneHoldMillis = 820L
@@ -155,84 +157,6 @@ private fun DoneText(text: String, done: String?, color: Color, style: androidx.
     ) { t -> Text(t, style = style, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = align) }
 }
 
-/** The sheet's main action: a wide accent block, icon beside its label. */
-@Composable
-fun SheetHeroAction(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    done: String? = null,
-    enabled: Boolean = true,
-    height: Dp = 76.dp,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val (container, content) = blockColors(done != null, scheme.primaryContainer, scheme.onPrimaryContainer)
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = TileShape,
-        color = container,
-        contentColor = content,
-        modifier = modifier.height(height),
-    ) {
-        Row(
-            Modifier.padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            DoneIcon(icon, done != null, content, 26.dp)
-            Spacer(Modifier.width(14.dp))
-            DoneText(label, done, content, MaterialTheme.typography.titleMedium)
-        }
-    }
-}
-
-/** A square-ish block: icon over a short label. */
-@Composable
-fun SheetTileAction(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    done: String? = null,
-    enabled: Boolean = true,
-    destructive: Boolean = false,
-    quiet: Boolean = false,
-    height: Dp = 76.dp,
-) {
-    val scheme = MaterialTheme.colorScheme
-    // A quiet tile (不感兴趣, 删除…) keeps its place in the row but only an outline, so a
-    // turning-away action never weighs as much as the ones beside it.
-    val (container, content) = blockColors(
-        done != null,
-        if (quiet) Color.Transparent else scheme.surfaceContainerHighest,
-        when {
-            destructive -> scheme.error
-            quiet -> scheme.onSurfaceVariant
-            else -> scheme.onSurface
-        },
-    )
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = TileShape,
-        color = container,
-        contentColor = content,
-        border = if (quiet && done == null) androidx.compose.foundation.BorderStroke(1.dp, scheme.outlineVariant) else null,
-        modifier = modifier.height(height),
-    ) {
-        Column(
-            Modifier.padding(horizontal = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            DoneIcon(icon, done != null, if (done != null || destructive) content else scheme.onSurfaceVariant, 24.dp)
-            Spacer(Modifier.height(6.dp))
-            DoneText(label, done, content, MaterialTheme.typography.labelLarge, TextAlign.Center)
-        }
-    }
-}
-
 /** A light round action with its label under it. */
 @Composable
 fun SheetIconAction(
@@ -258,34 +182,6 @@ fun SheetIconAction(
         }
         Spacer(Modifier.height(6.dp))
         DoneText(label, done, scheme.onSurfaceVariant, MaterialTheme.typography.labelMedium, TextAlign.Center)
-    }
-}
-
-/** A quiet pill at the end of a sheet (不感兴趣, 拉黑…); [destructive] ones take the error colour. */
-@Composable
-fun SheetChipAction(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    destructive: Boolean = false,
-    enabled: Boolean = true,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val tint = if (destructive) scheme.error else scheme.onSurfaceVariant
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = CircleShape,
-        color = if (destructive) scheme.errorContainer.copy(alpha = 0.45f) else scheme.surfaceContainerHigh,
-        contentColor = tint,
-        modifier = modifier.height(44.dp),
-    ) {
-        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, Modifier.size(18.dp), tint = tint)
-            Spacer(Modifier.width(8.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge, color = if (destructive) tint else scheme.onSurface, maxLines = 1)
-        }
     }
 }
 
@@ -326,5 +222,64 @@ fun SheetButtonLabel(text: String, done: String?) {
             Spacer(Modifier.width(8.dp))
         }
         DoneText(text, done, content, MaterialTheme.typography.titleSmall)
+    }
+}
+
+/**
+ * How loud a [SheetGroupButton] is (M3 button emphasis): [Tonal] for the action a sheet is
+ * mostly opened for, [Outlined] for the ones beside it and for turning-away actions.
+ */
+enum class SheetEmphasis { Tonal, Outlined }
+
+/** Space between the buttons of a standard button group (M3: 8dp for medium buttons). */
+val SheetGroupSpacing = 8.dp
+
+/**
+ * One button of a standard button group in a sheet: icon over label, each button keeping its
+ * own shape (the corners morph on press). Done, it fills with the accent and shows a tick and
+ * [done] until the sheet goes.
+ */
+@Composable
+fun SheetGroupButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    done: String? = null,
+    enabled: Boolean = true,
+    emphasis: SheetEmphasis = SheetEmphasis.Tonal,
+    destructive: Boolean = false,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val tonal = emphasis == SheetEmphasis.Tonal
+    val (container, content) = blockColors(
+        done != null,
+        if (tonal) scheme.secondaryContainer else Color.Transparent,
+        when {
+            destructive -> scheme.error
+            tonal -> scheme.onSecondaryContainer
+            else -> scheme.onSurface
+        },
+    )
+    // While the sheet is finishing every button is disabled; keep the colours so nothing greys out.
+    Button(
+        onClick = onClick,
+        shapes = ButtonDefaults.shapes(),
+        modifier = modifier.heightIn(min = 64.dp),
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = container,
+            contentColor = content,
+            disabledContainerColor = container,
+            disabledContentColor = content,
+        ),
+        border = if (!tonal && done == null) BorderStroke(1.dp, scheme.outlineVariant) else null,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            DoneIcon(icon, done != null, content, 22.dp)
+            Spacer(Modifier.height(4.dp))
+            DoneText(label, done, content, MaterialTheme.typography.labelLarge, TextAlign.Center)
+        }
     }
 }

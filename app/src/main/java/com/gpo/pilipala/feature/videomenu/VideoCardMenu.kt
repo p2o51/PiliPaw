@@ -31,6 +31,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -68,11 +69,13 @@ import com.gpo.pilipala.feature.video.shareText
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.NetImage
+import com.gpo.pilipala.ui.components.SheetEmphasis
 import com.gpo.pilipala.ui.components.SheetFinisher
+import com.gpo.pilipala.ui.components.SheetGroupButton
+import com.gpo.pilipala.ui.components.SheetGroupSpacing
 import com.gpo.pilipala.ui.components.SheetIconAction
 import com.gpo.pilipala.ui.components.SheetIconRow
 import com.gpo.pilipala.ui.components.SheetInsets
-import com.gpo.pilipala.ui.components.SheetTileAction
 import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberSheetFinisher
@@ -118,10 +121,9 @@ private val OwnerShape = ContinuousRoundedCornerShape(20.dp)
 /**
  * The one long-press menu for a video card, wherever a card can be long-pressed (home 推荐 /
  * 热门 / Feed tabs, 排行榜, search results, related videos, UP uploads, 历史记录, 收藏夹,
- * 稍后再看, 订阅). It reads in tiers, not one stack of equal rows: the video, then a wide
- * 仅听声音 block beside square 稍后再看 / 收藏 tiles, the list's own play rows, a light row of
- * round 缓存 / 分享 / 复制链接, the UP strip (avatar, 查看 UP 主, 加入 Feed), and quiet
- * pills at the end: 不感兴趣, the list's destructive rows, 拉黑 UP.
+ * 稍后再看, 订阅). Groups by M3's button rules, most used first: 稍后再看 / 收藏 / 仅听声音 as a
+ * standard button group, round 分享 / 缓存, the UP (查看 UP 主, 加入 Feed, 拉黑 UP), and last,
+ * quiet outlined 不感兴趣 and the list's destructive rows.
  *
  * A write that lands (稍后再看, 复制链接) turns its block into a tick in the sheet, then the
  * sheet slides down ([SheetFinisher]).
@@ -311,8 +313,8 @@ internal fun VideoCardMenu(
 }
 
 /**
- * The menu for a YouTube card, in the same tiers: 仅听声音 › 稍后再看, 收藏 (the account's
- * playlists and the Mix lists) › 分享, 复制链接 › the channel › 不感兴趣, 不看此频道.
+ * The menu for a YouTube card, in the same groups: 稍后再看, 收藏 (the account's playlists and
+ * the Mix lists), 仅听声音 › 分享, 复制链接 › the channel, 不看此频道 › 不感兴趣.
  */
 @Composable
 private fun YoutubeCardMenu(
@@ -429,7 +431,6 @@ private class MenuRow(
     val icon: ImageVector,
     val label: String,
     val destructive: Boolean = false,
-    val quiet: Boolean = false,
     val onClick: () -> Unit,
 )
 
@@ -443,22 +444,24 @@ private class OwnerGroup(
 )
 
 /**
- * A menu's groups, most used first: [primary] tiles (what a long press is usually for),
- * [small] round actions, then the [owner] group. An empty group is left out.
+ * A menu's groups, most used first: [primary] (what a long press is usually for), [small]
+ * round actions, the [owner] group, then [decline] (不感兴趣, the list's destructive rows) last
+ * and quiet. An empty group is left out.
  */
 private class MenuModel(
     val primary: List<MenuRow>,
     val small: List<MenuRow>,
     val owner: OwnerGroup?,
+    val decline: List<MenuRow>,
 )
 
-/** Most a primary row holds; past that the rest lead the round row. */
+/** Most one row of the primary group holds; past that it wraps. */
 private const val PrimaryMax = 4
 
 /**
  * Orders a menu by how often each action is the reason for the long press: the list's own
- * [lead] actions (从这里播放…), then [keep] (稍后再看, 收藏), then [decline] (不感兴趣, 删除记录…).
- * Where nothing declines, [listen] (仅听声音) fills the primary row; otherwise it leads [small].
+ * [lead] actions (从这里播放…), then [keep] (稍后再看, 收藏), then [listen] (仅听声音).
+ * [decline] (不感兴趣, 删除记录…) goes to the end, out of the way of the rest.
  */
 private fun menuModel(
     lead: List<MenuRow>,
@@ -467,35 +470,34 @@ private fun menuModel(
     listen: MenuRow?,
     small: List<MenuRow>,
     owner: OwnerGroup?,
-): MenuModel {
-    val quieted = decline.map { MenuRow(it.icon, it.label, it.destructive, quiet = true, onClick = it.onClick) }
-    val wanted = lead + keep + quieted + listOfNotNull(listen?.takeIf { decline.isEmpty() })
-    val primary = wanted.take(PrimaryMax)
-    val rest = wanted.drop(PrimaryMax) + listOfNotNull(listen?.takeIf { decline.isNotEmpty() }) + small
-    return MenuModel(primary, rest, owner)
-}
+): MenuModel = MenuModel(lead + keep + listOfNotNull(listen), small, owner, decline)
 
 /**
- * The groups, spaced by belonging: tight inside a group (8dp, 2dp between segments), wide
- * between groups (24dp), so no row reads as part of its neighbour.
+ * The groups, by M3's button rules and spaced by belonging (tight inside a group, [GroupGap]
+ * between groups): the primary actions as a standard button group, the first tonal and the
+ * rest outlined; 分享 / 缓存 as round icon buttons; the UP as a list; the declines as outlined
+ * buttons at the very end.
  */
 @Composable
 private fun MenuBody(model: MenuModel, finisher: SheetFinisher, enabled: Boolean) {
     Column {
         var gap = false
         if (model.primary.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().sheetStagger(1), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                model.primary.forEach { t ->
-                    SheetTileAction(
-                        t.icon,
-                        t.label,
-                        t.onClick,
-                        Modifier.weight(1f),
-                        done = finisher.doneLabel(t.label),
-                        enabled = enabled,
-                        destructive = t.destructive,
-                        quiet = t.quiet,
-                    )
+            Column(Modifier.sheetStagger(1), verticalArrangement = Arrangement.spacedBy(SheetGroupSpacing)) {
+                model.primary.chunked(PrimaryMax).forEachIndexed { r, row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(SheetGroupSpacing)) {
+                        row.forEachIndexed { i, t ->
+                            SheetGroupButton(
+                                t.icon,
+                                t.label,
+                                t.onClick,
+                                Modifier.weight(1f),
+                                done = finisher.doneLabel(t.label),
+                                enabled = enabled,
+                                emphasis = if (r == 0 && i == 0) SheetEmphasis.Tonal else SheetEmphasis.Outlined,
+                            )
+                        }
+                    }
                 }
             }
             gap = true
@@ -512,7 +514,31 @@ private fun MenuBody(model: MenuModel, finisher: SheetFinisher, enabled: Boolean
         model.owner?.let {
             if (gap) Spacer(Modifier.height(GroupGap))
             OwnerSection(it, enabled, Modifier.sheetStagger(3))
+            gap = true
         }
+        if (model.decline.isNotEmpty()) {
+            if (gap) Spacer(Modifier.height(GroupGap))
+            Row(Modifier.fillMaxWidth().sheetStagger(4), horizontalArrangement = Arrangement.spacedBy(SheetGroupSpacing)) {
+                model.decline.forEach { d -> DeclineButton(d, enabled, Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** A turning-away action: an outlined button, icon beside label; destructive ones in red. */
+@Composable
+private fun DeclineButton(r: MenuRow, enabled: Boolean, modifier: Modifier = Modifier) {
+    val tint = if (r.destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    OutlinedButton(
+        onClick = r.onClick,
+        shapes = ButtonDefaults.shapes(),
+        modifier = modifier.height(48.dp),
+        enabled = enabled,
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = tint),
+    ) {
+        Icon(r.icon, null, Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(r.label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }
 

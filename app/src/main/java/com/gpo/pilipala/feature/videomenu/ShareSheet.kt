@@ -47,7 +47,8 @@ import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.SheetButtonLabel
 import com.gpo.pilipala.ui.components.SheetFinisher
 import com.gpo.pilipala.ui.components.SheetInsets
-import com.gpo.pilipala.ui.components.SheetTileAction
+import com.gpo.pilipala.ui.components.SheetGroupButton
+import com.gpo.pilipala.ui.components.SheetGroupSpacing
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberSheetFinisher
 import com.gpo.pilipala.ui.components.rememberSheetProperties
@@ -64,17 +65,17 @@ import kotlinx.coroutines.launch
 internal class ShareTarget(val aid: Long, val title: String, val cover: String, val url: String)
 
 /**
- * 分享's choices as equal tiles: 转发到动态 (signed in, opens [onForward]), 复制链接 (a tick, then
- * the sheet goes) and 更多方式 (the system share sheet).
+ * 分享's choices, a standard button group of equal tonal buttons: 转发到动态 (signed in, opens
+ * [onForward]), 复制链接 (a tick, then the sheet goes) and 更多方式 (the system share sheet).
  */
 @Composable
 internal fun ShareChoices(target: ShareTarget, finisher: SheetFinisher, enabled: Boolean, onForward: () -> Unit) {
     val context = LocalContext.current
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(SheetGroupSpacing)) {
         if (BiliClient.isLoggedIn && target.aid > 0) {
-            SheetTileAction(PiliSymbols.Forward, "转发到动态", onForward, Modifier.weight(1f), enabled = enabled)
+            SheetGroupButton(PiliSymbols.Forward, "转发到动态", onForward, Modifier.weight(1f), enabled = enabled)
         }
-        SheetTileAction(
+        SheetGroupButton(
             PiliSymbols.Link,
             "复制链接",
             {
@@ -86,7 +87,7 @@ internal fun ShareChoices(target: ShareTarget, finisher: SheetFinisher, enabled:
             done = finisher.doneLabel("复制链接"),
             enabled = enabled,
         )
-        SheetTileAction(
+        SheetGroupButton(
             YoinSymbols.Share,
             "更多方式",
             { finisher.close { shareText(context, target.title, target.url) } },
