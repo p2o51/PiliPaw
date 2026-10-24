@@ -13,6 +13,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -74,6 +77,8 @@ fun FloatingNavBar(
     /** Long press on a tab; null for a tab ([hasLongPress] false) leaves it a plain button. */
     onLongPress: (Int) -> Unit = {},
     hasLongPress: (Int) -> Boolean = { false },
+    /** A small dot on a tab's icon (动态 with new posts). */
+    badge: (Int) -> Boolean = { false },
 ) {
     val compact = widthClass() == WidthClass.Compact
     val rowHeight = if (compact) 68.dp else 60.dp
@@ -116,6 +121,7 @@ fun FloatingNavBar(
                     NavButton(
                         tab = tab,
                         selected = index == selected,
+                        badge = badge(index),
                         height = buttonHeight,
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
@@ -137,7 +143,7 @@ fun FloatingNavBar(
 }
 
 @Composable
-private fun NavButton(tab: NavTab, selected: Boolean, height: Dp, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
+private fun NavButton(tab: NavTab, selected: Boolean, height: Dp, onClick: () -> Unit, onLongClick: (() -> Unit)? = null, badge: Boolean = false) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val sel by animateFloatAsState(if (selected) 1f else 0f, YoinMotion.defaultEffectsSpec(), label = "sel")
@@ -167,12 +173,28 @@ private fun NavButton(tab: NavTab, selected: Boolean, height: Dp, onClick: () ->
             .padding(horizontal = 14.dp + extra / 2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            if (selected) tab.selectedIcon else tab.icon,
-            contentDescription = tab.label,
-            tint = content,
-            modifier = Modifier.size(24.dp),
-        )
+        Box {
+            Icon(
+                if (selected) tab.selectedIcon else tab.icon,
+                contentDescription = tab.label,
+                tint = content,
+                modifier = Modifier.size(24.dp),
+            )
+            val dot by animateFloatAsState(if (badge) 1f else 0f, YoinMotion.fastSpatialSpec(), label = "badge")
+            if (dot > 0.01f) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = (-1).dp)
+                        .size(8.dp)
+                        .graphicsLayer {
+                            scaleX = dot
+                            scaleY = dot
+                        }
+                        .background(colors.error, CircleShape),
+                )
+            }
+        }
         AnimatedVisibility(
             visible = selected,
             enter = fadeIn(YoinMotion.defaultEffectsSpec()) + expandHorizontally(YoinMotion.fastSpatialSpec()),

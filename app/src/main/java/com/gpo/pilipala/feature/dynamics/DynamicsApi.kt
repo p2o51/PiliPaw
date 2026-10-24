@@ -91,7 +91,11 @@ internal object DynamicsApi {
             }
             if (offset != null && baseline.isNotEmpty()) params["update_baseline"] = baseline
             val data = BiliClient.getData("/x/polymer/web-dynamic/v1/feed/all", params).asObj
-            parsePage(data) to data.str("update_baseline")
+            val base = data.str("update_baseline")
+            if (type == "all" && offset == null && hostMid == null) {
+                withContext(Dispatchers.Main) { DynUnread.seen(base) }
+            }
+            parsePage(data) to base
         }
 
     /** A user's own dynamics (member page). */

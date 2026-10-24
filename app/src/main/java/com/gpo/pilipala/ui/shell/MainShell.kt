@@ -140,6 +140,16 @@ fun MainShell() {
     var selectedOrdinal by rememberSaveable { mutableIntStateOf(ShellSection.Home.ordinal) }
     // A section switched off in settings while showing hands over to 首页.
     val current = ShellSection.entries[selectedOrdinal].takeIf { it in sections } ?: ShellSection.Home
+    // 动态's dot: checked on open and every few minutes; opening 动态 clears it.
+    LaunchedEffect(Unit) {
+        while (true) {
+            com.gpo.pilipala.feature.dynamics.DynUnread.check()
+            kotlinx.coroutines.delay(5 * 60_000L)
+        }
+    }
+    LaunchedEffect(current) {
+        if (current == ShellSection.Dynamics) com.gpo.pilipala.feature.dynamics.DynUnread.clear()
+    }
     val selected = sections.indexOf(current)
     val holder = rememberSaveableStateHolder()
     val reselects = remember { MutableSharedFlow<Int>(extraBufferCapacity = 1) }
@@ -227,6 +237,7 @@ fun MainShell() {
                     if (tapped == current) reselects.tryEmit(tapped.ordinal) else selectedOrdinal = tapped.ordinal
                 },
                 hasLongPress = { i -> sections.getOrNull(i) == ShellSection.Home },
+                badge = { i -> sections.getOrNull(i) == ShellSection.Dynamics && current != ShellSection.Dynamics && com.gpo.pilipala.feature.dynamics.DynUnread.hasNew },
                 onLongPress = {
                     selectedOrdinal = ShellSection.Home.ordinal
                     homeSearch.tryEmit(Unit)
