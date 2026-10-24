@@ -401,6 +401,14 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
     var query by remember { mutableStateOf(vm.keyword) }
     var sortOpen by remember { mutableStateOf(false) }
     var sheet by remember { mutableStateOf<FavMedia?>(null) }
+    // 多选 (own folders): the keys ("id:type") picked; null while not selecting.
+    var picked by remember { mutableStateOf<Set<String>?>(null) }
+    var moreOpen by remember { mutableStateOf(false) }
+    var transfer by remember { mutableStateOf<Boolean?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var confirmClean by remember { mutableStateOf(false) }
+    val selecting = picked != null
+    androidx.activity.compose.BackHandler(enabled = selecting) { picked = null }
     val isOwner = vm.info.upperMid != 0L && vm.info.upperMid == BiliClient.mid
     val gridState = rememberLazyGridState()
     LoadMoreEffect(gridState) { vm.pager.loadMore() }
@@ -436,9 +444,19 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
     }
 
     LibraryScaffold(
-        title = vm.info.title.ifEmpty { route.title.ifEmpty { "收藏夹" } },
-        subtitle = if (vm.info.mediaCount > 0) "${vm.info.mediaCount}个内容" else null,
+        title = if (selecting) "已选 ${picked.orEmpty().size} 项" else vm.info.title.ifEmpty { route.title.ifEmpty { "收藏夹" } },
+        subtitle = if (!selecting && vm.info.mediaCount > 0) "${vm.info.mediaCount}个内容" else null,
         actions = {
+            if (selecting) {
+                val all = vm.pager.items.map { "${it.id}:${it.type}" }.toSet()
+                androidx.compose.material3.TextButton(onClick = { picked = if (picked == all) emptySet() else all }) {
+                    Text(if (picked == all) "全不选" else "全选")
+                }
+                IconButton(onClick = { picked = null }, shapes = IconButtonDefaults.shapes()) {
+                    Icon(YoinSymbols.Close, contentDescription = "退出多选")
+                }
+                return@LibraryScaffold
+            }
             IconButton(
                 onClick = {
                     searching = !searching
@@ -462,6 +480,23 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
                                 { Icon(YoinSymbols.Check, null) }
                             } else null,
                         )
+                    }
+                }
+            }
+            if (isOwner) {
+                Box {
+                    IconButton(onClick = { moreOpen = true }, shapes = IconButtonDefaults.shapes()) {
+                        Icon(YoinSymbols.MoreVertical, contentDescription = "更多")
+                    }
+                    DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                        DropdownMenuItem(text = { Text("多选") }, onClick = {
+                            moreOpen = false
+                            picked = emptySet()
+                        })
+                        DropdownMenuItem(text = { Text("清除失效内容") }, onClick = {
+                            moreOpen = false
+                            confirmClean = true
+                        })
                     }
                 }
             }
@@ -503,24 +538,117 @@ private fun FavDetailContent(route: Route.FavDetail, vm: FavDetailViewModel) {
                         }
                     }
                     items(vm.pager.items, key = { "${it.id}:${it.type}" }) { m ->
-                        // A tap plays the folder from here (单集播放 in the menu opens it alone).
+                        // A tap plays the folder from here (单集播放 in the menu opens it alone);
+                        // while selecting it picks the card.
                         val queueable = m.queueable
-                        VideoCardH(
-                            m.video,
-                            modifier = Modifier.animateItem(),
-                            onClick = if (queueable) {
-                                { startQueue(false, m.video.bvid) }
-                            } else null,
-                            onLongClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                sheet = m
-                            },
-                        )
+                        val key = "${m.id}:${m.type}"
+                        val sel = picked
+                        Box(Modifier.animateItem()) {
+                            VideoCardH(
+                                m.video,
+                                onClick = when {
+                                    sel != null -> {
+                                        {
+                                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                            picked = if (key in sel) sel - key else sel + key
+                                        }
+                                    }
+                                    queueable -> {
+                                        { startQueue(false, m.video.bvid) }
+                                    }
+                                    else -> null
+                                },
+                                onLongClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (sel != null) picked = sel + key else sheet = m
+                                },
+                            )
+                            if (sel != null) SelectMark(key in sel, Modifier.padding(start = 24.dp, top = 16.dp))
+                        }
                     }
                     pagerFooter(vm.pager)
                 }
             }
         }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            AnimatedVisibility(
+                visible = selecting,
+                enter = androidx.compose.animation.slideInVertically(YoinMotion.defaultSpatialSpec()) { it } + fadeIn(YoinMotion.defaultEffectsSpec()),
+                exit = androidx.compose.animation.slideOutVertically(YoinMotion.fastSpatialSpec()) { it } + fadeOut(YoinMotion.fastEffectsSpec()),
+            ) {
+                FavSelectionBar(
+                    count = picked.orEmpty().size,
+                    onMove = { transfer = true },
+                    onCopy = { transfer = false },
+                    onDelete = { confirmDelete = true },
+                )
+            }
+        }
+    }
+
+    transfer?.let { move ->
+        FolderPickerSheet(
+            title = if (move) "移动到" else "复制到",
+            exclude = route.mediaId,
+            onPick = { f ->
+                val keys = picked.orEmpty().toList()
+                transfer = null
+                scope.launch {
+                    runCatching { FavBatchApi.transfer(keys, route.mediaId, f.id, move) }
+                        .onSuccess {
+                            toast(if (move) "已移动到「${f.title}」" else "已复制到「${f.title}」")
+                            picked = null
+                            if (move) vm.pager.refresh()
+                        }
+                        .onFailure { toast(it.friendlyMessage()) }
+                }
+            },
+            onDismiss = { transfer = null },
+        )
+    }
+    if (confirmDelete) {
+        val n = picked.orEmpty().size
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("取消收藏 $n 个内容？") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    confirmDelete = false
+                    val keys = picked.orEmpty().toList()
+                    scope.launch {
+                        runCatching { FavBatchApi.remove(keys, route.mediaId) }
+                            .onSuccess {
+                                toast("已取消收藏")
+                                picked = null
+                                vm.pager.refresh()
+                            }
+                            .onFailure { toast(it.friendlyMessage()) }
+                    }
+                }) { Text("取消收藏") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmDelete = false }) { Text("算了") } },
+        )
+    }
+    if (confirmClean) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmClean = false },
+            title = { Text("清除失效内容？") },
+            text = { Text("已失效的视频会从这个收藏夹里移除。") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    confirmClean = false
+                    scope.launch {
+                        runCatching { FavBatchApi.clean(route.mediaId) }
+                            .onSuccess {
+                                toast("已清除")
+                                vm.pager.refresh()
+                            }
+                            .onFailure { toast(it.friendlyMessage()) }
+                    }
+                }) { Text("清除") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmClean = false }) { Text("算了") } },
+        )
     }
 
     sheet?.let { m ->
