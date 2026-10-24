@@ -197,16 +197,28 @@ fun SheetTileAction(
     done: String? = null,
     enabled: Boolean = true,
     destructive: Boolean = false,
+    quiet: Boolean = false,
     height: Dp = 76.dp,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val (container, content) = blockColors(done != null, scheme.surfaceContainerHighest, if (destructive) scheme.error else scheme.onSurface)
+    // A quiet tile (不感兴趣, 删除…) keeps its place in the row but only an outline, so a
+    // turning-away action never weighs as much as the ones beside it.
+    val (container, content) = blockColors(
+        done != null,
+        if (quiet) Color.Transparent else scheme.surfaceContainerHighest,
+        when {
+            destructive -> scheme.error
+            quiet -> scheme.onSurfaceVariant
+            else -> scheme.onSurface
+        },
+    )
     Surface(
         onClick = onClick,
         enabled = enabled,
         shape = TileShape,
         color = container,
         contentColor = content,
+        border = if (quiet && done == null) androidx.compose.foundation.BorderStroke(1.dp, scheme.outlineVariant) else null,
         modifier = modifier.height(height),
     ) {
         Column(
@@ -300,7 +312,8 @@ fun Modifier.sheetStagger(index: Int): Modifier {
 /** Row of [SheetIconAction]s, left to right. */
 @Composable
 fun SheetIconRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) { content() }
+    // Spread across the width: a short row left-aligned reads as a row missing its last item.
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) { content() }
 }
 
 /** A sheet button's label: [text], or a popped-in tick and [done] once the action landed. */

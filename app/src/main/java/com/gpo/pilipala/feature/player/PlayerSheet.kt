@@ -143,7 +143,7 @@ internal fun PlayerSheet(
         properties = rememberPlayerSheetProperties(),
     ) {
         Box(Modifier.heightIn(max = maxContent)) {
-            PlayerSheetPages(ctrl = ctrl, start = start, close = close, topGap = 0.dp, bottomGap = 24.dp + navBottom)
+            PlayerSheetPages(ctrl = ctrl, start = start, close = close, topGap = 0.dp, bottomGap = 32.dp + navBottom)
         }
     }
 }

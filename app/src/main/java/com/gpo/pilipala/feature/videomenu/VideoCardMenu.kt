@@ -429,6 +429,7 @@ private class MenuRow(
     val icon: ImageVector,
     val label: String,
     val destructive: Boolean = false,
+    val quiet: Boolean = false,
     val onClick: () -> Unit,
 )
 
@@ -467,7 +468,8 @@ private fun menuModel(
     small: List<MenuRow>,
     owner: OwnerGroup?,
 ): MenuModel {
-    val wanted = lead + keep + decline + listOfNotNull(listen?.takeIf { decline.isEmpty() })
+    val quieted = decline.map { MenuRow(it.icon, it.label, it.destructive, quiet = true, onClick = it.onClick) }
+    val wanted = lead + keep + quieted + listOfNotNull(listen?.takeIf { decline.isEmpty() })
     val primary = wanted.take(PrimaryMax)
     val rest = wanted.drop(PrimaryMax) + listOfNotNull(listen?.takeIf { decline.isNotEmpty() }) + small
     return MenuModel(primary, rest, owner)
@@ -492,6 +494,7 @@ private fun MenuBody(model: MenuModel, finisher: SheetFinisher, enabled: Boolean
                         done = finisher.doneLabel(t.label),
                         enabled = enabled,
                         destructive = t.destructive,
+                        quiet = t.quiet,
                     )
                 }
             }
