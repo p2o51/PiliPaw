@@ -39,6 +39,9 @@ import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import com.gpo.pilipala.core.net.asObj
+import com.gpo.pilipala.core.net.str
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -132,7 +135,17 @@ internal fun VideoHeader(d: VideoDetail, onSeek: ((Long) -> Unit)?, modifier: Mo
                 style = MaterialTheme.typography.labelSmall.centered(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // 在看: how many are watching now, as Bilibili counts it ("1000+").
+            val watching by produceState("", d.bvid, d.cid) { value = OnlineApi.total(d.bvid, d.cid) }
+            if (watching.isNotEmpty()) {
+                Text(
+                    "$watching 人在看",
+                    style = MaterialTheme.typography.labelSmall.centered(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
+        AiSummaryRow(d, onSeek, Modifier.padding(top = 12.dp))
         if (d.honor.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -391,6 +404,21 @@ internal fun SectionTitle(text: String, modifier: Modifier = Modifier, trailing:
         if (trailing != null) {
             Spacer(Modifier.width(8.dp))
             Text(trailing, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** 在看 for a video (/x/player/online/total); empty when unknown. */
+internal object OnlineApi {
+    suspend fun total(bvid: String, cid: Long): String {
+        if (bvid.isBlank() || cid <= 0) return ""
+        return try {
+            com.gpo.pilipala.core.net.BiliClient.getData("/x/player/online/total", mapOf("bvid" to bvid, "cid" to cid))
+                .asObj.str("total").takeIf { it.isNotBlank() && it != "0" && it != "1" }.orEmpty()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            ""
         }
     }
 }
