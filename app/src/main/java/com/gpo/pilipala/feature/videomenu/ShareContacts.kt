@@ -1,6 +1,7 @@
 package com.gpo.pilipala.feature.videomenu
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.border
@@ -18,6 +19,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,7 +46,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -144,6 +149,7 @@ internal fun ShareContactsRow(target: ShareTarget, finisher: SheetFinisher, modi
     if (contacts.isEmpty()) return
     val scope = rememberCoroutineScope()
     val toast = rememberToast()
+    val haptics = LocalHapticFeedback.current
     var picked by remember { mutableStateOf<ShareContact?>(null) }
     var note by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
@@ -162,16 +168,23 @@ internal fun ShareContactsRow(target: ShareTarget, finisher: SheetFinisher, modi
                     YoinMotion.defaultEffectsSpec(),
                     label = "contactRing",
                 )
+                val press = remember { MutableInteractionSource() }
+                val pressed by press.collectIsPressedAsState()
+                val faceScale by animateFloatAsState(if (pressed) 0.92f else 1f, YoinMotion.fastSpatialSpec(), label = "contactPress")
+                // No ripple: the ring and a small press on the face are the feedback, so letting
+                // go doesn't flash a block over the face and name.
                 Column(
                     Modifier
                         .width(64.dp)
-                        .clip(MaterialTheme.shapes.medium)
-                        .clickable(enabled = idle) { picked = if (selected) null else c }
+                        .clickable(enabled = idle, interactionSource = press, indication = null) {
+                            haptics.performHapticFeedback(if (selected) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
+                            picked = if (selected) null else c
+                        }
                         .padding(vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Box(Modifier.size(56.dp).border(2.dp, ring, CircleShape).padding(4.dp)) {
+                    Box(Modifier.size(56.dp).graphicsLayer { scaleX = faceScale; scaleY = faceScale }.border(2.dp, ring, CircleShape).padding(4.dp)) {
                         NetImage(c.face, Modifier.fillMaxSize(), shape = CircleShape, thumbWidth = 96.dp)
                         androidx.compose.animation.AnimatedVisibility(
                             visible = sent == c.mid,
