@@ -543,13 +543,13 @@ object TagDefaults {
         @Composable get() = MaterialTheme.typography.labelSmall.centered()
 
     /**
-     * A tag inside a line of text ([Tag] with inline = true): a slimmer tag, 10sp at regular
-     * weight on a line box just its font's height with 1dp above and below, so it sits well
-     * inside the line with room before the next one.
+     * A tag inside a line of text ([Tag] with inline = true): a slimmer, shorter tag: 10sp at
+     * regular weight on a line box its font's own height with 0.5dp above and below, so it sits
+     * well inside the line with room before the next one.
      */
-    val InlineVerticalPadding = 1.dp
+    val InlineVerticalPadding = 0.5.dp
     val inlineTextStyle: TextStyle
-        @Composable get() = textStyle.copy(fontSize = 10.sp, lineHeight = 11.sp, fontWeight = FontWeight.Normal)
+        @Composable get() = textStyle.copy(fontSize = 10.sp, lineHeight = 10.sp, fontWeight = FontWeight.Normal)
 }
 
 /**
