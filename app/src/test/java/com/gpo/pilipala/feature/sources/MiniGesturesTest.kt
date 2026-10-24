@@ -55,7 +55,16 @@ class MiniGesturesTest {
         assertEquals(MiniDragIntent.None, intent(2f, -12f, onPicture = false))
         assertEquals(MiniDragIntent.None, intent(2f, 12f))
         assertEquals(MiniDragIntent.MoveWindow, intent(0f, 12f, windowed = true))
-        assertEquals(MiniDragIntent.None, intent(12f, 0f, merged = true))
+        // The merged circle: sideways closes it, up or down is the page's scroll.
+        assertEquals(MiniDragIntent.DockSwipe, intent(12f, 0f, merged = true))
+        assertEquals(MiniDragIntent.DockSwipe, intent(-12f, 4f, merged = true, onPicture = false))
+        assertEquals(MiniDragIntent.None, intent(2f, -12f, merged = true))
+    }
+
+    @Test fun theMergedCircleSwipeArmsAtItsRange() {
+        assertEquals(0.5f, MiniGestures.dockSwipeProgress(-28f, 56f), 0f)
+        assertEquals(1f, MiniGestures.dockSwipeProgress(56f, 56f), 0f)
+        assertEquals(1.5f, MiniGestures.dockSwipeProgress(400f, 56f), 0f)
     }
 
     @Test fun theKeysReachOutwardOnly() {
