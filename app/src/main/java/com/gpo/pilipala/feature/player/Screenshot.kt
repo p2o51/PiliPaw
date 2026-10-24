@@ -28,6 +28,13 @@ import kotlin.coroutines.resume
  */
 internal val LocalPlayerShot = staticCompositionLocalOf<(() -> Unit)?> { null }
 
+/** Opens the video's 举报 form (logged in, a B站 archive); null hides 举报 in the player sheet. */
+internal val LocalPlayerReport = staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/** bilibili's own 举报 form for an archive (the H5 appeal page). */
+internal fun videoReportUrl(aid: Long): String = "https://www.bilibili.com/appeal/?avid=$aid"
+
+
 /** The capture's feedback on the picture: a white flash and a small kick of the frame. */
 @Stable
 internal class ShotFeedback {

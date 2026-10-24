@@ -202,7 +202,7 @@ private fun JsonObject.toAppRcmd(): Triple<VideoItem, Boolean, AppFeedRef>? {
     val followed = Regex("已关注|新关注").containsMatchIn(reasonRaw)
     val reason = if (followed) "" else reasonRaw
     val param = str("param")
-    val ref = AppFeedRef(goto = goto, id = param, reasonId = dislikeReasonId())
+    val ref = AppFeedRef(goto = goto, id = param, reasonId = dislikeReasonId(), reasons = dislikeReasons())
     val pair: Pair<VideoItem, Boolean> = when (goto) {
         "av" -> {
             val aid = player.long("aid").takeIf { it > 0 } ?: param.toLongOrNull() ?: return null
@@ -247,6 +247,28 @@ private fun JsonObject.toAppRcmd(): Triple<VideoItem, Boolean, AppFeedRef>? {
         else -> null
     } ?: return null
     return Triple(pair.first, pair.second, ref)
+}
+
+/**
+ * Every 不感兴趣 choice the card offers, as the official app lists them: the `dislike` reasons
+ * (不感兴趣, 不想看 UP 主 / 分区 / 频道 …, sent as reason_id) then the `feedback` ones
+ * (内容引起不适, 标题党 …, sent as feedback_id). Old payloads only carry `three_point`.
+ */
+private fun JsonObject.dislikeReasons(): List<DislikeReason> {
+    val v2 = arr("three_point_v2").objects()
+    fun of(type: String, feedback: Boolean) = v2.filter { it.str("type") == type }
+        .flatMap { it.arr("reasons").objects() }
+        .mapNotNull { r ->
+            val id = r.int("id", -1).takeIf { it >= 0 } ?: return@mapNotNull null
+            r.str("name").takeIf { it.isNotBlank() }?.let { DislikeReason(id, it, feedback) }
+        }
+    val dislikes = of("dislike", feedback = false).ifEmpty {
+        obj("three_point").arr("dislike_reasons").objects().mapNotNull { r ->
+            val id = r.int("id", -1).takeIf { it >= 0 } ?: return@mapNotNull null
+            r.str("name").takeIf { it.isNotBlank() }?.let { DislikeReason(id, it, false) }
+        }
+    }
+    return dislikes + of("feedback", feedback = true)
 }
 
 /** The "不感兴趣" reason from `three_point_v2` / `three_point`, if the card offers one. */

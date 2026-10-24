@@ -71,6 +71,8 @@ internal data class Reply(
     val ctime: Long,
     val like: Long,
     val liked: Boolean,
+    /** 点踩 (action 2); the server keeps it apart from [liked]. */
+    val disliked: Boolean = false,
     val rcount: Int,
     val replies: List<Reply>,
     val isUp: Boolean,
@@ -179,6 +181,7 @@ internal fun parseReply(o: JsonObject, upperMid: Long, forceTop: Boolean = false
         ctime = o.long("ctime"),
         like = o.long("like"),
         liked = o.int("action") == 1,
+        disliked = o.int("action") == 2,
         rcount = o.int("rcount"),
         replies = o.arr("replies").objects().map { parseReply(it, upperMid) },
         isUp = upperMid != 0L && mid == upperMid,

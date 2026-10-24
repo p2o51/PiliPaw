@@ -492,6 +492,20 @@ internal object DynamicsApi {
         parseVoteInfo(data.asObj)
     }
 
+    /** 举报 a 动态: [reason] is one of [DynamicReportReasons]' ids; [detail] goes with 其他. */
+    suspend fun report(item: DynItem, reason: Int, detail: String) {
+        BiliClient.postData(
+            "/x/dynamic/feed/dynamic_report/add",
+            mapOf(
+                "accused_uid" to item.json.author.long("mid"),
+                "dynamic_id" to item.id,
+                "reason_type" to reason,
+                "reason_desc" to detail.trim().takeIf { it.isNotEmpty() },
+            ),
+            params = mapOf("csrf" to BiliClient.csrf),
+        )
+    }
+
     suspend fun watchLater(aid: Long, bvid: String) {
         BiliClient.postData(
             "/x/v2/history/toview/add",
@@ -892,4 +906,24 @@ internal fun shareText(context: Context, text: String, title: String? = null) {
 internal fun copyText(context: Context, text: String) {
     val cm = context.getSystemService(ClipboardManager::class.java) ?: return
     cm.setPrimaryClip(ClipData.newPlainText("link", text))
+}
+
+/** 举报 reasons for a 动态 (the dynamic report page's `reason_type`s, as PiliPlus lists them). */
+internal object DynamicReportReasons {
+    val groups: List<Pair<String, List<Pair<Int, String>>>> = listOf(
+        "" to listOf(
+            4 to "垃圾广告",
+            8 to "引战",
+            1 to "色情",
+            5 to "人身攻击",
+            3 to "违法信息",
+            9 to "涉政谣言",
+            10 to "涉社会事件谣言",
+            12 to "虚假不实信息",
+            13 to "违法信息外链",
+            0 to "其他",
+        ),
+    )
+
+    fun needsDetail(reason: Int): Boolean = reason == 0
 }

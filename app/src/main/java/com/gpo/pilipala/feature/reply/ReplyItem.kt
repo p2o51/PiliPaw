@@ -119,6 +119,10 @@ internal class ReplyActions(
     val threadSource: Boolean = true,
     /** The user's relation with a commenter (2 关注, 6 互关, 0 none); read in composition, so tags follow it. */
     val relationOf: (Long) -> Int = { 0 },
+    /** 点踩; null hides the button (surfaces that cannot send it). */
+    val onDislike: ((Reply) -> Unit)? = null,
+    /** The ⋮ at the end of the action row: the same menu as a long press (举报, 拉黑…); null hides it. */
+    val onMore: ((Reply) -> Unit)? = null,
 )
 
 private val PictureShape = ContinuousRoundedCornerShape(10.dp)
@@ -508,6 +512,22 @@ private fun ActionRow(reply: Reply, actions: ReplyActions) {
                     actions.onLike(reply)
                 }
             }
+            actions.onDislike?.let { dislike ->
+                DislikeButton(actions.likeState(reply).disliked) { dislike(reply) }
+            }
+        }
+        actions.onMore?.let { more ->
+            Box(
+                Modifier
+                    .clip(CircleShape)
+                    .clickable(onClickLabel = "更多") {
+                        haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                        more(reply)
+                    }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+            ) {
+                Icon(YoinSymbols.MoreVertical, "更多", Modifier.size(16.dp), tint = scheme.outline)
+            }
         }
     }
 }
@@ -562,6 +582,49 @@ internal fun LikeButton(state: LikeState, modifier: Modifier = Modifier, onClick
         )
         RollingCount(state.count) { color.value }
     }
+}
+
+/**
+ * 点踩: the thumb alone (B站 shows no count for it), washing to the accent and filling in
+ * when on, the same quiet cross-fade as [LikeButton].
+ */
+@Composable
+internal fun DislikeButton(disliked: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val haptic = LocalHapticFeedback.current
+    val color = animateColorAsState(
+        if (disliked) scheme.primary else scheme.outline,
+        animationSpec = YoinMotion.defaultEffectsSpec(),
+        label = "dislikeColor",
+    )
+    val filled = animateFloatAsState(
+        if (disliked) 1f else 0f,
+        animationSpec = YoinMotion.defaultEffectsSpec(),
+        label = "dislikeGlyph",
+    )
+    val outline = rememberVectorPainter(PiliSymbols.ThumbDown)
+    val solid = rememberVectorPainter(PiliSymbols.ThumbDownFilled)
+    val label = if (disliked) "取消点踩" else "点踩"
+    Box(
+        modifier
+            .clip(CircleShape)
+            .clickable {
+                haptic.performHapticFeedback(if (disliked) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
+                onClick()
+            }
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .size(16.dp)
+            .semantics {
+                contentDescription = label
+                role = Role.Button
+            }
+            .drawBehind {
+                val mix = filled.value.coerceIn(0f, 1f)
+                val tint = ColorFilter.tint(color.value)
+                if (mix < 1f) with(outline) { draw(size, alpha = 1f - mix, colorFilter = tint) }
+                if (mix > 0f) with(solid) { draw(size, alpha = mix, colorFilter = tint) }
+            },
+    )
 }
 
 /**

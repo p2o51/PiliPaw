@@ -283,3 +283,30 @@ fun SheetGroupButton(
         }
     }
 }
+
+/**
+ * A negative or destructive action at the end of a menu sheet (不感兴趣, 举报, 拉黑): an
+ * outlined button, apart from the everyday rows above it. [destructive] tints it error.
+ */
+@Composable
+fun SheetOutlinedAction(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    destructive: Boolean = false,
+    enabled: Boolean = true,
+) {
+    val tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    androidx.compose.material3.OutlinedButton(
+        onClick = onClick,
+        shapes = ButtonDefaults.shapes(),
+        modifier = modifier.height(48.dp),
+        enabled = enabled,
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = tint),
+    ) {
+        androidx.compose.material3.Icon(icon, null, Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    }
+}

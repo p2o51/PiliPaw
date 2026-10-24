@@ -159,6 +159,7 @@ internal fun ReplyRichText(
                                 "UP",
                                 container = MaterialTheme.colorScheme.primaryContainer,
                                 content = MaterialTheme.colorScheme.onPrimaryContainer,
+                                inline = true,
                             )
                         }
                     },
@@ -200,12 +201,14 @@ private fun InlineRelationTag(relation: Int, fade: Boolean) {
                 "互关",
                 container = MaterialTheme.colorScheme.tertiaryContainer,
                 content = MaterialTheme.colorScheme.onTertiaryContainer,
+                inline = true,
             )
         } else {
             Tag(
                 "关注",
                 container = MaterialTheme.colorScheme.surfaceContainerHighest,
                 content = MaterialTheme.colorScheme.primary,
+                inline = true,
             )
         }
     }

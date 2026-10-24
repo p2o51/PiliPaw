@@ -102,6 +102,12 @@ import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.SheetInsets
 import com.gpo.pilipala.ui.components.inlineIconSize
 import com.gpo.pilipala.ui.components.centered
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import com.gpo.pilipala.feature.home.FeedActions
+import com.gpo.pilipala.feature.member.BlockGlyph
+import com.gpo.pilipala.feature.reply.ReportSheet
+import com.gpo.pilipala.ui.components.SheetOutlinedAction
 
 private val CoverShape = ContinuousRoundedCornerShape(12.dp)
 private val BlockShape = ContinuousRoundedCornerShape(12.dp)
@@ -227,7 +233,18 @@ private fun AuthorRow(item: DynItem) {
             Icon(YoinSymbols.MoreVertical, contentDescription = "更多", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    if (showMore) MoreSheet(item.json) { showMore = false }
+    var reporting by remember { mutableStateOf(false) }
+    var confirmBlock by remember { mutableStateOf(false) }
+    if (showMore) {
+        MoreSheet(
+            item,
+            onDismiss = { showMore = false },
+            onReport = { reporting = true },
+            onBlock = { confirmBlock = true },
+        )
+    }
+    if (reporting) DynamicReportSheet(item) { reporting = false }
+    if (confirmBlock) BlockDialog(name, mid) { confirmBlock = false }
 }
 
 // ── Body ────────────────────────────────────────────────────────────────────
@@ -871,7 +888,8 @@ private fun countText(count: Long, label: String, hidden: Boolean): String =
 // ── Sheets ──────────────────────────────────────────────────────────────────
 
 @Composable
-private fun MoreSheet(item: JsonObject, onDismiss: () -> Unit) {
+private fun MoreSheet(dyn: DynItem, onDismiss: () -> Unit, onReport: () -> Unit, onBlock: () -> Unit) {
+    val item = dyn.json
     val context = LocalContext.current
     val toast = rememberToast()
     val scope = rememberCoroutineScope()
@@ -917,8 +935,77 @@ private fun MoreSheet(item: JsonObject, onDismiss: () -> Unit) {
                     nav.push(Route.Web(url, "动态"))
                 }
             }
+            // Someone else's 动态: the quiet pills at the end, apart from the everyday rows
+            // (the same pair as a comment's menu).
+            val authorMid = item.author.long("mid")
+            if (BiliClient.isLoggedIn && authorMid > 0 && authorMid != BiliClient.mid && dyn.id.isNotEmpty()) {
+                Spacer(Modifier.height(20.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SheetOutlinedAction(PiliSymbols.Flag, "举报", modifier = Modifier.weight(1f), onClick = {
+                        close()
+                        onReport()
+                    }, destructive = true)
+                    SheetOutlinedAction(BlockGlyph, "拉黑", modifier = Modifier.weight(1f), onClick = {
+                        close()
+                        onBlock()
+                    }, destructive = true)
+                }
+            }
         }
     }
+}
+
+/** 举报 this 动态, with 同时拉黑 its author. */
+@Composable
+private fun DynamicReportSheet(item: DynItem, onDismiss: () -> Unit) {
+    val toast = rememberToast()
+    val scope = rememberCoroutineScope()
+    val a = item.json.author
+    val preview = rememberRichContent(item.json)
+    ReportSheet(
+        title = "举报动态",
+        subject = a.str("name") + if (preview.isEmpty) "" else "：" + preview.text.text,
+        blockName = a.str("name"),
+        groups = DynamicReportReasons.groups,
+        needsDetail = DynamicReportReasons::needsDetail,
+        onDismiss = onDismiss,
+        onSubmit = { reason, detail, block, done, fail ->
+            scope.launch {
+                runCatching {
+                    DynamicsApi.report(item, reason, detail)
+                    if (block) FeedActions.block(a.long("mid"))
+                }
+                    .onSuccess { done() }
+                    .onFailure {
+                        toast(it.friendlyMessage())
+                        fail()
+                    }
+            }
+        },
+    )
+}
+
+/** 拉黑 a 动态's author, after a word on what it does (the same as a comment's 拉黑). */
+@Composable
+private fun BlockDialog(name: String, mid: Long, onDismiss: () -> Unit) {
+    val toast = rememberToast()
+    val scope = rememberCoroutineScope()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("拉黑 $name") },
+        text = { Text("拉黑后对方不能关注你、给你发消息或回复你，PiliPaw 也不再推荐对方的视频。可以在 设置 › 黑名单管理 里移出。") },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                scope.launch {
+                    runCatching { FeedActions.block(mid) }
+                        .onSuccess { toast("已拉黑 $name") }
+                        .onFailure { toast(it.friendlyMessage()) }
+                }
+            }) { Text("拉黑", color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 @Composable

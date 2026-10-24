@@ -515,6 +515,7 @@ fun Tag(
     modifier: Modifier = Modifier,
     container: Color = MaterialTheme.colorScheme.tertiaryContainer,
     content: Color = MaterialTheme.colorScheme.onTertiaryContainer,
+    inline: Boolean = false,
 ) {
     Text(
         text,
@@ -522,8 +523,11 @@ fun Tag(
             .seamText()
             .clip(TagDefaults.Shape)
             .background(container)
-            .padding(horizontal = TagDefaults.HorizontalPadding, vertical = TagDefaults.VerticalPadding),
-        style = TagDefaults.textStyle,
+            .padding(
+                horizontal = TagDefaults.HorizontalPadding,
+                vertical = if (inline) TagDefaults.InlineVerticalPadding else TagDefaults.VerticalPadding,
+            ),
+        style = if (inline) TagDefaults.inlineTextStyle else TagDefaults.textStyle,
         color = content,
         maxLines = 1,
     )
@@ -536,22 +540,32 @@ object TagDefaults {
     val Shape = ContinuousRoundedCornerShape(4.dp)
     val textStyle: TextStyle
         @Composable get() = MaterialTheme.typography.labelSmall.centered()
+
+    /**
+     * A tag inside a line of text ([Tag] with inline = true): set on a line box just its
+     * font's height with 1dp above and below, so it stays inside a bodySmall line (16sp)
+     * and the line it sits on is no taller than the lines under it.
+     */
+    val InlineVerticalPadding = 1.dp
+    val inlineTextStyle: TextStyle
+        @Composable get() = textStyle.let { it.copy(lineHeight = it.fontSize * 1.1f) }
 }
 
 /**
- * An inline-text placeholder exactly the size of a [Tag] showing [text], centred on the
- * line's text: an inline tag matches the tags in a row header and sits on the text's centre.
+ * An inline-text placeholder exactly the size of an inline [Tag] showing [text], centred
+ * on the line's text. It is never taller than the line, so a line with a tag keeps the
+ * same spacing as the lines without one.
  */
 @Composable
 fun rememberTagPlaceholder(text: String): Placeholder {
     val measurer = rememberTextMeasurer()
-    val style = TagDefaults.textStyle
+    val style = TagDefaults.inlineTextStyle
     val density = LocalDensity.current
     return remember(text, style, density) {
         val size = measurer.measure(text, style, maxLines = 1).size
         with(density) {
             val w = size.width + 2 * TagDefaults.HorizontalPadding.toPx()
-            val h = size.height + 2 * TagDefaults.VerticalPadding.toPx()
+            val h = size.height + 2 * TagDefaults.InlineVerticalPadding.toPx()
             Placeholder(w.toSp(), h.toSp(), PlaceholderVerticalAlign.TextCenter)
         }
     }

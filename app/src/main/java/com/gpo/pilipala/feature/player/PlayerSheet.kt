@@ -447,6 +447,7 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
     val t = ctrl.target
     val cdn by com.gpo.pilipala.feature.player.cdn.CdnRouter.status.collectAsState()
     val shot = LocalPlayerShot.current
+    val report = LocalPlayerReport.current
     // 稍后再看 answers in its own circle (a tick, 已添加) before the sheet goes.
     var laterDone by remember { mutableStateOf<String?>(null) }
     var more by remember { mutableStateOf(false) }
@@ -497,7 +498,7 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
     SegmentedGroup(listOf(RowSpec(YoinSymbols.Sleep, "定时关闭", value = sleepValue) { onOpen(SheetPage.Sleep) }))
 
     // 3 · actions: a standard button group, all tonal (equally used, so equal widths).
-    if (canLater || t != null || shot != null) {
+    if (canLater || t != null || shot != null || report != null) {
         Spacer(Modifier.height(GroupGap))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(SheetGroupSpacing)) {
             if (canLater && t != null) {
@@ -526,6 +527,12 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
                 SheetGroupButton(ScreenshotSymbol, "截图", modifier = Modifier.weight(1f), onClick = {
                     onClose()
                     shot()
+                })
+            }
+            if (report != null) {
+                SheetGroupButton(PiliSymbols.Flag, "举报", modifier = Modifier.weight(1f), onClick = {
+                    onClose()
+                    report()
                 })
             }
         }

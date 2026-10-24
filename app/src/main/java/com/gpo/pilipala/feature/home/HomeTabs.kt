@@ -1,5 +1,6 @@
 package com.gpo.pilipala.feature.home
 
+import com.gpo.pilipala.feature.videomenu.DeclineReason
 import com.gpo.pilipala.ui.components.ReservedTitleColumn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -110,6 +111,9 @@ internal fun RcmdTab(state: LazyGridState, reselect: Flow<Unit>, headerBehavior:
             onDismiss = { menu = null },
             onRemove = { vm.remove(item) },
             dislike = ref?.let { r -> suspend { FeedActions.dislikeApp(r) } },
+            declineReasons = ref?.let { r ->
+                r.reasons.map { reason -> DeclineReason(reason.name, feedback = reason.feedback) { FeedActions.dislikeApp(r, reason) } }
+            }.orEmpty(),
         )
     }
 }
