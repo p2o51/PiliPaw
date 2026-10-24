@@ -445,14 +445,17 @@ private fun LikeRow(e: MsgEntry, modifier: Modifier = Modifier) {
     ) {
         // Overlapping avatars, first on top. Only the front one opens a profile: the ones
         // behind show 14dp slivers, too thin to hit; tapping them falls through to the row.
-        Box(Modifier.width(42.dp + 14.dp * (shown.size - 1).coerceAtLeast(0)).height(42.dp)) {
-            shown.forEachIndexed { i, u ->
-                Avatar(
-                    u.face,
-                    42.dp,
-                    Modifier.offset(x = 14.dp * i).zIndex((shown.size - i).toFloat()),
-                    onClick = if (i == 0) ({ nav.push(Route.Member(u.mid, u.face, u.name)) }) else null,
-                )
+        // The slot is always three avatars wide so the text column lines up across rows.
+        Box(Modifier.width(42.dp + 14.dp * 2).height(42.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.width(42.dp + 14.dp * (shown.size - 1).coerceAtLeast(0)).height(42.dp)) {
+                shown.forEachIndexed { i, u ->
+                    Avatar(
+                        u.face,
+                        42.dp,
+                        Modifier.offset(x = 14.dp * i).zIndex((shown.size - i).toFloat()),
+                        onClick = if (i == 0) ({ nav.push(Route.Member(u.mid, u.face, u.name)) }) else null,
+                    )
+                }
             }
         }
         Spacer(Modifier.width(12.dp))
