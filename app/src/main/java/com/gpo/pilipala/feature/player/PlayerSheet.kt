@@ -7,16 +7,19 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -35,6 +38,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -64,6 +68,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -423,8 +428,10 @@ private fun SectionLabel(text: String) {
 }
 
 /**
- * 播放设置 in tiers rather than one long list: round one-tap actions (稍后再看, 缓存, 截图,
- * 定时关闭), the speed strip, the stream rows (画质, 音质…), 画面, then the 播放 switches.
+ * 播放设置, ordered by how often each setting is touched and spaced by group (tight inside a
+ * group, [GroupGap] between groups): 画质 and 播放速度 with their common steps one tap away;
+ * 字幕 · 弹幕 · 章节; the 播放 switches with 定时关闭; the one-tap actions (稍后再看, 缓存,
+ * 截图); and, folded under 更多, what is rarely changed (音质, 解码格式, 线路, 画面).
  */
 @Composable
 private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, onClose: () -> Unit) {
@@ -439,51 +446,111 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
     val shot = LocalPlayerShot.current
     // 稍后再看 answers in its own circle (a tick, 已添加) before the sheet goes.
     var laterDone by remember { mutableStateOf<String?>(null) }
+    var more by remember { mutableStateOf(false) }
     val canLater = BiliClient.isLoggedIn && t != null && !t.isPgc && (t.aid > 0 || t.bvid.isNotBlank())
     val sleepValue = if (ctrl.sleepMinutes > 0) {
         val left = ((ctrl.sleepDeadline - SystemClock.elapsedRealtime()) / 60_000L).coerceAtLeast(0L) + 1
         "$left 分钟"
     } else {
-        null
+        "关闭"
     }
 
-    SheetIconRow(Modifier.padding(bottom = 16.dp)) {
-        if (canLater && t != null) {
-            SheetIconAction(PiliSymbols.WatchLater, "稍后再看", done = laterDone, enabled = laterDone == null, onClick = {
-                scope.launch {
-                    val result = runCatching {
-                        BiliClient.postData(
-                            "/x/v2/history/toview/add",
-                            buildMap {
-                                if (t.aid > 0) put("aid", t.aid) else put("bvid", t.bvid)
-                            },
-                        )
-                        WidgetStore.laterChanged()
+    // 1 · 画质, 播放速度
+    val qualities = pi?.qualities.orEmpty().filter { it.available }.sortedByDescending { it.qn }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        ChoiceStrip(
+            icon = PiliSymbols.Hd,
+            title = "画质",
+            value = Qualities.videoShort(ctrl.currentQn).takeIf { pi != null },
+            shape = segmentShape(0, 2),
+            choices = qualities.map { Qualities.videoShort(it.qn) },
+            selected = qualities.indexOfFirst { it.qn == ctrl.currentQn },
+            onPick = { ctrl.selectQuality(qualities[it].qn) },
+            onMore = { onOpen(SheetPage.Quality) },
+        )
+        ChoiceStrip(
+            icon = YoinSymbols.Speed,
+            title = "播放速度",
+            value = speedLabel(ctrl.speed),
+            shape = segmentShape(1, 2),
+            choices = StripSpeeds.map(::stripFigure),
+            selected = StripSpeeds.indexOfFirst { kotlin.math.abs(ctrl.speed - it) < 0.01f },
+            onPick = { ctrl.changeSpeed(StripSpeeds[it]) },
+            onMore = { onOpen(SheetPage.Speed) },
+            fill = true,
+        )
+    }
+
+    // 2 · 字幕, 弹幕, 章节
+    Spacer(Modifier.height(GroupGap))
+    SegmentedGroup(
+        buildList {
+            if (ctrl.subtitles.isNotEmpty()) {
+                add(
+                    RowSpec(
+                        PiliSymbols.Subtitles,
+                        "字幕",
+                        value = ctrl.subtitles.getOrNull(ctrl.subtitleIndex)?.label ?: "关闭",
+                    ) { onOpen(SheetPage.Subtitle) },
+                )
+            }
+            add(RowSpec(PiliSymbols.Danmaku, "弹幕设置") { onOpen(SheetPage.Danmaku) })
+            if (ctrl.chapters.isNotEmpty()) {
+                add(RowSpec(YoinSymbols.Playlist, "章节", value = "${ctrl.chapters.size}") { onOpen(SheetPage.Chapters) })
+            }
+        },
+    )
+
+    // 3 · 播放
+    Spacer(Modifier.height(GroupGap))
+    SegmentedGroup(
+        listOf(
+            RowSpec(YoinSymbols.SkipNext, "自动连播", switch = autoNext) { AppSettings.set(AppSettings.autoPlayNext, !autoNext) },
+            RowSpec(YoinSymbols.RepeatOne, "单集循环", switch = ctrl.loop) { ctrl.changeLoop(!ctrl.loop) },
+            RowSpec(YoinSymbols.Headphones, "后台播放", switch = background) { AppSettings.set(AppSettings.backgroundPlay, !background) },
+            RowSpec(YoinSymbols.MusicNote, "仅听声音", switch = ctrl.audioOnly) { ctrl.toggleAudioOnly() },
+            RowSpec(YoinSymbols.Sleep, "定时关闭", value = sleepValue) { onOpen(SheetPage.Sleep) },
+        ),
+    )
+
+    // 4 · one-tap actions
+    if (canLater || t != null || shot != null) {
+        Spacer(Modifier.height(GroupGap))
+        SheetIconRow {
+            if (canLater && t != null) {
+                SheetIconAction(PiliSymbols.WatchLater, "稍后再看", done = laterDone, enabled = laterDone == null, onClick = {
+                    scope.launch {
+                        val result = runCatching {
+                            BiliClient.postData(
+                                "/x/v2/history/toview/add",
+                                buildMap {
+                                    if (t.aid > 0) put("aid", t.aid) else put("bvid", t.bvid)
+                                },
+                            )
+                            WidgetStore.laterChanged()
+                        }
+                        result.onSuccess {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            laterDone = "已添加"
+                            kotlinx.coroutines.delay(820)
+                            onClose()
+                        }.onFailure { toast(it.message ?: "添加失败") }
                     }
-                    result.onSuccess {
-                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        laterDone = "已添加"
-                        kotlinx.coroutines.delay(820)
-                        onClose()
-                    }.onFailure { toast(it.message ?: "添加失败") }
-                }
-            })
+                })
+            }
+            if (t != null) SheetIconAction(YoinSymbols.Download, "缓存", onClick = { onOpen(SheetPage.Cache) })
+            if (shot != null) {
+                SheetIconAction(ScreenshotSymbol, "截图", onClick = {
+                    onClose()
+                    shot()
+                })
+            }
         }
-        if (t != null) SheetIconAction(YoinSymbols.Download, "缓存", onClick = { onOpen(SheetPage.Cache) })
-        if (shot != null) {
-            SheetIconAction(ScreenshotSymbol, "截图", onClick = {
-                onClose()
-                shot()
-            })
-        }
-        SheetIconAction(YoinSymbols.Sleep, sleepValue ?: "定时关闭", onClick = { onOpen(SheetPage.Sleep) })
     }
 
-    SpeedStrip(ctrl, onMore = { onOpen(SheetPage.Speed) })
-    Spacer(Modifier.height(12.dp))
-
-    val playback = buildList {
-        add(RowSpec(PiliSymbols.Hd, "画质", value = Qualities.videoShort(ctrl.currentQn).takeIf { pi != null }) { onOpen(SheetPage.Quality) })
+    // 5 · 更多: rarely changed
+    Spacer(Modifier.height(GroupGap))
+    val rare = buildList {
         if (pi != null && pi.isDash && StreamPicker.playableAudios(pi).size > 1) {
             add(RowSpec(YoinSymbols.Headphones, "音质", value = Qualities.audioName(ctrl.currentAudio)) { onOpen(SheetPage.Audio) })
         }
@@ -500,33 +567,48 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
                 }
             })
         }
-        if (ctrl.subtitles.isNotEmpty()) {
-            add(
-                RowSpec(
-                    PiliSymbols.Subtitles,
-                    "字幕",
-                    value = ctrl.subtitles.getOrNull(ctrl.subtitleIndex)?.label ?: "关闭",
-                ) { onOpen(SheetPage.Subtitle) },
-            )
-        }
-        if (ctrl.chapters.isNotEmpty()) {
-            add(RowSpec(YoinSymbols.Playlist, "章节", value = "${ctrl.chapters.size}") { onOpen(SheetPage.Chapters) })
-        }
-        add(RowSpec(PiliSymbols.Danmaku, "弹幕设置") { onOpen(SheetPage.Danmaku) })
     }
-    SegmentedGroup(playback)
+    MoreToggle(open = more, onToggle = {
+        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        more = !more
+    })
+    AnimatedVisibility(
+        visible = more,
+        enter = fadeIn(YoinMotion.defaultEffectsSpec()) + expandVertically(YoinMotion.defaultSpatialSpec()),
+        exit = fadeOut(YoinMotion.fastEffectsSpec()) + shrinkVertically(YoinMotion.fastSpatialSpec()),
+    ) {
+        Column(Modifier.padding(top = 8.dp)) {
+            if (rare.isNotEmpty()) SegmentedGroup(rare)
+            PictureFitChoice()
+        }
+    }
+}
 
-    PictureFitChoice()
+/** Space between a sheet's groups; inside a group, segments sit 2dp apart. */
+private val GroupGap = 24.dp
 
-    SectionLabel("播放")
-    SegmentedGroup(
-        listOf(
-            RowSpec(YoinSymbols.RepeatOne, "单集循环", switch = ctrl.loop) { ctrl.changeLoop(!ctrl.loop) },
-            RowSpec(YoinSymbols.SkipNext, "自动连播", switch = autoNext) { AppSettings.set(AppSettings.autoPlayNext, !autoNext) },
-            RowSpec(YoinSymbols.MusicNote, "仅听声音", switch = ctrl.audioOnly) { ctrl.toggleAudioOnly() },
-            RowSpec(YoinSymbols.Headphones, "后台播放", switch = background) { AppSettings.set(AppSettings.backgroundPlay, !background) },
-        ),
-    )
+/** 更多: a quiet row that folds the rarely changed settings in and out. */
+@Composable
+private fun MoreToggle(open: Boolean, onToggle: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val turn by androidx.compose.animation.core.animateFloatAsState(if (open) 90f else 0f, YoinMotion.defaultSpatialSpec(), label = "moreTurn")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(YoinContainerShapes.ListRow)
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("更多", style = MaterialTheme.typography.labelLarge, color = scheme.primary, modifier = Modifier.weight(1f))
+        Text("音质 · 解码 · 线路 · 画面", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+        Icon(
+            YoinSymbols.ChevronRight,
+            null,
+            Modifier.padding(start = 4.dp).size(18.dp).graphicsLayer { rotationZ = turn },
+            tint = scheme.onSurfaceVariant,
+        )
+    }
 }
 
 /** Speeds offered right in the strip; the rest (1.75, 3.0) are one tap away on the slider page. */
@@ -534,12 +616,25 @@ private val StripSpeeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
 private fun stripFigure(v: Float): String = if (v == v.toInt().toFloat()) "${v.toInt()}.0" else v.toString()
 
-/** 播放速度 as a strip: its name and value (tap for the slider page), then the common speeds. */
+/**
+ * A setting with its common steps in reach: its name and value (tap for the full page), then
+ * the steps as pills. [fill] spreads them across the width; otherwise they scroll.
+ */
 @Composable
-private fun SpeedStrip(ctrl: PiliPlayerController, onMore: () -> Unit) {
+private fun ChoiceStrip(
+    icon: ImageVector,
+    title: String,
+    value: String?,
+    shape: Shape,
+    choices: List<String>,
+    selected: Int,
+    onPick: (Int) -> Unit,
+    onMore: () -> Unit,
+    fill: Boolean = false,
+) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
-    Surface(shape = YoinContainerShapes.Panel, color = scheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = shape, color = scheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 8.dp)) {
             Row(
                 Modifier
@@ -552,33 +647,36 @@ private fun SpeedStrip(ctrl: PiliPlayerController, onMore: () -> Unit) {
                     .padding(start = 8.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(YoinSymbols.Speed, null, Modifier.size(22.dp), tint = scheme.onSurfaceVariant)
+                Icon(icon, null, Modifier.size(22.dp), tint = scheme.onSurfaceVariant)
                 Spacer(Modifier.width(16.dp))
-                Text("播放速度", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                Text(speedLabel(ctrl.speed), style = MaterialTheme.typography.labelLarge, color = scheme.primary)
+                Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                if (value != null) Text(value, style = MaterialTheme.typography.labelLarge, color = scheme.primary)
                 Icon(YoinSymbols.ChevronRight, null, Modifier.padding(start = 4.dp).size(18.dp), tint = scheme.onSurfaceVariant)
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                StripSpeeds.forEach { v ->
-                    val on = kotlin.math.abs(ctrl.speed - v) < 0.01f
-                    val spec = YoinMotion.defaultEffectsSpec<Color>()
-                    val container by animateColorAsState(if (on) scheme.primary else scheme.surfaceContainerHighest, spec, label = "speedPill")
-                    val content by animateColorAsState(if (on) scheme.onPrimary else scheme.onSurfaceVariant, spec, label = "speedPillText")
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .height(40.dp)
-                            .clip(YoinShapeTokens.Full)
-                            .background(container)
-                            .clickable {
-                                if (!on) {
-                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                                    ctrl.changeSpeed(v)
+            if (choices.size > 1) {
+                val rowModifier = if (fill) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                Row(rowModifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    choices.forEachIndexed { i, label ->
+                        val on = i == selected
+                        val spec = YoinMotion.defaultEffectsSpec<Color>()
+                        val container by animateColorAsState(if (on) scheme.primary else scheme.surfaceContainerHighest, spec, label = "stripPill")
+                        val content by animateColorAsState(if (on) scheme.onPrimary else scheme.onSurfaceVariant, spec, label = "stripPillText")
+                        Box(
+                            (if (fill) Modifier.weight(1f) else Modifier.widthIn(min = 64.dp))
+                                .height(40.dp)
+                                .clip(YoinShapeTokens.Full)
+                                .background(container)
+                                .clickable {
+                                    if (!on) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                        onPick(i)
+                                    }
                                 }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(stripFigure(v), style = MaterialTheme.typography.labelLarge.withTabularFigures(), color = content, maxLines = 1)
+                                .padding(horizontal = 12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(label, style = MaterialTheme.typography.labelLarge.withTabularFigures(), color = content, maxLines = 1)
+                        }
                     }
                 }
             }

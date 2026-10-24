@@ -196,10 +196,11 @@ fun SheetTileAction(
     modifier: Modifier = Modifier,
     done: String? = null,
     enabled: Boolean = true,
+    destructive: Boolean = false,
     height: Dp = 76.dp,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val (container, content) = blockColors(done != null, scheme.surfaceContainerHighest, scheme.onSurface)
+    val (container, content) = blockColors(done != null, scheme.surfaceContainerHighest, if (destructive) scheme.error else scheme.onSurface)
     Surface(
         onClick = onClick,
         enabled = enabled,
@@ -213,7 +214,7 @@ fun SheetTileAction(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            DoneIcon(icon, done != null, if (done != null) content else scheme.onSurfaceVariant, 24.dp)
+            DoneIcon(icon, done != null, if (done != null || destructive) content else scheme.onSurfaceVariant, 24.dp)
             Spacer(Modifier.height(6.dp))
             DoneText(label, done, content, MaterialTheme.typography.labelLarge, TextAlign.Center)
         }

@@ -11,9 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -33,7 +30,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -71,9 +67,7 @@ import com.gpo.pilipala.feature.video.shareText
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.NetImage
-import com.gpo.pilipala.ui.components.SheetChipAction
 import com.gpo.pilipala.ui.components.SheetFinisher
-import com.gpo.pilipala.ui.components.SheetHeroAction
 import com.gpo.pilipala.ui.components.SheetIconAction
 import com.gpo.pilipala.ui.components.SheetIconRow
 import com.gpo.pilipala.ui.components.SheetInsets
@@ -200,24 +194,25 @@ internal fun VideoCardMenu(
         }
     }
 
-    val model = MenuModel(
-        hero = if (!isVideo) null else MenuRow(YoinSymbols.Headphones, "仅听声音") {
-            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-            close {
-                nav.push(
-                    Route.Video(
-                        bvid = item.bvid,
-                        aid = item.aid,
-                        cid = item.cid,
-                        cover = item.cover,
-                        title = item.title,
-                        progress = item.progress.coerceAtLeast(0),
-                        audioOnly = true,
-                    ),
-                )
-            }
-        },
-        tiles = if (!isVideo) emptyList() else buildList {
+    val listen = if (!isVideo) null else MenuRow(YoinSymbols.Headphones, "仅听声音") {
+        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+        close {
+            nav.push(
+                Route.Video(
+                    bvid = item.bvid,
+                    aid = item.aid,
+                    cid = item.cid,
+                    cover = item.cover,
+                    title = item.title,
+                    progress = item.progress.coerceAtLeast(0),
+                    audioOnly = true,
+                ),
+            )
+        }
+    }
+    val model = menuModel(
+        lead = extras.filterNot { it.destructive }.map { a -> MenuRow(a.icon, a.label) { close(a.onClick) } },
+        keep = if (!isVideo) emptyList() else buildList {
             if (watchLater && loggedIn) {
                 add(
                     MenuRow(PiliSymbols.WatchLater, "稍后再看") {
@@ -227,9 +222,19 @@ internal fun VideoCardMenu(
             }
             add(MenuRow(YoinSymbols.Star, "收藏") { hide { mixOpen = true } })
         },
-        rows = extras.filterNot { it.destructive }.map { a -> MenuRow(a.icon, a.label) { close(a.onClick) } },
+        decline = buildList {
+            if (onRemove != null) {
+                add(
+                    MenuRow(PiliSymbols.ThumbDown, "不感兴趣") {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        if (dislike == null) close(onRemove) else runWrite(dislike) { close(onRemove) }
+                    },
+                )
+            }
+            extras.filter { it.destructive }.forEach { a -> add(MenuRow(a.icon, a.label, destructive = true) { close(a.onClick) }) }
+        },
+        listen = listen,
         small = if (!isVideo) emptyList() else buildList {
-            add(MenuRow(YoinSymbols.Download, "缓存") { page = MenuPage.Cache })
             if (url.isNotEmpty()) {
                 add(MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } })
                 add(
@@ -240,33 +245,25 @@ internal fun VideoCardMenu(
                     },
                 )
             }
+            add(MenuRow(YoinSymbols.Download, "缓存") { page = MenuPage.Cache })
         },
-        owner = if (item.ownerMid <= 0) null else OwnerStrip(
+        owner = if (item.ownerMid <= 0) null else OwnerGroup(
             face = item.ownerFace,
             name = item.ownerName,
-            caption = "查看 UP 主",
+            caption = "UP 主",
             onOpen = { close { nav.push(Route.Member(item.ownerMid, item.ownerFace, item.ownerName)) } },
-            action = MenuRow(YoinSymbols.LibraryAdd, "加入 Feed") { hide { feedOpen = true } },
+            rows = buildList {
+                add(MenuRow(YoinSymbols.LibraryAdd, "加入 Feed") { hide { feedOpen = true } })
+                if (onRemove != null && loggedIn && item.ownerMid != BiliClient.mid) {
+                    add(
+                        MenuRow(BlockGlyph, "拉黑 UP", destructive = true) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            page = MenuPage.Block
+                        },
+                    )
+                }
+            },
         ),
-        quiet = buildList {
-            if (onRemove != null) {
-                add(
-                    MenuRow(PiliSymbols.ThumbDown, "不感兴趣") {
-                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        if (dislike == null) close(onRemove) else runWrite(dislike) { close(onRemove) }
-                    },
-                )
-            }
-            extras.filter { it.destructive }.forEach { a -> add(MenuRow(a.icon, a.label, destructive = true) { close(a.onClick) }) }
-            if (onRemove != null && loggedIn && item.ownerMid > 0 && item.ownerMid != BiliClient.mid) {
-                add(
-                    MenuRow(BlockGlyph, "拉黑 UP", destructive = true) {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        page = MenuPage.Block
-                    },
-                )
-            }
-        },
     )
 
     ModalBottomSheet(
@@ -283,7 +280,7 @@ internal fun VideoCardMenu(
                 .padding(bottom = sheetBottomPadding(24.dp)),
         ) {
             MenuHeader(item, showOwner = model.owner == null, modifier = Modifier.sheetStagger(0))
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(20.dp))
             AnimatedContent(
                 targetState = page,
                 transitionSpec = { fadeIn(enterSpec).togetherWith(fadeOut(exitSpec)) },
@@ -353,15 +350,9 @@ private fun YoutubeCardMenu(
     fun close(then: () -> Unit = {}) = finisher.close(then)
     // As the sheet opened: the tile keeps its label (and its tick) after the toggle lands.
     val inLater = remember(url) { com.gpo.pilipala.yt.feature.library.Library.inWatchLater(url) }
-    val model = MenuModel(
-        hero = MenuRow(YoinSymbols.Headphones, "仅听声音") {
-            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-            close {
-                com.gpo.pilipala.yt.feature.player.Player.play(url, video)
-                com.gpo.pilipala.yt.feature.player.Player.changeAudioOnly(true)
-            }
-        },
-        tiles = buildList {
+    val model = menuModel(
+        lead = extras.filterNot { it.destructive }.map { a -> MenuRow(a.icon, a.label) { close(a.onClick) } },
+        keep = buildList {
             if (watchLater) {
                 add(
                     MenuRow(PiliSymbols.WatchLater, if (inLater) "移出稍后再看" else "稍后再看") {
@@ -372,24 +363,7 @@ private fun YoutubeCardMenu(
             }
             add(MenuRow(YoinSymbols.Star, "收藏") { hide { saveOpen = true } })
         },
-        rows = extras.filterNot { it.destructive }.map { a -> MenuRow(a.icon, a.label) { close(a.onClick) } },
-        small = listOf(
-            MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } },
-            MenuRow(PiliSymbols.Link, "复制链接") {
-                context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(item.title, url))
-                finisher.finish("复制链接", "已复制")
-            },
-        ),
-        owner = channelUrl?.let { ch ->
-            OwnerStrip(
-                face = item.ownerFace,
-                name = item.ownerName,
-                caption = "查看频道",
-                onOpen = { close { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Channel(ch, item.ownerName, item.ownerFace)) } },
-                action = null,
-            )
-        },
-        quiet = buildList {
+        decline = buildList {
             if (onRemove != null) {
                 add(
                     MenuRow(PiliSymbols.ThumbDown, "不感兴趣") {
@@ -399,16 +373,36 @@ private fun YoutubeCardMenu(
                 )
             }
             extras.filter { it.destructive }.forEach { a -> add(MenuRow(a.icon, a.label, destructive = true) { close(a.onClick) }) }
-            if (channelUrl != null) {
-                add(
+        },
+        listen = MenuRow(YoinSymbols.Headphones, "仅听声音") {
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            close {
+                com.gpo.pilipala.yt.feature.player.Player.play(url, video)
+                com.gpo.pilipala.yt.feature.player.Player.changeAudioOnly(true)
+            }
+        },
+        small = listOf(
+            MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } },
+            MenuRow(PiliSymbols.Link, "复制链接") {
+                context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(item.title, url))
+                finisher.finish("复制链接", "已复制")
+            },
+        ),
+        owner = channelUrl?.let { ch ->
+            OwnerGroup(
+                face = item.ownerFace,
+                name = item.ownerName,
+                caption = "频道",
+                onOpen = { close { ytNav.push(com.gpo.pilipala.yt.navigation.Route.Channel(ch, item.ownerName, item.ownerFace)) } },
+                rows = listOf(
                     MenuRow(YoinSymbols.VisibilityOff, "不看此频道", destructive = true) {
-                        com.gpo.pilipala.yt.feature.mute.Mutes.muteChannel(channelUrl, item.ownerName, item.ownerFace)
+                        com.gpo.pilipala.yt.feature.mute.Mutes.muteChannel(ch, item.ownerName, item.ownerFace)
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                         toast("已屏蔽")
                         close { onRemove?.invoke() }
                     },
-                )
-            }
+                ),
+            )
         },
     )
     ModalBottomSheet(
@@ -425,7 +419,7 @@ private fun YoutubeCardMenu(
                 .padding(bottom = sheetBottomPadding(24.dp)),
         ) {
             MenuHeader(item, showOwner = model.owner == null, modifier = Modifier.sheetStagger(0))
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(20.dp))
             MenuBody(model, finisher, enabled = !finisher.finishing)
         }
     }
@@ -438,66 +432,88 @@ private class MenuRow(
     val onClick: () -> Unit,
 )
 
-/** The UP / channel strip: avatar and name open the page; [action] sits at its end. */
-private class OwnerStrip(
+/** The UP / channel: its own row (avatar, name: opens the page), then [rows] about it. */
+private class OwnerGroup(
     val face: String,
     val name: String,
     val caption: String,
     val onOpen: () -> Unit,
-    val action: MenuRow?,
-)
-
-/** A menu's tiers; an empty tier is left out. */
-private class MenuModel(
-    val hero: MenuRow?,
-    val tiles: List<MenuRow>,
     val rows: List<MenuRow>,
-    val small: List<MenuRow>,
-    val owner: OwnerStrip?,
-    val quiet: List<MenuRow>,
 )
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * A menu's groups, most used first: [primary] tiles (what a long press is usually for),
+ * [small] round actions, then the [owner] group. An empty group is left out.
+ */
+private class MenuModel(
+    val primary: List<MenuRow>,
+    val small: List<MenuRow>,
+    val owner: OwnerGroup?,
+)
+
+/** Most a primary row holds; past that the rest lead the round row. */
+private const val PrimaryMax = 4
+
+/**
+ * Orders a menu by how often each action is the reason for the long press: the list's own
+ * [lead] actions (从这里播放…), then [keep] (稍后再看, 收藏), then [decline] (不感兴趣, 删除记录…).
+ * Where nothing declines, [listen] (仅听声音) fills the primary row; otherwise it leads [small].
+ */
+private fun menuModel(
+    lead: List<MenuRow>,
+    keep: List<MenuRow>,
+    decline: List<MenuRow>,
+    listen: MenuRow?,
+    small: List<MenuRow>,
+    owner: OwnerGroup?,
+): MenuModel {
+    val wanted = lead + keep + decline + listOfNotNull(listen?.takeIf { decline.isEmpty() })
+    val primary = wanted.take(PrimaryMax)
+    val rest = wanted.drop(PrimaryMax) + listOfNotNull(listen?.takeIf { decline.isNotEmpty() }) + small
+    return MenuModel(primary, rest, owner)
+}
+
+/**
+ * The groups, spaced by belonging: tight inside a group (8dp, 2dp between segments), wide
+ * between groups (24dp), so no row reads as part of its neighbour.
+ */
 @Composable
 private fun MenuBody(model: MenuModel, finisher: SheetFinisher, enabled: Boolean) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (model.hero != null || model.tiles.isNotEmpty()) {
+    Column {
+        var gap = false
+        if (model.primary.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().sheetStagger(1), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                model.hero?.let { h ->
-                    SheetHeroAction(
-                        h.icon,
-                        h.label,
-                        h.onClick,
-                        Modifier.weight(if (model.tiles.size >= 2) 1.6f else 2.4f),
-                        done = finisher.doneLabel(h.label),
+                model.primary.forEach { t ->
+                    SheetTileAction(
+                        t.icon,
+                        t.label,
+                        t.onClick,
+                        Modifier.weight(1f),
+                        done = finisher.doneLabel(t.label),
                         enabled = enabled,
+                        destructive = t.destructive,
                     )
                 }
-                model.tiles.forEach { t ->
-                    SheetTileAction(t.icon, t.label, t.onClick, Modifier.weight(1f), done = finisher.doneLabel(t.label), enabled = enabled)
-                }
             }
+            gap = true
         }
-        if (model.rows.isNotEmpty()) RowGroup(model.rows, enabled, Modifier.sheetStagger(2))
         if (model.small.isNotEmpty()) {
-            SheetIconRow(Modifier.sheetStagger(3).padding(top = 2.dp, bottom = 2.dp)) {
+            if (gap) Spacer(Modifier.height(GroupGap))
+            SheetIconRow(Modifier.sheetStagger(2)) {
                 model.small.forEach { s ->
                     SheetIconAction(s.icon, s.label, s.onClick, done = finisher.doneLabel(s.label), enabled = enabled)
                 }
             }
+            gap = true
         }
-        model.owner?.let { OwnerRow(it, enabled, Modifier.sheetStagger(4)) }
-        if (model.quiet.isNotEmpty()) {
-            FlowRow(
-                Modifier.fillMaxWidth().sheetStagger(5),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                model.quiet.forEach { q -> SheetChipAction(q.icon, q.label, q.onClick, destructive = q.destructive, enabled = enabled) }
-            }
+        model.owner?.let {
+            if (gap) Spacer(Modifier.height(GroupGap))
+            OwnerSection(it, enabled, Modifier.sheetStagger(3))
         }
     }
 }
+
+private val GroupGap = 24.dp
 
 @Composable
 private fun MenuHeader(item: VideoItem, showOwner: Boolean, modifier: Modifier = Modifier) {
@@ -509,7 +525,7 @@ private fun MenuHeader(item: VideoItem, showOwner: Boolean, modifier: Modifier =
         NetImage(item.cover, Modifier.width(112.dp).aspectRatio(16f / 10f), shape = CoverShape, thumbWidth = 224.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            // The UP strip below names the owner; without one, the header does.
+            // The owner group below names the UP; without one, the header does.
             if (showOwner && item.ownerName.isNotEmpty()) {
                 Text(
                     item.ownerName,
@@ -523,18 +539,19 @@ private fun MenuHeader(item: VideoItem, showOwner: Boolean, modifier: Modifier =
     }
 }
 
+/** The owner's row and the rows about the owner, as one segmented block. */
 @Composable
-private fun OwnerRow(owner: OwnerStrip, enabled: Boolean, modifier: Modifier = Modifier) {
+private fun OwnerSection(owner: OwnerGroup, enabled: Boolean, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
-    Surface(
-        onClick = owner.onOpen,
-        enabled = enabled,
-        shape = OwnerShape,
-        color = scheme.surfaceContainerHigh,
-        modifier = modifier.fillMaxWidth(),
-    ) {
+    val count = owner.rows.size + 1
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(
-            Modifier.padding(start = 12.dp, end = if (owner.action != null) 10.dp else 16.dp, top = 10.dp, bottom = 10.dp),
+            Modifier
+                .fillMaxWidth()
+                .clip(segmentShape(0, count))
+                .background(scheme.surfaceContainerHigh)
+                .clickable(enabled = enabled, onClick = owner.onOpen)
+                .padding(start = 12.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (owner.face.isNotEmpty()) {
@@ -544,54 +561,38 @@ private fun OwnerRow(owner: OwnerStrip, enabled: Boolean, modifier: Modifier = M
                     Icon(YoinSymbols.Person, null, Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
                 }
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(owner.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(owner.caption, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant, maxLines = 1)
             }
-            val action = owner.action
-            if (action != null) {
-                FilledTonalButton(
-                    onClick = action.onClick,
-                    enabled = enabled,
-                    shapes = ButtonDefaults.shapes(),
-                    contentPadding = PaddingValues(start = 12.dp, end = 16.dp),
-                    modifier = Modifier.height(40.dp),
-                ) {
-                    Icon(action.icon, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(action.label, style = MaterialTheme.typography.labelLarge)
-                }
-            } else {
-                Icon(YoinSymbols.ChevronRight, null, Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
-            }
+            Icon(YoinSymbols.ChevronRight, null, Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
         }
+        owner.rows.forEachIndexed { i, r -> SegmentRow(r, segmentShape(i + 1, count), enabled) }
     }
 }
 
-/** The list's own rows as segmented colour blocks (big outer corners, small inner ones). */
+private fun segmentShape(index: Int, count: Int): RoundedCornerShape {
+    val top = if (index == 0) 20.dp else 4.dp
+    val bottom = if (index == count - 1) 20.dp else 4.dp
+    return RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
+}
+
 @Composable
-private fun RowGroup(rows: List<MenuRow>, enabled: Boolean, modifier: Modifier = Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        rows.forEachIndexed { i, r ->
-            val top = if (i == 0) 20.dp else 4.dp
-            val bottom = if (i == rows.lastIndex) 20.dp else 4.dp
-            val shape = RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
-            val tint = if (r.destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(shape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .clickable(enabled = enabled, onClick = r.onClick)
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Icon(r.icon, null, Modifier.size(22.dp), tint = if (r.destructive) tint else MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(r.label, style = MaterialTheme.typography.bodyLarge, color = tint)
-            }
-        }
+private fun SegmentRow(r: MenuRow, shape: RoundedCornerShape, enabled: Boolean) {
+    val tint = if (r.destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(enabled = enabled, onClick = r.onClick)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Icon(r.icon, null, Modifier.size(22.dp), tint = if (r.destructive) tint else MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(r.label, style = MaterialTheme.typography.bodyLarge, color = tint)
     }
 }
 
