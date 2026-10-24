@@ -837,6 +837,13 @@ private fun VideoActions(
                 onClick = { gate { a.toggleLike() } },
             ),
             ActionSpec(
+                label = "点踩",
+                icon = PiliSymbols.ThumbDown,
+                checkedIcon = PiliSymbols.ThumbDownFilled,
+                checked = a.disliked,
+                onClick = { gate { a.toggleDislike() } },
+            ),
+            ActionSpec(
                 label = label(a.coinCount, "投币"),
                 icon = PiliSymbols.Coin,
                 checkedIcon = PiliSymbols.CoinFilled,
@@ -865,7 +872,7 @@ private fun VideoActions(
             ),
         ),
         Modifier.padding(horizontal = 16.dp),
-        triple = TripleCharge(celebration = a.tripleCelebration),
+        triple = TripleCharge(slots = listOf(0, 2, 3), celebration = a.tripleCelebration),
     )
 }
 

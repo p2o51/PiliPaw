@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 
 @Immutable
-internal data class LikeState(val liked: Boolean, val count: Long)
+internal data class LikeState(val liked: Boolean, val count: Long, val disliked: Boolean = false)
 
 /** Mids per /x/relation/relations request. */
 private const val RELATION_BATCH = 40
@@ -113,14 +113,15 @@ internal abstract class BaseReplyViewModel(val oid: Long, val type: Int) : ViewM
         }
     }
 
-    fun likeState(r: Reply): LikeState = likes[r.rpid] ?: LikeState(r.liked, r.like)
+    fun likeState(r: Reply): LikeState = likes[r.rpid] ?: LikeState(r.liked, r.like, r.disliked && !r.liked)
 
     /** Returns false when the user must log in first. */
     fun toggleLike(r: Reply): Boolean {
         if (!BiliClient.isLoggedIn) return false
         if (!liking.add(r.rpid)) return true
         val before = likeState(r)
-        val after = LikeState(!before.liked, (before.count + if (before.liked) -1 else 1).coerceAtLeast(0))
+        // A like takes a 点踩 off (the server does the same).
+        val after = LikeState(!before.liked, (before.count + if (before.liked) -1 else 1).coerceAtLeast(0), disliked = false)
         likes[r.rpid] = after
         viewModelScope.launch {
             runCatching { ReplyApi.like(oid, type, r.rpid, after.liked) }
@@ -131,6 +132,53 @@ internal abstract class BaseReplyViewModel(val oid: Long, val type: Int) : ViewM
             liking.remove(r.rpid)
         }
         return true
+    }
+
+    /** 点踩 / 取消点踩; a 点踩 takes the user's like off. Returns false when the user must log in first. */
+    fun toggleDislike(r: Reply): Boolean {
+        if (!BiliClient.isLoggedIn) return false
+        if (!liking.add(r.rpid)) return true
+        val before = likeState(r)
+        val target = !before.disliked
+        val after = if (target) {
+            LikeState(false, (before.count - if (before.liked) 1 else 0).coerceAtLeast(0), disliked = true)
+        } else {
+            before.copy(disliked = false)
+        }
+        likes[r.rpid] = after
+        viewModelScope.launch {
+            runCatching { ReplyApi.hate(oid, type, r.rpid, target) }
+                .onFailure {
+                    likes[r.rpid] = before
+                    messages.tryEmit(it.friendlyMessage())
+                }
+            liking.remove(r.rpid)
+        }
+        return true
+    }
+
+    /** 举报; [onDone] runs once it landed (the sheet shows 已举报), failures go to [messages]. */
+    fun report(r: Reply, reason: Int, detail: String, block: Boolean, onDone: () -> Unit, onFail: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { ReplyApi.report(r.oid.takeIf { it != 0L } ?: oid, type, r.rpid, reason, detail, block) }
+                .onSuccess {
+                    if (block) com.gpo.pilipala.feature.home.Blacklist.add(r.member.mid)
+                    onDone()
+                }
+                .onFailure {
+                    messages.tryEmit(it.friendlyMessage())
+                    onFail()
+                }
+        }
+    }
+
+    /** 拉黑 the commenter (the same blacklist as 拉黑 UP). */
+    fun block(r: Reply) {
+        viewModelScope.launch {
+            runCatching { com.gpo.pilipala.feature.home.FeedActions.block(r.member.mid) }
+                .onSuccess { messages.tryEmit("已拉黑 ${r.member.name}") }
+                .onFailure { messages.tryEmit(it.friendlyMessage()) }
+        }
     }
 
     fun delete(r: Reply, onDone: () -> Unit = {}) {

@@ -6,7 +6,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.gpo.pilipala.core.net.AppSign
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.core.net.BiliHosts
 import com.gpo.pilipala.core.net.arr
 import com.gpo.pilipala.core.net.asObj
 import com.gpo.pilipala.core.net.bool
@@ -15,6 +17,7 @@ import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
+import com.gpo.pilipala.feature.home.AppAuth
 import com.gpo.pilipala.feature.widget.WidgetStore
 import com.gpo.pilipala.ui.components.friendlyMessage
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +39,9 @@ class ArchiveActions(private val scope: CoroutineScope) {
         private set
 
     var liked by mutableStateOf(false)
+
+    /** 点踩: never on together with [liked] (the server drops one when the other lands). */
+    var disliked by mutableStateOf(false)
     var coined by mutableIntStateOf(0)
     var favored by mutableStateOf(false)
     var inLater by mutableStateOf(false)
@@ -73,6 +79,7 @@ class ArchiveActions(private val scope: CoroutineScope) {
         shareCount = share
         if (changed) {
             liked = false
+            disliked = false
             coined = 0
             favored = false
             inLater = false
@@ -88,6 +95,7 @@ class ArchiveActions(private val scope: CoroutineScope) {
                 BiliClient.getData("/x/web-interface/archive/relation", mapOf("aid" to aid, "bvid" to bvid.ifEmpty { null })).asObj
             }.onSuccess { r ->
                 liked = r.bool("like")
+                disliked = r.bool("dislike") && !liked
                 coined = r.int("coin")
                 favored = r.bool("favorite")
             }
@@ -115,8 +123,36 @@ class ArchiveActions(private val scope: CoroutineScope) {
         val target = !liked
         BiliClient.postData("/x/web-interface/archive/like", idForm() + ("like" to if (target) 1 else 2))
         liked = target
+        if (target) disliked = false
         likeCount = (likeCount + if (target) 1 else -1).coerceAtLeast(0)
         _messages.tryEmit(if (target) "已点赞" else "已取消赞")
+    }
+
+    /**
+     * 点踩 / 取消点踩: the app's `x/v2/view/dislike` (the web has no such button), signed with
+     * the account's access_key. Landing it takes a like off, as the official app shows it.
+     */
+    fun toggleDislike() = write {
+        val key = AppAuth.ensure()
+        check(key.isNotEmpty()) { "点踩需要 access_key，请在设置里重新获取" }
+        val target = !disliked
+        val form = AppSign.sign(
+            mapOf(
+                "aid" to aid.toString(),
+                "dislike" to if (target) "0" else "1",
+                "access_key" to key,
+                "build" to "1",
+                "mobi_app" to "android",
+                "ts" to (System.currentTimeMillis() / 1000).toString(),
+            ),
+        )
+        BiliClient.postData(BiliHosts.APP + "/x/v2/view/dislike", form, csrf = false)
+        disliked = target
+        if (target && liked) {
+            liked = false
+            likeCount = (likeCount - 1).coerceAtLeast(0)
+        }
+        _messages.tryEmit(if (target) "已点踩，会减少此类推荐" else "已取消点踩")
     }
 
     fun triple() = write {

@@ -90,7 +90,8 @@ data class ActionSpec(
  */
 @Immutable
 data class TripleCharge(
-    val slots: IntRange = 0..2,
+    /** The run's slots in order; the first holds the charge. Need not be adjacent (点踩 sits inside it). */
+    val slots: List<Int> = listOf(0, 1, 2),
     val celebration: Int = 0,
 )
 
@@ -121,14 +122,14 @@ private object TripleHint {
 @Composable
 internal fun ConnectedActionGroup(items: List<ActionSpec>, modifier: Modifier = Modifier, triple: TripleCharge? = null) {
     val slots = triple?.slots
-    val slotCount = slots?.let { it.last - it.first + 1 }?.coerceAtLeast(0) ?: 0
+    val slotCount = slots?.size ?: 0
     val charge = remember { Animatable(0f) }
     val hint = remember { Animatable(0f) }
     val settled = LocalPageSettled.current
     val hintRise = YoinMotion.slowSpatialSpec<Float>(YoinMotionRole.Standard)
     val hintEbb = YoinMotion.slowEffectsSpec<Float>()
     // Only a group that can charge, on its own page (a negative celebration = a neighbour in a pager).
-    val hintable = slotCount > 0 && (triple?.celebration ?: -1) >= 0 && items.getOrNull(slots?.first ?: -1)?.onLongClick != null
+    val hintable = slotCount > 0 && (triple?.celebration ?: -1) >= 0 && items.getOrNull(slots?.firstOrNull() ?: -1)?.onLongClick != null
     LaunchedEffect(hintable, settled) {
         if (!hintable || !settled || TripleHint.claimed || TripleHintShown.value) return@LaunchedEffect
         TripleHint.claimed = true
@@ -162,11 +163,11 @@ internal fun ConnectedActionGroup(items: List<ActionSpec>, modifier: Modifier = 
                     items.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 }
-                val k = if (slots != null && i in slots) i - slots.first else -1
+                val k = slots?.indexOf(i) ?: -1
                 ActionToggle(
                     item = item,
                     shapes = shapes,
-                    charge = if (slots != null && i == slots.first && item.onLongClick != null) charge else null,
+                    charge = if (k == 0 && item.onLongClick != null) charge else null,
                     // Overlapping thirds: each slot starts filling while the one before is half full.
                     fill = if (k >= 0) {
                         { (((charge.value - k * 0.25f) / 0.5f).coerceIn(0f, 1f)).coerceAtLeast(burst.bloomShown(k)) }

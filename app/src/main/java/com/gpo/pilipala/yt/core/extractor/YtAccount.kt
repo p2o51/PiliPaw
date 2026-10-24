@@ -94,6 +94,15 @@ object YtAccount {
         post(if (like) "like/like" else "like/removelike", body)
     }
 
+    /** 点踩 [videoId] as the account, or takes it back (removelike clears either rating). A write: only through AccountWrites. */
+    suspend fun dislike(videoId: String, dislike: Boolean) = withContext(Dispatchers.IO) {
+        val target = JsonObject().apply { put("videoId", videoId) }
+        val body = YoutubeParsingHelper.prepareDesktopJsonBuilder(Localization.DEFAULT, ContentCountry.DEFAULT)
+            .value("target", target)
+            .done()
+        post(if (dislike) "like/dislike" else "like/removelike", body)
+    }
+
     /** One of the account's own playlists; [contains] only from [playlistOptions]. */
     class Playlist(val id: String, val title: String, val thumbnail: String = "", val count: String = "", val contains: Boolean = false) {
         val url: String get() = "https://www.youtube.com/playlist?list=$id"

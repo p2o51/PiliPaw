@@ -43,6 +43,23 @@ public object PiliSymbols {
         }
     }
 
+    /** 已点踩 */
+    public val ThumbDownFilled: ImageVector by lazy {
+        symbol("ThumbDownFilled") {
+            fillStroke(thumbPalm(Rotate180, closed = true))
+            fillStroke(thumbCuff(Rotate180))
+        }
+    }
+
+    /** 举报: a pennant on its pole */
+    public val Flag: ImageVector by lazy {
+        s(
+            "Flag",
+            "M6 20.25 L6 3.75",
+            "M6 4.75 L17.1 4.75 C17.85 4.75 18.3 5.55 17.9 6.2 L15.95 9.4 L17.9 12.6 C18.3 13.25 17.85 14.05 17.1 14.05 L6 14.05",
+        )
+    }
+
     /** 投币 */
     public val Coin: ImageVector by lazy {
         symbol("Coin") {

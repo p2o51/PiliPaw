@@ -18,6 +18,7 @@ import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.settings.AppSettings
+import com.gpo.pilipala.feature.videomenu.DeclineReason
 import com.gpo.pilipala.feature.videomenu.VideoCardMenu
 import com.gpo.pilipala.feature.widget.WidgetStore
 import com.gpo.pilipala.ui.components.VideoItem
@@ -180,8 +181,16 @@ internal fun List<VideoItem>.withoutBlocked(): List<VideoItem> {
 
 // ── Card actions ────────────────────────────────────────────────────────────
 
-/** What the app feed needs to send a dislike for one card. */
-internal data class AppFeedRef(val goto: String, val id: String, val reasonId: Int?)
+/** What the app feed needs to send a dislike for one card; [reasons]: every choice the card offers. */
+internal data class AppFeedRef(
+    val goto: String,
+    val id: String,
+    val reasonId: Int?,
+    val reasons: List<DislikeReason> = emptyList(),
+)
+
+/** One 不感兴趣 choice: a `dislike` reason (reason_id) or, [feedback], a 反馈 one (feedback_id). */
+internal data class DislikeReason(val id: Int, val name: String, val feedback: Boolean)
 
 internal object FeedActions {
     suspend fun watchLater(item: VideoItem) {
@@ -195,21 +204,25 @@ internal object FeedActions {
         Blacklist.add(mid)
     }
 
-    /** App feed "不感兴趣" (`app.bilibili.com/x/feed/dislike`). */
-    suspend fun dislikeApp(ref: AppFeedRef) {
+    /** App feed "不感兴趣" (`app.bilibili.com/x/feed/dislike`); [reason] null sends the plain 不感兴趣. */
+    suspend fun dislikeApp(ref: AppFeedRef, reason: DislikeReason? = null) {
         val key = AppAuth.validKey
         check(key.isNotEmpty()) { "access_key 无效" }
         val params = buildMap {
             put("goto", ref.goto)
             put("id", ref.id)
-            put("reason_id", (ref.reasonId ?: 1).toString())
+            if (reason?.feedback == true) {
+                put("feedback_id", reason.id.toString())
+            } else {
+                put("reason_id", (reason?.id ?: ref.reasonId ?: 1).toString())
+            }
             put("build", "1")
             put("mobi_app", "android")
             put("access_key", key)
             put("ts", (System.currentTimeMillis() / 1000).toString())
         }
         BiliClient.getData(BiliHosts.APP + "/x/feed/dislike", AppSign.sign(params))
-        Log.i(TAG, "dislike goto=${ref.goto} id=${ref.id} reason=${params["reason_id"]}")
+        Log.i(TAG, "dislike goto=${ref.goto} id=${ref.id} reason=${params["reason_id"]} feedback=${params["feedback_id"]}")
     }
 }
 
@@ -226,8 +239,9 @@ internal fun FeedCardSheet(
     onDismiss: () -> Unit,
     onRemove: () -> Unit,
     dislike: (suspend () -> Unit)? = null,
+    declineReasons: List<DeclineReason> = emptyList(),
 ) {
-    VideoCardMenu(item = item, onDismiss = onDismiss, onRemove = onRemove, dislike = dislike)
+    VideoCardMenu(item = item, onDismiss = onDismiss, onRemove = onRemove, dislike = dislike, declineReasons = declineReasons)
 }
 
 // ── Tab reselect ────────────────────────────────────────────────────────────

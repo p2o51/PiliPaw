@@ -444,6 +444,7 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
     val t = ctrl.target
     val cdn by com.gpo.pilipala.feature.player.cdn.CdnRouter.status.collectAsState()
     val shot = LocalPlayerShot.current
+    val report = LocalPlayerReport.current
     // 稍后再看 answers in its own circle (a tick, 已添加) before the sheet goes.
     var laterDone by remember { mutableStateOf<String?>(null) }
     var more by remember { mutableStateOf(false) }
@@ -514,7 +515,7 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
     )
 
     // 4 · one-tap actions
-    if (canLater || t != null || shot != null) {
+    if (canLater || t != null || shot != null || report != null) {
         Spacer(Modifier.height(GroupGap))
         SheetIconRow {
             if (canLater && t != null) {
@@ -543,6 +544,12 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
                 SheetIconAction(ScreenshotSymbol, "截图", onClick = {
                     onClose()
                     shot()
+                })
+            }
+            if (report != null) {
+                SheetIconAction(PiliSymbols.Flag, "举报", onClick = {
+                    onClose()
+                    report()
                 })
             }
         }

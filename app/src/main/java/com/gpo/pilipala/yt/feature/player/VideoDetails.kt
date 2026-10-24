@@ -465,9 +465,18 @@ private fun YtVideoActions(info: StreamInfo) {
             onClick = { Player.changeAudioOnly(true) },
         )
     }
+    val disliked = YtLikes.disliked(info.url)
+    val dislike = if (!signedIn) null else ActionSpec(
+        label = "点踩",
+        icon = PiliSymbols.ThumbDown,
+        checkedIcon = PiliSymbols.ThumbDownFilled,
+        checked = disliked,
+        onClick = { scope.launch { YtLikes.setDislike(info.url, info.id, !disliked)?.let(toast) } },
+    )
     ConnectedActionGroup(
-        listOf(
+        listOfNotNull(
             first,
+            dislike,
             ActionSpec(
                 label = "稍后再看",
                 icon = PiliSymbols.WatchLater,

@@ -923,7 +923,21 @@ fun BiliVideoPlayer(
                             }
                         }
                         if (controls) {
-                            CompositionLocalProvider(LocalPlayerShot provides if (canShot) takeShot else null) {
+                            val nav = com.gpo.pilipala.navigation.LocalNavigator.current
+                            val reportAid = ctrl.target?.aid?.takeIf { it > 0 && com.gpo.pilipala.core.net.BiliClient.isLoggedIn }
+                            val report: (() -> Unit)? = reportAid?.let { aid ->
+                                {
+                                    // The appeal form is bilibili's own page (its categories and
+                                    // fields change server-side); the page is pushed over the
+                                    // video, so fullscreen folds back first.
+                                    if (fullscreen) onFullscreenChange(false)
+                                    nav.push(com.gpo.pilipala.navigation.Route.Web(videoReportUrl(aid), "举报视频"))
+                                }
+                            }
+                            CompositionLocalProvider(
+                                LocalPlayerShot provides if (canShot) takeShot else null,
+                                LocalPlayerReport provides report,
+                            ) {
                                 PlayerSheets(ctrl, ui, fullscreen, sheetScheme = if (fullscreen) overlayScheme else pageScheme)
                             }
                         }

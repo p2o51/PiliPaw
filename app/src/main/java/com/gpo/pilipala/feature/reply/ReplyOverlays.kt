@@ -49,7 +49,10 @@ import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
+import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
+import com.gpo.pilipala.feature.member.BlockGlyph
+import com.gpo.pilipala.ui.components.SheetChipAction
 import kotlinx.coroutines.launch
 import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.SheetInsets
@@ -60,6 +63,8 @@ internal class ReplyUiState {
     var menuFor by mutableStateOf<Reply?>(null)
     var confirmDelete by mutableStateOf<Reply?>(null)
     var freeCopy by mutableStateOf<String?>(null)
+    var reportFor by mutableStateOf<Reply?>(null)
+    var confirmBlock by mutableStateOf<Reply?>(null)
     var composer by mutableStateOf<ComposeTarget?>(null)
 
     /** Rows resizing right now (text expanding, a reply expanding in). */
@@ -106,6 +111,7 @@ internal fun rememberReplyActions(
         ReplyActions(
             likeState = { vm.likeState(it) },
             onLike = { r -> if (!vm.toggleLike(r)) requireLogin(nav, toast) },
+            onDislike = { r -> if (!vm.toggleDislike(r)) requireLogin(nav, toast) },
             onReply = { r -> if (requireLogin(nav, toast)) ui.composer = replyTarget(r) },
             onOpenThread = if (hasThread) { r -> openThread?.invoke(r) } else null,
             onLongPress = { ui.menuFor = it },
@@ -138,6 +144,31 @@ internal fun ReplyOverlays(
             },
             onFreeCopy = { ui.freeCopy = reply.content.message },
             onDelete = { ui.confirmDelete = reply },
+            onReport = { ui.reportFor = reply },
+            onBlock = { ui.confirmBlock = reply },
+        )
+    }
+
+    ui.reportFor?.let { reply ->
+        ReplyReportSheet(
+            reply = reply,
+            onDismiss = { ui.reportFor = null },
+            onSubmit = { reason, detail, block, done, fail -> vm.report(reply, reason, detail, block, done, fail) },
+        )
+    }
+
+    ui.confirmBlock?.let { reply ->
+        AlertDialog(
+            onDismissRequest = { ui.confirmBlock = null },
+            title = { Text("拉黑 ${reply.member.name}") },
+            text = { Text("拉黑后对方不能关注你、给你发消息或回复你，PiliPaw 也不再推荐对方的视频。可以在 设置 › 黑名单管理 里移出。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    ui.confirmBlock = null
+                    vm.block(reply)
+                }) { Text("拉黑", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { ui.confirmBlock = null }) { Text("取消") } },
         )
     }
 
@@ -190,6 +221,8 @@ private fun ReplyMenuSheet(
     onCopy: () -> Unit,
     onFreeCopy: () -> Unit,
     onDelete: () -> Unit,
+    onReport: () -> Unit,
+    onBlock: () -> Unit,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -239,6 +272,14 @@ private fun ReplyMenuSheet(
                 MenuRow(YoinSymbols.EditNote, "自由复制") { run(onFreeCopy) }
                 if (isOwner) {
                     MenuRow(YoinSymbols.Delete, "删除", tint = MaterialTheme.colorScheme.error) { run(onDelete) }
+                }
+            }
+            // Someone else's comment: the quiet pills at the end, apart from the everyday rows.
+            if (BiliClient.isLoggedIn && !isOwner) {
+                Spacer(Modifier.size(24.dp))
+                Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SheetChipAction(PiliSymbols.Flag, "举报", onClick = { run(onReport) }, destructive = true)
+                    SheetChipAction(BlockGlyph, "拉黑", onClick = { run(onBlock) }, destructive = true)
                 }
             }
         }

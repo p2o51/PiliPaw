@@ -102,6 +102,35 @@ internal object ReplyApi {
         )
     }
 
+    /** 点踩: action 1 = dislike, 0 = cancel. */
+    suspend fun hate(oid: Long, type: Int, rpid: Long, hate: Boolean) {
+        BiliClient.postData(
+            "/x/v2/reply/hate",
+            mapOf("oid" to oid, "type" to type, "rpid" to rpid, "action" to if (hate) 1 else 0),
+        )
+    }
+
+    /**
+     * 举报 a comment: [reason] is one of [ReplyReportReasons]' ids; [detail] is the free text
+     * (required for 其他 and 虚假不实信息); [block] also puts the commenter on the blacklist.
+     */
+    suspend fun report(oid: Long, type: Int, rpid: Long, reason: Int, detail: String, block: Boolean) {
+        BiliClient.postData(
+            "/x/v2/reply/report",
+            mapOf(
+                "oid" to oid,
+                "type" to type,
+                "rpid" to rpid,
+                "reason" to reason,
+                "content" to detail.trim().takeIf { it.isNotEmpty() },
+                "add_blacklist" to block,
+                "gaia_source" to "main_h5",
+                "platform" to "android",
+                "scene" to "main",
+            ),
+        )
+    }
+
     class AddResult(val reply: Reply?, val toast: String)
 
     /**

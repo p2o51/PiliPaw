@@ -11,6 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -31,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -99,6 +102,13 @@ internal data class VideoMenuAction(
     val onClick: () -> Unit,
 )
 
+/**
+ * One choice under 不感兴趣 (不想看 UP 主…, or a [feedback] one such as 标题党); [send] tells the
+ * feed. A card with any gets a reason step in its menu instead of the plain 不感兴趣.
+ */
+@Immutable
+internal class DeclineReason(val label: String, val feedback: Boolean = false, val send: suspend () -> Unit)
+
 /** Whether a card has the video card menu (a plain UGC video, not a live / bangumi / article target). */
 internal val VideoItem.isPlainVideo: Boolean
     get() = target == null && (bvid.isNotEmpty() || aid > 0)
@@ -109,7 +119,7 @@ internal fun VideoItem.webUrl(): String {
     return if (bv.isEmpty()) "" else "https://www.bilibili.com/video/$bv"
 }
 
-private enum class MenuPage { Actions, Block, Cache }
+private enum class MenuPage { Actions, Block, Cache, Decline }
 
 private val CoverShape = ContinuousRoundedCornerShape(12.dp)
 private val OwnerShape = ContinuousRoundedCornerShape(20.dp)
@@ -138,6 +148,7 @@ internal fun VideoCardMenu(
     extras: List<VideoMenuAction> = emptyList(),
     watchLater: Boolean = true,
     isVideo: Boolean = item.isPlainVideo,
+    declineReasons: List<DeclineReason> = emptyList(),
 ) {
     item.youtubeUrl?.let { yt ->
         YoutubeCardMenu(item, yt, onDismiss, onRemove, extras, watchLater)
@@ -226,8 +237,13 @@ internal fun VideoCardMenu(
             if (onRemove != null) {
                 add(
                     MenuRow(PiliSymbols.ThumbDown, "不感兴趣") {
-                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        if (dislike == null) close(onRemove) else runWrite(dislike) { close(onRemove) }
+                        if (declineReasons.isNotEmpty()) {
+                            haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                            page = MenuPage.Decline
+                        } else {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            if (dislike == null) close(onRemove) else runWrite(dislike) { close(onRemove) }
+                        }
                     },
                 )
             }
@@ -292,6 +308,15 @@ internal fun VideoCardMenu(
                         toast(msg)
                         page = MenuPage.Actions
                     })
+                    MenuPage.Decline -> DeclineStep(
+                        reasons = declineReasons,
+                        enabled = !busy && !finisher.finishing,
+                        doneLabel = { finisher.doneLabel(it) },
+                        onBack = { page = MenuPage.Actions },
+                        onPick = { r ->
+                            runWrite(r.send) { finisher.finish(r.label, if (r.feedback) "已反馈" else "将减少推荐") { onRemove?.invoke() } }
+                        },
+                    )
                     MenuPage.Block -> BlockConfirm(
                         name = item.ownerName,
                         busy = busy,
@@ -621,6 +646,50 @@ private fun CacheStep(item: VideoItem, close: () -> Unit, onFail: (String) -> Un
             }
             CachePage(target, item.ownerName, null, close)
         }
+    }
+}
+
+/**
+ * 不感兴趣, with why: the feed's own reasons as pills (不感兴趣, 不想看 UP 主 / 分区 / 频道…),
+ * then its 反馈 ones (内容引起不适, 标题党…) under their own label. The picked pill turns into a
+ * tick and its done label before the sheet goes and the card leaves the list.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DeclineStep(
+    reasons: List<DeclineReason>,
+    enabled: Boolean,
+    doneLabel: (String) -> String?,
+    onBack: () -> Unit,
+    onPick: (DeclineReason) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth()) {
+        listOf(
+            "不想看到" to reasons.filterNot { it.feedback },
+            "告诉 B站" to reasons.filter { it.feedback },
+        ).filter { it.second.isNotEmpty() }.forEachIndexed { i, (title, group) ->
+            if (i > 0) Spacer(Modifier.height(GroupGap))
+            Text(
+                title,
+                style = MaterialTheme.typography.labelLarge,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                group.forEach { r ->
+                    val done = doneLabel(r.label)
+                    com.gpo.pilipala.ui.components.SheetChipAction(
+                        icon = if (done != null) YoinSymbols.Check else if (r.feedback) YoinSymbols.Info else PiliSymbols.ThumbDown,
+                        label = done ?: r.label,
+                        onClick = { onPick(r) },
+                        enabled = enabled,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(GroupGap))
+        TextButton(onClick = onBack, enabled = enabled) { Text("返回") }
     }
 }
 
