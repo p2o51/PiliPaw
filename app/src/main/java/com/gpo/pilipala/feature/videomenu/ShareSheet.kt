@@ -61,17 +61,21 @@ import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-/** What is being shared: a B站 video. */
-internal class ShareTarget(val aid: Long, val title: String, val cover: String, val url: String)
+/** What is being shared: a B站 video; [cid] is the part on screen (0 = the first). */
+internal class ShareTarget(val aid: Long, val title: String, val cover: String, val url: String, val cid: Long = 0)
 
 /**
  * 分享's choices: the recent 私信 contacts ([ShareContactsRow]), then a standard button group of
  * equal tonal buttons: 转发到动态 (signed in, opens [onForward]), 复制链接 (a tick, then the
- * sheet goes) and 更多方式 (the system share sheet).
+ * sheet goes), 复制字幕 (标题, 链接, UP主, 标签, 简介 and the subtitles, see
+ * [loadVideoTranscript]) and 更多方式 (the system share sheet).
  */
 @Composable
 internal fun ShareChoices(target: ShareTarget, finisher: SheetFinisher, enabled: Boolean, onForward: () -> Unit) {
     val context = LocalContext.current
+    val toast = rememberToast()
+    val scope = rememberCoroutineScope()
+    var fetching by remember { mutableStateOf(false) }
     // Two groups: the people (one tap sends it), then the ways to share; loose between them.
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         ShareContactsRow(target, finisher)
@@ -91,6 +95,34 @@ internal fun ShareChoices(target: ShareTarget, finisher: SheetFinisher, enabled:
                 done = finisher.doneLabel("复制链接"),
                 enabled = enabled,
             )
+            if (target.aid > 0) {
+                SheetGroupButton(
+                    PiliSymbols.Subtitles,
+                    if (fetching) "获取中…" else "复制字幕",
+                    {
+                        if (!fetching) {
+                            fetching = true
+                            scope.launch {
+                                try {
+                                    val t = loadVideoTranscript(target)
+                                    context.getSystemService(ClipboardManager::class.java)
+                                        ?.setPrimaryClip(ClipData.newPlainText(target.title, t.text))
+                                    if (!t.hasSubtitles) toast("这个视频没有字幕，已复制标题、简介等信息")
+                                    finisher.finish("复制字幕", "已复制")
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Throwable) {
+                                    toast(e.friendlyMessage())
+                                }
+                                fetching = false
+                            }
+                        }
+                    },
+                    Modifier.weight(1f),
+                    done = finisher.doneLabel("复制字幕"),
+                    enabled = enabled,
+                )
+            }
             SheetGroupButton(
                 YoinSymbols.Share,
                 "更多方式",

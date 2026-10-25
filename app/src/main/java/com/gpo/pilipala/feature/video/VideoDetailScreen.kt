@@ -654,7 +654,7 @@ private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
         )
         VideoSheet.Share -> if (d != null) {
             com.gpo.pilipala.feature.videomenu.VideoShareSheet(
-                com.gpo.pilipala.feature.videomenu.ShareTarget(d.aid, d.title, d.pic, "https://www.bilibili.com/video/${d.bvid}"),
+                com.gpo.pilipala.feature.videomenu.ShareTarget(d.aid, d.title, d.pic, "https://www.bilibili.com/video/${d.bvid}", cid = vm.cid),
                 onDismiss = { sheet = null },
             )
         }
