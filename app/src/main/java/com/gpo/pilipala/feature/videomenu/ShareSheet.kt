@@ -104,10 +104,9 @@ internal fun ShareChoices(target: ShareTarget, finisher: SheetFinisher, enabled:
                             fetching = true
                             scope.launch {
                                 try {
-                                    val t = loadVideoTranscript(target)
+                                    val text = loadVideoTranscript(target)
                                     context.getSystemService(ClipboardManager::class.java)
-                                        ?.setPrimaryClip(ClipData.newPlainText(target.title, t.text))
-                                    if (!t.hasSubtitles) toast("这个视频没有字幕，已复制标题、简介等信息")
+                                        ?.setPrimaryClip(ClipData.newPlainText(target.title, text))
                                     finisher.finish("复制字幕", "已复制")
                                 } catch (e: CancellationException) {
                                     throw e
