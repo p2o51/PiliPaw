@@ -12,15 +12,12 @@ import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.feature.player.PictureSwipeDown
 import com.gpo.pilipala.feature.sources.BiliKeeper
-import com.gpo.pilipala.feature.sources.KeepPlaying
+import com.gpo.pilipala.feature.sources.DockFlightEffect
 import com.gpo.pilipala.feature.sources.PlayerHost
 import com.gpo.pilipala.feature.sources.PlayerSlot
 import com.gpo.pilipala.navigation.LocalNavigator
-import com.gpo.pilipala.navigation.transition.HeroDock
 import com.gpo.pilipala.navigation.transition.LocalPageTransitions
 import com.gpo.pilipala.navigation.transition.SwipeBack
-import com.gpo.pilipala.ui.components.WidthClass
-import com.gpo.pilipala.ui.components.widthClass
 
 /**
  * The video page's swipe down on its picture: the page closes under the finger as a back gesture
@@ -35,40 +32,12 @@ internal fun rememberVideoSwipeDown(): PictureSwipeDown? {
     val density = LocalDensity.current
     val window = LocalWindowInfo.current.containerSize
     val navBottom = WindowInsets.navigationBars.getBottom(density)
-    val tablet = widthClass() != WidthClass.Compact
-    val metrics by rememberUpdatedState(Metrics(window.width.toFloat(), (window.height - navBottom).toFloat(), tablet))
+    val metrics by rememberUpdatedState(Metrics(window.height.toFloat() - navBottom))
     // Any back of this page (gesture, button, the picture's swipe) whose video 继续播放 keeps: the
     // picture's last frame flies into the bar's tile, where the bar takes over in place.
-    val key = remember { nav.backStack.lastOrNull()?.toString() }
-    if (key != null) {
-        androidx.compose.runtime.DisposableEffect(transitions, key) {
-            val stack = nav.backStack
-            fun shellBeneath(): Boolean {
-                val i = stack.indexOfLast { it.toString() == key }
-                val beneath = stack.getOrNull(i - 1)
-                return beneath == com.gpo.pilipala.navigation.Route.Main || beneath == com.gpo.pilipala.yt.navigation.Route.Main
-            }
-            val dock = HeroDock(
-                key = key,
-                enabled = {
-                    val c = (PlayerHost.front as? PlayerSlot.Bili)?.player as? PiliPlayerController
-                    c != null && BiliKeeper.wouldKeep(c)
-                },
-                target = {
-                    val shell = shellBeneath()
-                    // Opened from the floating window (or circle): back to it, else the bar's tile.
-                    val form = PlayerHost.front?.let(PlayerHost::remembered) as? com.gpo.pilipala.feature.sources.DockForm
-                    form?.rect ?: metrics.let { m -> KeepPlaying.dockTile(shell, m.w, m.h, m.tablet, density) }
-                },
-                corner = {
-                    val form = PlayerHost.front?.let(PlayerHost::remembered) as? com.gpo.pilipala.feature.sources.DockForm
-                    form?.tileCorner ?: with(density) { 6.dp.toPx() }
-                },
-                landing = { KeepPlaying.arrive(it, shellBeneath()) },
-            )
-            transitions.registerHeroDock(dock)
-            onDispose { transitions.unregisterHeroDock(dock) }
-        }
+    DockFlightEffect {
+        val c = (PlayerHost.front as? PlayerSlot.Bili)?.player as? PiliPlayerController
+        c != null && BiliKeeper.wouldKeep(c)
     }
     return remember(transitions, nav, density) {
         object : PictureSwipeDown {
@@ -100,4 +69,4 @@ internal fun rememberVideoSwipeDown(): PictureSwipeDown? {
     }
 }
 
-private class Metrics(val w: Float, val h: Float, val tablet: Boolean)
+private class Metrics(val h: Float)

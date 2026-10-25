@@ -7,8 +7,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -36,7 +34,11 @@ import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.core.util.Images
 import com.gpo.pilipala.ui.components.friendlyMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -51,10 +53,16 @@ internal val LiveDefaultQn = AppSettings.register("live_default_qn", 10000)
 /** 直播默认画质 choices, best first (pilipala's LiveQuality list). */
 internal val LiveQnChoices: List<Pair<Int, String>> = listOf(30000, 20000, 10000, 400, 250, 150, 80).map { it to LiveQnNames.getValue(it) }
 
+/**
+ * A live room: its info, stream, chat and relation. Held by the room's page ([LiveRoomEntry]),
+ * or by the mini bar after the page went while it played (继续播放, LiveKeeper), so it is not a
+ * ViewModel of its own: whoever holds it last [release]s it.
+ */
 internal class LiveRoomViewModel(
     val roomId: Long,
     private val appContext: Context,
-) : ViewModel() {
+) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     // ── Room ──────────────────────────────────────────────────────────────
     var info by mutableStateOf<LiveRoomInfo?>(null)
@@ -142,12 +150,12 @@ internal class LiveRoomViewModel(
         loadInfo()
         startChat()
         loadRoomEmotes()
-        viewModelScope.launch { AppSettings.backgroundPlay.state.collect { syncBackgroundHost() } }
+        scope.launch { AppSettings.backgroundPlay.state.collect { syncBackgroundHost() } }
     }
 
     private fun loadRoomEmotes() {
         if (!BiliClient.isLoggedIn) return
-        viewModelScope.launch {
+        scope.launch {
             runCatching {
                 BiliClient.getData(
                     "${BiliHosts.LIVE}/xlive/web-ucenter/v2/emoticon/GetEmoticons",
@@ -159,7 +167,7 @@ internal class LiveRoomViewModel(
     }
 
     fun loadInfo() {
-        viewModelScope.launch {
+        scope.launch {
             loadingInfo = true
             infoError = null
             runCatching { fetchInfo() }
@@ -258,7 +266,7 @@ internal class LiveRoomViewModel(
     // ── Stream ────────────────────────────────────────────────────────────
 
     fun loadStream(qn: Int = currentQn.takeIf { it > 0 } ?: LiveDefaultQn.value) {
-        viewModelScope.launch {
+        scope.launch {
             loadingStream = true
             streamError = null
             runCatching {
@@ -473,7 +481,7 @@ internal class LiveRoomViewModel(
     // ── Chat ──────────────────────────────────────────────────────────────
 
     private fun startChat() {
-        viewModelScope.launch {
+        scope.launch {
             loadHistory()
             val conf = runCatching {
                 BiliClient.getData(
@@ -489,13 +497,13 @@ internal class LiveRoomViewModel(
                 return@launch
             }
             socket = LiveDanmakuSocket(
-                scope = viewModelScope,
+                scope = scope,
                 roomId = roomId,
-                onChat = { list -> viewModelScope.launch { appendChats(list) } },
-                onTip = { t -> viewModelScope.launch { showTip(t) } },
-                onWatched = { w -> viewModelScope.launch { info = info?.copy(watchedText = w) } },
+                onChat = { list -> scope.launch { appendChats(list) } },
+                onTip = { t -> scope.launch { showTip(t) } },
+                onWatched = { w -> scope.launch { info = info?.copy(watchedText = w) } },
                 onState = { connected ->
-                    viewModelScope.launch {
+                    scope.launch {
                         if (connected) pollJob?.cancel() else startPolling()
                     }
                 },
@@ -505,7 +513,7 @@ internal class LiveRoomViewModel(
 
     private fun startPolling() {
         if (pollJob?.isActive == true) return
-        pollJob = viewModelScope.launch {
+        pollJob = scope.launch {
             while (isActive) {
                 delay(4_000)
                 loadHistory()
@@ -563,7 +571,7 @@ internal class LiveRoomViewModel(
         tip = t
         tipVisible = true
         tipJob?.cancel()
-        tipJob = viewModelScope.launch {
+        tipJob = scope.launch {
             delay(3_000)
             tipVisible = false
         }
@@ -622,7 +630,7 @@ internal class LiveRoomViewModel(
 
     /** [mutualOnly]: the read-only check after a follow only learns 互相关注, never undoes the follow. */
     private fun loadRelation(uid: Long, mutualOnly: Boolean = false) {
-        viewModelScope.launch {
+        scope.launch {
             runCatching { BiliClient.getData("/x/relation", mapOf("fid" to uid)).asObj }
                 .onSuccess {
                     val attribute = it.int("attribute")
@@ -656,7 +664,7 @@ internal class LiveRoomViewModel(
     }
 
     private fun roomEntry() {
-        viewModelScope.launch {
+        scope.launch {
             runCatching {
                 BiliClient.postForm(
                     "${BiliHosts.LIVE}/xlive/web-room/v1/index/roomEntryAction",
@@ -666,7 +674,25 @@ internal class LiveRoomViewModel(
         }
     }
 
-    override fun onCleared() {
+    /**
+     * Playing (or about to) a stream that is on air: worth keeping in the mini bar when its page
+     * goes (继续播放).
+     */
+    val keepable: Boolean
+        get() = playerBuilt && !userPaused && (player.isPlaying || player.playWhenReady) &&
+            info?.liveStatus != 0 && streamError == null
+
+    /** Docked in the mini bar: still on screen (the notification stays), and still playing. */
+    fun dock() {
+        visible = true
+        if (playerBuilt && !userPaused && !player.playWhenReady) {
+            player.seekToDefaultPosition()
+            player.play()
+        }
+        syncBackgroundHost()
+    }
+
+    fun release() {
         socket?.close()
         pollJob?.cancel()
         session?.let {
@@ -676,7 +702,7 @@ internal class LiveRoomViewModel(
         hosted = false
         session = null
         if (playerBuilt) player.release()
-        super.onCleared()
+        scope.cancel()
     }
 
     companion object {

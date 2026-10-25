@@ -11,10 +11,9 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -72,8 +71,6 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.VelocityTracker1D
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.LocalDensity
@@ -93,6 +90,7 @@ import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.toPath
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.source.VideoSource
+import com.gpo.pilipala.feature.live.LiveRoomViewModel
 import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.pageSharedSource
@@ -135,7 +133,10 @@ object KeepPlaying {
     fun choose(keep: Boolean) {
         AppSettings.set(mode, if (keep) 2 else 1)
         asking = false
-        if (!keep) BiliKeeper.close()
+        if (!keep) {
+            BiliKeeper.close()
+            LiveKeeper.close()
+        }
     }
 
     /**
@@ -179,7 +180,7 @@ object KeepPlaying {
 
     /** The room the nav bar makes at its start for the merged circle (0..1 of it). */
     val navRoom: Float
-        get() = if (BiliKeeper.held != null || (Player.session != null && !Player.expanded)) mergeRaw else navRoomLeaving.value
+        get() = if (BiliKeeper.held != null || LiveKeeper.held != null || (Player.session != null && !Player.expanded)) mergeRaw else navRoomLeaving.value
 
     /** A circle swiped off the nav bar: the room it leaves behind closes on a spring (else 0 at once). */
     private val navRoomLeaving = Animatable(0f)
@@ -251,11 +252,11 @@ object KeepPlaying {
      * Where the bar's picture will rest (window px) once the page over [shell] goes: for a flight
      * that lands in it. [w] × [h] is the window less the system's navigation bar.
      */
-    internal fun dockTile(shell: Boolean, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density): Rect {
-        val bar = miniBarRect(if (shell) NavSpot.bounds ?: NavSpot.last else null, w, h, tablet, density, InputSpot.top.takeIf { !shell })
+    internal fun dockTile(shell: Boolean, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density, live: Boolean = false): Rect {
+        val bar = miniBarRect(if (shell) NavSpot.bounds ?: NavSpot.last else null, w, h, tablet, density, sides = !live)
         val barH = bar.height
         val gap = with(density) { BlockGap.toPx() }
-        return miniGeo(barH * 16f / 9f, MiniDims(1f, barH * 16f / 9f, 1f), bar, null, 16f / 9f, Offset.Unspecified, Rect(0f, 0f, w, h), null, MiniPx(gap, 0f, 0f, 0f, 0f)).tile
+        return miniGeo(barH * 16f / 9f, MiniDims(1f, barH * 16f / 9f, 1f), bar, null, 16f / 9f, Offset.Unspecified, Rect(0f, 0f, w, h), null, MiniPx(gap, 0f, 0f, 0f, 0f), sides = !live).tile
     }
 
     /**
@@ -294,7 +295,31 @@ object KeepPlaying {
         windowCorner = null
         landing = null
         scrollWantsMerge = false
+        floatReturn = null
     }
+
+    /**
+     * Pages where typing happens at the bottom (私信, 发动态) put the mini player up as a floating
+     * window in a top corner while they are on screen ([miniPlayerFloatOnly]); counted, so a page
+     * covering another keeps it so.
+     */
+    private val floatPages = androidx.compose.runtime.mutableStateMapOf<Any, Unit>()
+
+    val floatOnly: Boolean get() = floatPages.isNotEmpty()
+
+    internal fun floatOn(token: Any) {
+        floatPages[token] = Unit
+    }
+
+    internal fun floatOff(token: Any) {
+        floatPages.remove(token)
+    }
+
+    /** The form the float-only page found the player in (the bar or the circle); null: it was a window already. */
+    internal var floatReturn: MiniRest? = null
+
+    /** The nav bar went while the bar was the circle: what a float-only page gives back on leaving. */
+    internal var mergedBeforePage = false
 
     /**
      * For the shell's content: scrolling down folds the bar into a circle in the nav bar,
@@ -320,6 +345,49 @@ object KeepPlaying {
             scrollWantsMerge = false
             if (rest == MiniRest.Merged) rest = MiniRest.Row
         }
+    }
+}
+
+/**
+ * For a page whose player 继续播放 keeps when it goes (a video, a live room): any back of it
+ * (gesture, button, the picture's swipe) that keeps it, [enabled] at the commit, flies the
+ * picture's last frame into the bar's tile, or the window or circle it was opened from, where the
+ * bar takes over in place. The page gives the frame with a PageHeroEffect.
+ */
+@Composable
+internal fun DockFlightEffect(live: Boolean = false, enabled: () -> Boolean) {
+    val transitions = com.gpo.pilipala.navigation.transition.LocalPageTransitions.current ?: return
+    val nav = com.gpo.pilipala.navigation.LocalNavigator.current
+    val density = LocalDensity.current
+    val window = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize
+    val navBottom = WindowInsets.navigationBars.getBottom(density)
+    val tablet = widthClass() != WidthClass.Compact
+    val metrics by rememberUpdatedState(Triple(window.width.toFloat(), (window.height - navBottom).toFloat(), tablet))
+    val isEnabled by rememberUpdatedState(enabled)
+    val key = remember { nav.backStack.lastOrNull()?.toString() } ?: return
+    DisposableEffect(transitions, key) {
+        val stack = nav.backStack
+        fun shellBeneath(): Boolean {
+            val i = stack.indexOfLast { it.toString() == key }
+            val beneath = stack.getOrNull(i - 1)
+            return beneath == Route.Main || beneath == com.gpo.pilipala.yt.navigation.Route.Main
+        }
+        val dock = com.gpo.pilipala.navigation.transition.HeroDock(
+            key = key,
+            enabled = { isEnabled() },
+            target = {
+                // Opened from the floating window (or circle): back to it, else the bar's tile.
+                val form = PlayerHost.front?.let(PlayerHost::remembered) as? DockForm
+                form?.rect ?: metrics.let { (w, h, tablet) -> KeepPlaying.dockTile(shellBeneath(), w, h, tablet, density, live) }
+            },
+            corner = {
+                val form = PlayerHost.front?.let(PlayerHost::remembered) as? DockForm
+                form?.tileCorner ?: with(density) { InnerCorner.toPx() }
+            },
+            landing = { KeepPlaying.arrive(it, shellBeneath()) },
+        )
+        transitions.registerHeroDock(dock)
+        onDispose { transitions.unregisterHeroDock(dock) }
     }
 }
 
@@ -356,30 +424,17 @@ object NavSpot {
 }
 
 /**
- * Rows at the bottom of a page that take typing (a chat's composer, 发动态's toolbar), each
- * reporting its top (window px) through [miniBarClear]: on a page without the nav bar the bar
- * rests above the highest one instead of over it, and steps out of the way while the keyboard is
- * up. Null: none on screen.
+ * This page types at its bottom (a chat's composer, 发动态's toolbar): while it is on screen the
+ * keep-playing mini player shows only as a floating window, up in a top corner, out of the way.
+ * Leaving gives back the bar or the circle it was ([KeepPlaying.floatOnly]).
  */
-object InputSpot {
-    private val tops = androidx.compose.runtime.mutableStateMapOf<Any, Float>()
-
-    val top: Float? get() = tops.values.minOrNull()
-
-    internal fun place(token: Any, top: Float) {
-        if (tops[token] != top) tops[token] = top
-    }
-
-    internal fun clear(token: Any) {
-        tops.remove(token)
-    }
-}
-
-/** This row takes typing at the bottom of its page: the mini bar keeps clear of it ([InputSpot]). */
-fun Modifier.miniBarClear(): Modifier = composed {
+fun Modifier.miniPlayerFloatOnly(): Modifier = composed {
     val token = remember { Any() }
-    DisposableEffect(token) { onDispose { InputSpot.clear(token) } }
-    onGloballyPositioned { InputSpot.place(token, it.boundsInWindow().top) }
+    DisposableEffect(token) {
+        KeepPlaying.floatOn(token)
+        onDispose { KeepPlaying.floatOff(token) }
+    }
+    this
 }
 
 /**
@@ -450,6 +505,48 @@ internal object BiliKeeper {
     }
 }
 
+/**
+ * The live room kept after its page went (继续播放): the stream carries on in the mini bar, chat
+ * and all. Reopening the room takes it back; any video opening, the bar's swipe or the window's
+ * close stops it for good.
+ */
+internal object LiveKeeper {
+    internal var held by mutableStateOf<LiveRoomViewModel?>(null)
+        private set
+
+    /** Whether [room]'s page leaving now would keep it in the bar (the stop-playing setting allowing). */
+    internal fun wouldKeep(room: LiveRoomViewModel): Boolean =
+        KeepPlaying.mode.value != 1 && room.keepable && PlayerHost.front == PlayerSlot.Live(room)
+
+    /** [room]'s page went: kept in the bar (true), or the caller releases it. */
+    internal fun offer(room: LiveRoomViewModel): Boolean {
+        if (KeepPlaying.mode.value == 1 || !room.keepable) return false
+        if (!PlayerHost.dock(PlayerSlot.Live(room))) return false
+        if (KeepPlaying.mode.value == 0) KeepPlaying.asking = true
+        held?.takeIf { it !== room }?.release()
+        room.dock()
+        held = room
+        return true
+    }
+
+    /** The room's page opens again: it carries on with the kept stream. */
+    internal fun take(roomId: Long): LiveRoomViewModel? {
+        val r = held?.takeIf { it.roomId == roomId } ?: return null
+        held = null
+        return r
+    }
+
+    fun close() {
+        val r = held ?: return
+        held = null
+        PlayerHost.released(PlayerSlot.Live(r))
+        r.release()
+    }
+
+    internal fun route(r: LiveRoomViewModel): Route =
+        Route.LiveRoom(r.roomId, r.info?.cover.orEmpty(), r.info?.title.orEmpty())
+}
+
 /** What the bar draws and does, whichever part is playing. */
 private class Playing(
     val source: VideoSource,
@@ -465,10 +562,30 @@ private class Playing(
     val player: androidx.media3.common.Player? = null,
     /** A Bilibili video's page: it grows out of the picture where it is (a shared source). */
     val route: Route? = null,
+    /** A live stream: no ±15, no progress; a red dot on the picture says it is live. */
+    val live: Boolean = false,
 )
 
 @Composable
 private fun currentPlaying(): Playing? {
+    // A live room in the bar (only ever alone there: opening it closed the rest).
+    LiveKeeper.held?.let { room ->
+        val route = LiveKeeper.route(room)
+        return Playing(
+            source = VideoSource.Bilibili,
+            title = room.info?.title.orEmpty(),
+            cover = MixItems.secure(room.info?.cover.orEmpty()),
+            isPlaying = room.isPlaying,
+            progress = 0f,
+            toggle = { room.togglePlay() },
+            seekBy = {},
+            open = { BiliLinks.open(route) },
+            close = { LiveKeeper.close() },
+            player = room.player,
+            route = route,
+            live = true,
+        )
+    }
     // Both kept: the one playing (starting either pauses the other).
     val ytUp = Player.session != null && !Player.expanded
     val bili = BiliKeeper.held?.takeIf { it.isPlaying || !ytUp || !Player.isPlaying }
@@ -545,14 +662,14 @@ internal val NavRoom = CircleSize + 4.dp
 /**
  * Where the bar rests (window px, in a [w] × [h] area above the system's navigation bar): over
  * the nav bar (phone), left of it in its row (tablet, when there is room), or at the bottom on a
- * page without one, above its typing row ([input], that row's top) if it has one.
+ * page without one. A live bar has no ±15 blocks ([sides] false), so it is narrower.
  */
-internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density, input: Float? = null): Rect = with(density) {
+internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density, sides: Boolean = true): Rect = with(density) {
     val barH = (if (tablet) BarHeightTablet else BarHeightPhone).toPx()
     val navGap = NavGap.toPx()
     val side = SideMargin.toPx()
     // It hugs its blocks: three square keys (as wide as the bar is tall), the 16:9 picture, 3dp gaps.
-    val bw = minOf(miniBarWidth(barH, BlockGap.toPx()), w - side * 2f)
+    val bw = minOf(miniBarWidth(barH, BlockGap.toPx(), sides), w - side * 2f)
     when {
         nav != null && tablet && nav.left - navGap - side >= bw -> {
             val top = nav.center.y - barH / 2f
@@ -560,7 +677,7 @@ internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, densit
         }
         else -> {
             val left = (w - bw) / 2f
-            val bottom = nav?.top?.minus(navGap) ?: minOf(h - side, input?.minus(navGap) ?: h)
+            val bottom = nav?.top?.minus(navGap) ?: (h - side)
             Rect(left, bottom - barH, left + bw, bottom)
         }
     }
@@ -569,7 +686,7 @@ internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, densit
 /** Extra bottom room a shell list needs while the bar sits above the nav bar (phones). */
 @Composable
 fun miniBarInset(): Dp {
-    val showing = BiliKeeper.held != null || Player.session != null
+    val showing = BiliKeeper.held != null || LiveKeeper.held != null || Player.session != null
     return if (showing) BarHeightPhone + NavGap else 0.dp
 }
 
@@ -600,9 +717,6 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
 
     /** Letting go now closes it: the scrim turns solid and the circle a cookie. */
     var dockArmed by mutableStateOf(false)
-
-    /** Typing on a page with an input row: the bar sinks out of sight and fades (1: away). */
-    val away = Animatable(0f)
 
     /** The circle's own scale while it springs away (1 at rest). */
     val dockScale = Animatable(1f)
@@ -660,6 +774,9 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
     }
     var px by mutableStateOf(MiniPx(0f, 0f, 0f, 0f, 0f))
 
+    /** The ±15 blocks are there (not for a live stream). */
+    var sides by mutableStateOf(true)
+
     val canMerge: Boolean get() = nav != null
 
     val geo by derivedStateOf {
@@ -674,13 +791,21 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
             nav = nav,
             px = px,
             pinned = popping,
+            sides = sides,
         )
     }
 
     fun restAxis(rest: MiniRest, density: Float): Float = restAxisOf(rest, dims, canMerge, maxAxis, density)
 
     /** Where the bar's picture sits at rest (a merging window travels there). */
-    fun rowTile(): Rect = miniGeo(dims.row, dims, anchor.value, circle, aspect, Offset.Unspecified, bounds, nav, px).tile
+    fun rowTile(): Rect = miniGeo(dims.row, dims, anchor.value, circle, aspect, Offset.Unspecified, bounds, nav, px, sides = sides).tile
+
+    /** The smallest size it may take: the window's while a page keeps it floating, else the circle or the bar. */
+    val minAxis: Float get() = when {
+        KeepPlaying.floatOnly -> dims.detach
+        canMerge -> dims.circle
+        else -> dims.row
+    }
 }
 
 /** The axis (px) a rest stands for; a window's size is kept in dp so it survives a rotation. */
@@ -726,7 +851,7 @@ private fun rememberVideoAspect(player: androidx.media3.common.Player?): Float {
  * (rubber-banding past its largest size). Tapping the picture is what opens the video; tapping
  * the circle opens it out into the bar.
  */
-@OptIn(FlowPreview::class, ExperimentalLayoutApi::class)
+@OptIn(FlowPreview::class)
 @Composable
 fun MiniBarHost() {
     val playing = currentPlaying()
@@ -735,8 +860,15 @@ fun MiniBarHost() {
     DisposableEffect(owner) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
             when (e) {
-                androidx.lifecycle.Lifecycle.Event.ON_STOP -> BiliKeeper.held?.setBackground(true)
-                androidx.lifecycle.Lifecycle.Event.ON_START -> BiliKeeper.held?.setBackground(false)
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    BiliKeeper.held?.setBackground(true)
+                    // A docked live stream: on in the background only as the room's page would be.
+                    LiveKeeper.held?.onAppStopped()
+                }
+                androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                    BiliKeeper.held?.setBackground(false)
+                    LiveKeeper.held?.resumeFromBackground()
+                }
                 else -> Unit
             }
         }
@@ -747,7 +879,14 @@ fun MiniBarHost() {
     val failed = Player.session?.takeIf { !Player.expanded && it.error != null }
     LaunchedEffect(failed) { if (failed != null) Player.close() }
     // 继续播放 switched off in 设置 while a Bilibili video is docked: it stops now, not at the next video.
-    LaunchedEffect(Unit) { KeepPlaying.mode.state.collect { if (it == 1) BiliKeeper.close() } }
+    LaunchedEffect(Unit) {
+        KeepPlaying.mode.state.collect {
+            if (it == 1) {
+                BiliKeeper.close()
+                LiveKeeper.close()
+            }
+        }
+    }
     if (KeepPlaying.asking) KeepAskDialog()
     // Coming and going fade; a picture that just flew in from its page is simply there (the
     // flight left it in the tile), and only the side blocks grow in around it.
@@ -808,12 +947,7 @@ fun MiniBarHost() {
         val dims = with(density) { MiniDims(circle = CircleSize.toPx(), row = barH * 16f / 9f, detachExtra = 40.dp.toPx()) }
         // Landing from the video page's swipe down: the shell's nav bar may not be back yet.
         val nav = KeepPlaying.navForBar()
-        // A page's typing row: the bar rests above it. While the keyboard is up the bar is away,
-        // and keeps the place it had (it must not climb with the row only to sink out of sight).
-        val typing = nav == null && InputSpot.top != null && WindowInsets.isImeVisible
-        var input by remember { mutableStateOf<Float?>(null) }
-        if (nav != null || InputSpot.top == null) input = null else if (!typing) input = InputSpot.top
-        val barTarget = miniBarRect(nav, w, h, tablet, density, input)
+        val barTarget = miniBarRect(nav, w, h, tablet, density, sides = !p.live)
         // The merged circle at the nav bar's start; kept after the nav bar goes so the picture
         // can fly back out of it.
         val circleTarget = nav?.let {
@@ -839,6 +973,7 @@ fun MiniBarHost() {
                 }
         }
         frame.dims = dims
+        frame.sides = !p.live
         frame.view = androidx.compose.ui.platform.LocalView.current
         // A bar swiped away waits out there; the next one to show comes back in the middle.
         LaunchedEffect(frame, up) {
@@ -855,9 +990,8 @@ fun MiniBarHost() {
         frame.maxAxis = maxAxis
         frame.bounds = Rect(margin, statusTop + margin, w - margin, h - margin)
         // A window resting at a bottom corner rests above the nav bar and the bar.
-        // Without a nav bar (a pushed page) the bottom corners sit just above the system's inset,
-        // or above the page's typing row.
-        val restBottom = if (nav != null) nav.top - with(density) { 32.dp.toPx() } else minOf(h, input ?: h) - with(density) { 16.dp.toPx() }
+        // Without a nav bar (a pushed page) the bottom corners sit just above the system's inset.
+        val restBottom = if (nav != null) nav.top - with(density) { 32.dp.toPx() } else h - with(density) { 16.dp.toPx() }
         frame.restArea = Rect(margin, statusTop + margin, w - margin, restBottom)
         frame.dockRange = with(density) { DockSwipeAt.toPx() }
         frame.px = with(density) { MiniPx(BlockGap.toPx(), InnerCorner.toPx(), WindowCorner.toPx(), margin, 8.dp.toPx(), 32.dp.toPx(), 8.dp.toPx()) }
@@ -865,10 +999,6 @@ fun MiniBarHost() {
         // The bar follows the nav bar (a page opening hides it, coming back shows it) on a spring.
         LaunchedEffect(barTarget) {
             if (frame.anchor.targetValue != barTarget) frame.anchor.animateTo(barTarget, MiniSprings.def())
-        }
-        // The keyboard comes up over a typing row: the bar sinks away (and comes back as it goes).
-        LaunchedEffect(frame, typing) {
-            frame.away.animateTo(if (typing) 1f else 0f, MiniSprings.def())
         }
         // Rest changes from outside a gesture (scrolling, a new video, the nav bar going): spring there.
         val restAxis = frame.restAxis(KeepPlaying.rest, density.density)
@@ -888,7 +1018,34 @@ fun MiniBarHost() {
         // The circle lives in the nav bar: a page without one splits it back into the bar.
         val navGone = nav == null
         LaunchedEffect(navGone) {
+            KeepPlaying.mergedBeforePage = navGone && KeepPlaying.rest == MiniRest.Merged
             if (navGone && KeepPlaying.rest == MiniRest.Merged) KeepPlaying.rest = MiniRest.Row
+        }
+        // A page that types at its bottom (私信, 发动态): up as a floating window in the top right,
+        // the way a picture dragged up off the bar pops out; leaving gives back the bar or the
+        // circle. A window already keeps its place, only lifted out of a bottom corner.
+        val floatOnly = KeepPlaying.floatOnly
+        LaunchedEffect(frame, floatOnly) {
+            if (floatOnly) {
+                val corner = KeepPlaying.windowCorner
+                if (KeepPlaying.rest is MiniRest.Window) {
+                    if (corner != null && corner and 2 != 0 && !frame.gesturing) {
+                        snapWindow(frame, scope, frame.restAxis(KeepPlaying.rest, density.density), corner and 1, KeepPlaying.windowCenter, Offset.Zero)
+                    }
+                    return@LaunchedEffect
+                }
+                MiniLog.event("float only", "pops out of ${KeepPlaying.rest}")
+                KeepPlaying.floatReturn = if (KeepPlaying.mergedBeforePage) MiniRest.Merged else KeepPlaying.rest
+                popOut(frame, scope, density.density)
+            } else {
+                val back = KeepPlaying.floatReturn ?: return@LaunchedEffect
+                KeepPlaying.floatReturn = null
+                if (KeepPlaying.rest !is MiniRest.Window || frame.gesturing) return@LaunchedEffect
+                MiniLog.event("float only ends", "back to $back")
+                // The window shrinks back down into its place (as a pinch back into the bar does).
+                KeepPlaying.windowCorner = null
+                KeepPlaying.rest = back
+            }
         }
         // A resting window keeps its corner when the screen around it changes (rotation, nav bar).
         LaunchedEffect(frame.restArea, maxAxis) {
@@ -952,22 +1109,16 @@ fun MiniBarHost() {
                 .pointerInput(frame) { miniGestures(frame, scope, density.density) { latest } }
                 .graphicsLayer {
                     translationX = frame.swipeNow
-                    val away = frame.away.value
-                    alpha = shown * (1f - away).coerceIn(0f, 1f) *
-                        (1f - (abs(frame.swipeNow) / (frame.anchor.value.width * 0.6f).coerceAtLeast(1f))).coerceIn(0f, 1f)
+                    alpha = shown * (1f - (abs(frame.swipeNow) / (frame.anchor.value.width * 0.6f).coerceAtLeast(1f))).coerceIn(0f, 1f)
                     // Closing shrinks as it fades (the window where it is, the bar sinking a little).
                     val going = 0.85f + 0.15f * shown
                     if (frame.geo.windowed) {
                         scaleX = frame.press.value * going
                         scaleY = frame.press.value * going
-                        // Away for the keyboard, the window sinks off the screen's bottom edge as it fades
-                        // (only fading, it would still take the touches where it was).
-                        translationY = away * (h - frame.geo.hit.top + barH)
                     } else if (frame.dockClosing) {
                         // Swiped off the nav bar: the circle shrinks about its own centre instead.
                     } else {
-                        // Away for the keyboard, the bar sinks below the screen's bottom edge.
-                        translationY = (1f - shown) * barH + away * (h - frame.geo.hit.top + barH)
+                        translationY = (1f - shown) * barH
                         scaleX = going
                         scaleY = going
                     }
@@ -1004,8 +1155,8 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
     val minSpan = 48f * density
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-        // Swiped away and going: a tap must not open it again on its way out. Away for the keyboard: not there.
-        if (frame.dockClosing || frame.away.targetValue > 0f) return@awaitEachGesture
+        // Swiped away and going: a tap must not open it again on its way out.
+        if (frame.dockClosing) return@awaitEachGesture
         frame.flingJob?.cancel()
         val g0 = frame.geo
         val windowAtDown = MiniGestures.isWindow(KeepPlaying.rest is MiniRest.Window, g0.windowed)
@@ -1083,8 +1234,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                 }
                 // The size follows the fingers 1:1 (the picture's side scales with their span).
                 raw = startAxis * span.coerceAtLeast(minSpan) / startSpan
-                val min = if (frame.canMerge) frame.dims.circle else frame.dims.row
-                val now = MiniAxis.rubber(raw, min, frame.maxAxis)
+                val now = MiniAxis.rubber(raw, frame.minAxis, frame.maxAxis)
                 // A tick where letting go would change what it becomes: the circle past halfway,
                 // a window ~70% of the way to the detach point (as the release decides).
                 val d = frame.dims
@@ -1115,7 +1265,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             travel += delta
             finger += delta
             if (!dragging && !giveUp && travel.getDistance() > viewConfiguration.touchSlop &&
-                windowAtDown && MiniGestures.startsMerge(KeepPlaying.windowCorner, travel)
+                windowAtDown && !KeepPlaying.floatOnly && MiniGestures.startsMerge(KeepPlaying.windowCorner, travel)
             ) {
                 dragging = true
                 merging = true
@@ -1284,11 +1434,25 @@ private fun openDock(frame: MiniFrame, p: Playing) {
     p.open()
 }
 
+/** The corner a page that keeps the player floating puts it in (1 = top right). */
+private const val TopRight = 1
+
+/**
+ * The bar's picture pops out as a floating window into the top right, on the springs a drag up
+ * off the bar lets go on (the size from the bar's, the place from the picture's).
+ */
+private fun popOut(frame: MiniFrame, scope: CoroutineScope, density: Float) {
+    val from = frame.geo.tile.center
+    KeepPlaying.rest = MiniRest.Window(frame.dims.detach / density)
+    snapWindow(frame, scope, frame.dims.detach, TopRight, from, Offset.Zero)
+}
+
 /** Springs the window into [corner] (or the nearest one to where it is) at the long side [axis]. */
 private fun snapWindow(frame: MiniFrame, scope: CoroutineScope, axis: Float, corner: Int?, from: Offset, velocity: Offset) {
     val (w, h) = MiniAxis.pictureSize(axis, frame.aspect)
     val area = frame.restArea
-    val c = corner ?: MiniGestures.nearestCorner(from, w, h, area)
+    // A page that keeps it floating keeps it up top: only the two top corners.
+    val c = (corner ?: MiniGestures.nearestCorner(from, w, h, area)).let { if (KeepPlaying.floatOnly) it and 1 else it }
     MiniLog.event("window to corner", "$c")
     KeepPlaying.windowCorner = c
     val to = MiniGestures.cornerCenter(c, w, h, area)
@@ -1311,7 +1475,10 @@ private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v:
     val target: Float
     var window = false
     val wasWindow = KeepPlaying.rest is MiniRest.Window
-    when (val r = MiniAxis.release(raw, v, d, frame.maxAxis, frame.canMerge)) {
+    // A page that keeps it floating: it stays a window, at least the smallest one.
+    val release = if (KeepPlaying.floatOnly) MiniRelease.Rest(MiniRest.Window(raw.coerceIn(d.detach, frame.maxAxis.coerceAtLeast(d.detach))))
+    else MiniAxis.release(raw, v, d, frame.maxAxis, frame.canMerge)
+    when (val r = release) {
         is MiniRelease.Rest -> {
             val rest = r.rest
             if (rest is MiniRest.Window) {
@@ -1338,7 +1505,7 @@ private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v:
         frame.pinchAxis = null
         frame.gesturing = false
         // Past an end the fingers moved only a third of their speed into the size.
-        val inside = raw in (if (frame.canMerge) d.circle else d.row)..frame.maxAxis
+        val inside = raw in frame.minAxis..frame.maxAxis
         frame.axis.animateTo(target, MiniSprings.liq(), initialVelocity = if (inside) v else v * MiniAxis.RubberBand)
     }
 }
@@ -1511,6 +1678,11 @@ private fun WindowKey(close: Boolean, p: Playing, frame: MiniFrame) {
 /** −15 s / +15 s: the outer side fully round, the inner one a small corner. */
 @Composable
 private fun SideBlock(forward: Boolean, p: Playing, frame: MiniFrame) {
+    // A live stream has no ±15: an empty place keeps the bar's layout the same.
+    if (p.live) {
+        Box(Modifier)
+        return
+    }
     val inner = InnerCorner
     val small = androidx.compose.foundation.shape.CornerSize(inner)
     val round = androidx.compose.foundation.shape.CornerSize(50)
@@ -1612,10 +1784,14 @@ private fun Tile(p: Playing, frame: MiniFrame) {
             .then(p.route?.let { Modifier.pageSharedSource(it) } ?: Modifier)
             .then(
                 if (KeepPlaying.rest == MiniRest.Merged) Modifier.a11yClick("展开迷你播放器") { expandCircle() }
-                else Modifier.a11yClick(p.title.ifEmpty { "打开视频" }) { openDock(frame, p) },
+                else Modifier.a11yClick(p.title.ifEmpty { if (p.live) "打开直播间" else "打开视频" }) { openDock(frame, p) },
             )
             .drawWithContent {
                 drawContent()
+                if (p.live) {
+                    drawLiveDot(frame.geo.tileCorner, frame.geo.merge, ring = track)
+                    return@drawWithContent
+                }
                 val stroke = ProgressStroke.toPx()
                 val gutter = ProgressGutter.toPx()
                 val corner = frame.geo.tileCorner
@@ -1652,7 +1828,7 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                 // The picture fills the tile but for the strip under it; merging, the strip grows
                 // round its other sides too (read while laying out: the morph does not recompose).
                 .layout { measurable, constraints ->
-                    val gutter = ProgressGutter.toPx()
+                    val gutter = if (p.live) 0f else ProgressGutter.toPx()
                     val side = (gutter * frame.geo.merge).roundToInt()
                     val bottom = gutter.roundToInt()
                     val w = (constraints.maxWidth - side * 2).coerceAtLeast(0)
@@ -1661,7 +1837,7 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                     layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(side, side) }
                 }
                 .graphicsLayer {
-                    val gutter = ProgressGutter.toPx()
+                    val gutter = if (p.live) 0f else ProgressGutter.toPx()
                     val corner = frame.geo.tileCorner
                     val top = (corner - gutter * frame.geo.merge).coerceAtLeast(0f)
                     val bottom = (corner - gutter).coerceAtLeast(0f)
@@ -1723,6 +1899,30 @@ private fun Tile(p: Playing, frame: MiniFrame) {
         DockSwipeScrim(frame, armed)
     }
 }
+
+/**
+ * A live stream's mark: a small red dot in the picture's top-left corner (just inside the
+ * rounding), on a thin [ring] of the tile's own colour so it reads on any frame. In the circle
+ * ([merge] 1) it sits on the same diagonal, inside the round.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLiveDot(corner: Float, merge: Float, ring: Color) {
+    val r = LiveDot.toPx() / 2f
+    val edge = LiveDotRing.toPx()
+    // The corner's arc (radius [corner]) passes the diagonal at corner·(1 − 1/√2) in from each
+    // side; the dot sits a little further in than that, never closer than 4dp to the sides.
+    val square = maxOf(4.dp.toPx() + r, corner * 0.293f + r + edge * 2f)
+    val radius = size.minDimension / 2f
+    val round = radius - (radius - r - edge - 3.dp.toPx()) * 0.7071f
+    val at = lerp(square, round, merge.coerceIn(0f, 1f))
+    val c = Offset(at, at)
+    drawCircle(ring, radius = r + edge, center = c)
+    drawCircle(LiveRed, radius = r, center = c)
+}
+
+/** The live dot: the same red in any theme. */
+private val LiveRed = Color(0xFFFF3B30)
+private val LiveDot = 6.dp
+private val LiveDotRing = 1.5.dp
 
 /**
  * Over the merged circle while it is swiped sideways: a scrim darkening from where the swipe

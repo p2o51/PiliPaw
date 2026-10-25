@@ -3,12 +3,15 @@ package com.gpo.pilipala.feature.sources
 import com.gpo.pilipala.feature.player.PiliPlayerController
 import com.gpo.pilipala.yt.feature.player.Player
 
-/** A player the app can show: YouTube's one player, or one Bilibili page's controller. */
+/** A player the app can show: YouTube's one player, one Bilibili page's controller, or a live room. */
 internal sealed interface PlayerSlot {
     data object YouTube : PlayerSlot
 
     /** Equal only for the same controller (it does not override equals). */
     data class Bili(val player: Any) : PlayerSlot
+
+    /** A live room's stream (its LiveRoomViewModel); equal only for the same room's player. */
+    data class Live(val room: Any) : PlayerSlot
 }
 
 internal sealed interface HostAction {
@@ -126,6 +129,7 @@ internal object PlayerHost {
     private fun PlayerSlot.label() = when (this) {
         PlayerSlot.YouTube -> "YouTube"
         is PlayerSlot.Bili -> "B站@" + Integer.toHexString(System.identityHashCode(player))
+        is PlayerSlot.Live -> "直播@" + Integer.toHexString(System.identityHashCode(room))
     }
 
     fun released(slot: PlayerSlot) {
@@ -145,6 +149,7 @@ internal object PlayerHost {
                     val c = s.player as PiliPlayerController
                     if (BiliKeeper.held === c) BiliKeeper.close() else machine.released(s)
                 }
+                is PlayerSlot.Live -> if (LiveKeeper.held === s.room) LiveKeeper.close() else machine.released(s)
             }
         }
     }

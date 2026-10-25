@@ -11,6 +11,16 @@ class PlayerHostMachineTest {
     private val a = PlayerSlot.Bili(Any())
     private val b = PlayerSlot.Bili(Any())
 
+    @Test fun openingALiveRoomReleasesTheDockedVideo() {
+        val m = PlayerHostMachine()
+        val live = PlayerSlot.Live(Any())
+        m.opened(a); m.dock(a)
+        assertEquals(listOf(ResetDock, Release(a)), m.opened(live))
+        assertEquals(emptyList<HostAction>(), m.dock(live))
+        assertEquals(live, m.docked)
+        assertEquals(listOf(ResetDock, Release(live)), m.opened(b))
+    }
+
     @Test fun leavingAPageDocksIt() {
         val m = PlayerHostMachine()
         m.opened(a)

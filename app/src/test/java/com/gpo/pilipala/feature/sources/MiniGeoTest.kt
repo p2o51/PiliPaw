@@ -49,6 +49,18 @@ class MiniGeoTest {
         assertEquals(row, g.tile.width, 0.01f)
     }
 
+    @Test fun aLiveBarIsThePictureAndPauseOnly() {
+        val h = 56f
+        val row = h * 16f / 9f
+        val w = miniBarWidth(h, 3f, sides = false)
+        val g = miniGeo(row, MiniDims(48f, row, 40f), Rect(0f, 700f, w, 700f + h), circle, 16f / 9f, Offset.Unspecified, bounds, nav, px, sides = false)
+        assertRect(Rect(0f, 700f, row, 756f), g.tile)
+        assertRect(Rect(row + 3f, 700f, w, 756f), g.pause)
+        assertEquals(h, g.pause.width, 0.6f)
+        assertEquals(0f, g.left.width, 0.01f)
+        assertEquals(0f, g.right.width, 0.01f)
+    }
+
     @Test fun mergedIsTheCircleAlone() {
         val g = geo(48f)
         assertRect(circle, g.tile)

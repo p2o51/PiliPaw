@@ -114,15 +114,39 @@ import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.gpo.pilipala.ui.components.centered
-import com.gpo.pilipala.feature.sources.miniBarClear
+import com.gpo.pilipala.feature.sources.DockFlightEffect
+import com.gpo.pilipala.feature.sources.LiveKeeper
+import com.gpo.pilipala.feature.sources.PlayerHost
+import com.gpo.pilipala.feature.sources.PlayerSlot
+import com.gpo.pilipala.navigation.transition.LocalPageTransitions
+import com.gpo.pilipala.navigation.transition.PageHeroEffect
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
+import androidx.lifecycle.ViewModel
 
 @Composable
 fun LiveRoomScreen(route: Route.LiveRoom) {
     val context = LocalContext.current
-    val vm = viewModel { LiveRoomViewModel(route.roomId, context.applicationContext) }
+    val vm = viewModel { LiveRoomEntry(route.roomId, context.applicationContext) }.room
     val cover = route.cover.ifEmpty { vm.info?.cover.orEmpty() }
     CoverTheme(cover) {
         LiveRoomContent(route, vm)
+    }
+}
+
+/**
+ * The room's place on the back stack. It holds the room while the page is there; when the page
+ * goes for good, 继续播放 keeps a playing room in the mini bar (LiveKeeper), else it is released.
+ * Opened again from the bar, the page carries on with the kept room.
+ */
+internal class LiveRoomEntry(roomId: Long, app: android.content.Context) : ViewModel() {
+    val room: LiveRoomViewModel = LiveKeeper.take(roomId) ?: LiveRoomViewModel(roomId, app)
+
+    override fun onCleared() {
+        if (!LiveKeeper.offer(room)) room.release()
     }
 }
 
@@ -198,10 +222,41 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
         if (pip || activity?.isInPictureInPictureMode == true) vm.pauseForBackground() else vm.onAppStopped()
     }
     // Covered by another page (the entry leaves composition) → pause; back on top → resume.
+    // The room takes over playback: whatever plays in the mini bar stops (PlayerHost.kt). Leaving
+    // for good while 继续播放 keeps it, it plays on into the bar (LiveRoomEntry).
     DisposableEffect(Unit) {
+        PlayerHost.opened(PlayerSlot.Live(vm))
         vm.resumeFromBackground()
-        onDispose { vm.pauseForBackground() }
+        onDispose {
+            val popped = nav.backStack.none { it == route }
+            if (LiveKeeper.held !== vm && !(popped && LiveKeeper.wouldKeep(vm))) vm.pauseForBackground()
+        }
     }
+    // Back (or home) with 继续播放 keeping it: the picture's last frame flies into the mini bar.
+    val transitions = LocalPageTransitions.current
+    val heroRect = remember { arrayOfNulls<Rect>(1) }
+    val heroView = LocalView.current
+    PageHeroEffect(Route.LiveRoom(route.roomId)) {
+        if (fullscreen || pip || !LiveKeeper.wouldKeep(vm)) return@PageHeroEffect null
+        val rect = heroRect[0] ?: return@PageHeroEffect null
+        val view = com.gpo.pilipala.feature.player.findVideoView(heroView.rootView, rect, vm.player) ?: return@PageHeroEffect null
+        val frame = com.gpo.pilipala.feature.player.captureVideoFrame(view, view.width, view.height) ?: return@PageHeroEffect null
+        // The view sits fitted, centred, in the frame: its rect as laid out at rest (the flight
+        // poses it the way the closing page is posed).
+        val bounds = Rect(
+            rect.center.x - view.width / 2f,
+            rect.center.y - view.height / 2f,
+            rect.center.x + view.width / 2f,
+            rect.center.y + view.height / 2f,
+        )
+        vm.player.videoSize.takeIf { it.width > 0 && it.height > 0 }?.let {
+            com.gpo.pilipala.feature.sources.KeepPlaying.knownAspect = (it.width * it.pixelWidthHeightRatio / it.height).coerceIn(0.4f, 2.5f)
+        }
+        frame.asImageBitmap() to bounds
+    }
+    DockFlightEffect(live = true) { LiveKeeper.wouldKeep(vm) }
+    // The picture's frame at rest (a back gesture moves the page; the flight poses the rect itself).
+    val heroSlot = Modifier.onGloballyPositioned { if (transitions?.backIdle != false) heroRect[0] = it.boundsInWindow() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.resumeFromBackground() }
 
     ExpressivePageBackground(
@@ -234,6 +289,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
                         Modifier
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
+                            .then(heroSlot)
                             .then(inlineBack(16.dp))
                             .clip(YoinContainerShapes.Card),
                         onPip = onPip,
@@ -252,12 +308,12 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
                         .background(MaterialTheme.colorScheme.surfaceContainerLow),
                 ) {
                     ChatList(vm, Modifier.weight(1f))
-                    InputBar(vm, Modifier.miniBarClear().windowInsetsPadding(WindowInsets.ime))
+                    InputBar(vm, Modifier.windowInsetsPadding(WindowInsets.ime))
                 }
             }
             else -> Column(Modifier.fillMaxSize()) {
                 Box(Modifier.background(Color.Black).statusBarsPadding()) {
-                    LivePlayerView(vm, false, toggleFs, onBack, Modifier.fillMaxWidth().aspectRatio(16f / 9f).then(inlineBack(0.dp)), onPip = onPip, pictureBounds = pictureBounds)
+                    LivePlayerView(vm, false, toggleFs, onBack, Modifier.fillMaxWidth().aspectRatio(16f / 9f).then(heroSlot).then(inlineBack(0.dp)), onPip = onPip, pictureBounds = pictureBounds)
                 }
                 AnchorBlock(vm, route)
                 Box(
@@ -270,7 +326,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
                 ) {
                     ChatList(vm, Modifier.fillMaxSize())
                 }
-                InputBar(vm, Modifier.miniBarClear().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)))
+                InputBar(vm, Modifier.windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)))
             }
         }
     }

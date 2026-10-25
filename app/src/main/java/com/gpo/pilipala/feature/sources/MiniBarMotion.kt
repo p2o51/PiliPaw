@@ -148,7 +148,8 @@ internal fun clampCenter(c: Offset, w: Float, h: Float, bounds: Rect): Offset {
 }
 
 /**
- * The bar at [axis] on its size axis. At the row: [−15][picture 16:9][pause][+15] in [bar].
+ * The bar at [axis] on its size axis. At the row: [−15][picture 16:9][pause][+15] in [bar]
+ * ([picture][pause] for a live stream: no [sides], the side blocks are empty at the bar's ends).
  * Below it the picture shrinks into [circle] (the nav bar's start) and the side blocks fold into
  * it; above it they fold into the growing picture, which leaves as a window of the video's own
  * [aspect], centred at [windowCenter] (or where it detached) and kept inside [bounds].
@@ -165,15 +166,16 @@ internal fun miniGeo(
     px: MiniPx,
     /** Popping out under a finger: the picture's centre is the finger's ([windowCenter]) at once. */
     pinned: Boolean = false,
+    sides: Boolean = true,
 ): MiniGeo {
     val m = if (circle != null) MiniAxis.merge(axis, d) else 0f
     val det = MiniAxis.detach(axis, d)
     val windowed = axis >= d.detach
-    val sideW = ((bar.width - d.row - px.gap * 3f) / 3f).coerceAtLeast(0f)
-    val l0 = Rect(bar.left, bar.top, bar.left + sideW, bar.bottom)
-    val t0 = Rect(l0.right + px.gap, bar.top, l0.right + px.gap + d.row, bar.bottom)
+    val sideW = if (sides) ((bar.width - d.row - px.gap * 3f) / 3f).coerceAtLeast(0f) else (bar.width - d.row - px.gap).coerceAtLeast(0f)
+    val l0 = Rect(bar.left, bar.top, if (sides) bar.left + sideW else bar.left, bar.bottom)
+    val t0 = if (sides) Rect(l0.right + px.gap, bar.top, l0.right + px.gap + d.row, bar.bottom) else Rect(bar.left, bar.top, bar.left + d.row, bar.bottom)
     val p0 = Rect(t0.right + px.gap, bar.top, t0.right + px.gap + sideW, bar.bottom)
-    val r0 = Rect(p0.right + px.gap, bar.top, bar.right, bar.bottom)
+    val r0 = if (sides) Rect(p0.right + px.gap, bar.top, bar.right, bar.bottom) else Rect(bar.right, bar.top, bar.right, bar.bottom)
     // Where a window made from the bar sits: centred over the bar, its bottom on the bar's.
     fun home(h: Float) = if (windowCenter.isSpecified) windowCenter else Offset(bar.center.x, bar.bottom - h / 2f)
     val tile: Rect
@@ -423,5 +425,9 @@ internal object MiniTouch {
     fun centroid(): Offset = Offset((xs[0] + xs[1]) / 2f, (ys[0] + ys[1]) / 2f)
 }
 
-/** The bar's width for its height [barH]: −15, pause and +15 square, the picture 16:9, [gap] between. */
-internal fun miniBarWidth(barH: Float, gap: Float): Float = barH * 3f + barH * 16f / 9f + gap * 3f
+/**
+ * The bar's width for its height [barH]: −15, pause and +15 square, the picture 16:9, [gap]
+ * between; without the ±15 [sides] (a live stream), the picture and pause only.
+ */
+internal fun miniBarWidth(barH: Float, gap: Float, sides: Boolean = true): Float =
+    if (sides) barH * 3f + barH * 16f / 9f + gap * 3f else barH + barH * 16f / 9f + gap
