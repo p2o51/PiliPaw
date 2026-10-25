@@ -494,6 +494,9 @@ private val InnerCorner = 6.dp
 private val WindowCorner = 16.dp
 private val ProgressStroke = 3.dp
 
+/** The frame round the picture the progress line runs in, so it reads on any video. */
+private val ProgressGutter = 5.dp
+
 /** The nav bar's padding before its first tab: where the merged circle sits. */
 internal val NavLead = 10.dp
 
@@ -1490,8 +1493,9 @@ private fun PauseBlock(p: Playing, frame: MiniFrame) {
 
 /**
  * The picture: the bar's tile, the circle and the floating window are this one view (one
- * surface), reshaped. Its progress is a thin line tracing the inner rounded edge from the top
- * centre, clockwise; in the circle that is the ring.
+ * surface), reshaped. Its progress is a thin line in a narrow frame round the picture, from the
+ * top centre, clockwise; in the circle that is the ring. Off the picture, it reads on any video
+ * (a line drawn over it vanished into frames of its own colour).
  */
 @Composable
 private fun Tile(p: Playing, frame: MiniFrame) {
@@ -1553,7 +1557,7 @@ private fun Tile(p: Playing, frame: MiniFrame) {
             .drawWithContent {
                 drawContent()
                 val stroke = ProgressStroke.toPx()
-                val path = edgePath(size, frame.geo.tileCorner, stroke / 2f)
+                val path = edgePath(size, frame.geo.tileCorner, ProgressGutter.toPx() / 2f)
                 // Swiping the circle away, the ring gives way to the scrim.
                 val ring = 1f - frame.dockNow.coerceIn(0f, 1f)
                 drawPath(path, primary.copy(alpha = 0.25f * ring), style = Stroke(stroke))
@@ -1572,54 +1576,64 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                 }
             },
     ) {
-        // The page has left composition before its controller is offered to the dock.
-        // Media3 clears a surface by identity, so there is no need to freeze the landing
-        // frame for another 400 ms before attaching this view.
-        // Until the video has drawn a frame into this tile, what stood for it stays on top: the
-        // frame the page's flight landed with, else the cover. Swapped in one frame once the
-        // picture is really there (a fixed delay showed the cover, or an empty view, first).
-        var drawn by remember(p.player, frame) { mutableStateOf(false) }
-        val player = p.player
-        if (player != null) {
-            androidx.compose.runtime.DisposableEffect(player, frame) {
-                val l = object : androidx.media3.common.Player.Listener {
-                    override fun onRenderedFirstFrame() {
-                        drawn = true
-                        MiniLog.tileDrawn()
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(ProgressGutter)
+                .graphicsLayer {
+                    shape = RoundedCornerShape((frame.geo.tileCorner - ProgressGutter.toPx()).coerceAtLeast(0f))
+                    clip = true
+                },
+        ) {
+            // The page has left composition before its controller is offered to the dock.
+            // Media3 clears a surface by identity, so there is no need to freeze the landing
+            // frame for another 400 ms before attaching this view.
+            // Until the video has drawn a frame into this tile, what stood for it stays on top: the
+            // frame the page's flight landed with, else the cover. Swapped in one frame once the
+            // picture is really there (a fixed delay showed the cover, or an empty view, first).
+            var drawn by remember(p.player, frame) { mutableStateOf(false) }
+            val player = p.player
+            if (player != null) {
+                androidx.compose.runtime.DisposableEffect(player, frame) {
+                    val l = object : androidx.media3.common.Player.Listener {
+                        override fun onRenderedFirstFrame() {
+                            drawn = true
+                            MiniLog.tileDrawn()
+                        }
                     }
+                    player.addListener(l)
+                    onDispose { player.removeListener(l) }
                 }
-                player.addListener(l)
-                onDispose { player.removeListener(l) }
             }
-        }
-        val stillAlpha = remember(p.player, frame) { Animatable(1f) }
-        LaunchedEffect(drawn, frame) {
-            if (drawn) {
-                // Media3's renderer callback can precede the TextureView's composited frame.
-                // Keep the landing image until that frame has had a chance to reach the display.
-                repeat(2) { androidx.compose.runtime.withFrameNanos { } }
-                stillAlpha.animateTo(0f, androidx.compose.animation.core.tween(120))
-                frame.arrived = null
+            val stillAlpha = remember(p.player, frame) { Animatable(1f) }
+            LaunchedEffect(drawn, frame) {
+                if (drawn) {
+                    // Media3's renderer callback can precede the TextureView's composited frame.
+                    // Keep the landing image until that frame has had a chance to reach the display.
+                    repeat(2) { androidx.compose.runtime.withFrameNanos { } }
+                    stillAlpha.animateTo(0f, androidx.compose.animation.core.tween(120))
+                    frame.arrived = null
+                }
             }
-        }
-        player?.let { player ->
-            // Cropped only while the bar's 16:9 tile turns into the video's own shape; in the
-            // window the shapes match and nothing is cut or stretched.
-            androidx.media3.ui.compose.ContentFrame(
-                player = player,
-                modifier = Modifier.fillMaxSize(),
-                surfaceType = androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW,
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                shutter = {},
-            )
-        }
-        if (stillAlpha.value > 0f) {
-            val stillModifier = Modifier.fillMaxSize().graphicsLayer { alpha = stillAlpha.value }
-            val still = frame.arrived
-            if (still != null) {
-                androidx.compose.foundation.Image(still, null, stillModifier, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-            } else {
-                NetImage(p.cover, stillModifier, contentDescription = p.title, shape = androidx.compose.ui.graphics.RectangleShape, thumbWidth = 640.dp)
+            player?.let { player ->
+                // Cropped only while the bar's 16:9 tile turns into the video's own shape; in the
+                // window the shapes match and nothing is cut or stretched.
+                androidx.media3.ui.compose.ContentFrame(
+                    player = player,
+                    modifier = Modifier.fillMaxSize(),
+                    surfaceType = androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    shutter = {},
+                )
+            }
+            if (stillAlpha.value > 0f) {
+                val stillModifier = Modifier.fillMaxSize().graphicsLayer { alpha = stillAlpha.value }
+                val still = frame.arrived
+                if (still != null) {
+                    androidx.compose.foundation.Image(still, null, stillModifier, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                } else {
+                    NetImage(p.cover, stillModifier, contentDescription = p.title, shape = androidx.compose.ui.graphics.RectangleShape, thumbWidth = 640.dp)
+                }
             }
         }
         DockSwipeScrim(frame, armed)
