@@ -12,8 +12,8 @@ android {
         applicationId = "com.gpo.pilipala"
         minSdk = 26
         targetSdk = 36
-        versionCode = 67
-        versionName = "0.5.13"
+        versionCode = 68
+        versionName = "0.5.14"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
