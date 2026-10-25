@@ -130,6 +130,7 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
+import com.gpo.pilipala.feature.sources.miniBarClear
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import java.io.InterruptedIOException
@@ -813,7 +814,8 @@ fun DynamicComposeScreen() {
                 },
                 contentAlignment = Alignment.Center,
                 label = "composerBar",
-                modifier = Modifier.readingWidth(EditorMaxWidth),
+                // The mini bar rests above the toolbar (and the emote panel under it), not over it.
+                modifier = Modifier.readingWidth(EditorMaxWidth).miniBarClear(),
             ) { asking ->
                 // Each side acts only while it is the current one: the bar on its
                 // way out ignores taps.

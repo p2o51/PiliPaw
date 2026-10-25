@@ -141,6 +141,7 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.seam.seamRemainingPx
 import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
+import com.gpo.pilipala.feature.sources.miniBarClear
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 
@@ -714,7 +715,8 @@ private fun InputBar(vm: WhisperDetailViewModel, peek: EmotePeekState, onError: 
         }
     }
     val progress = vm.picturesProgress
-    Column(Modifier.fillMaxWidth()) {
+    // The mini bar rests above the composer, not over it.
+    Column(Modifier.fillMaxWidth().miniBarClear()) {
         AnimatedVisibility(
             visible = pictures.isNotEmpty(),
             enter = expandVertically(YoinMotion.defaultSpatialSpec()) + fadeIn(YoinMotion.defaultEffectsSpec()),

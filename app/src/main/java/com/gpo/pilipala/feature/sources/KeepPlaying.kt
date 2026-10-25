@@ -11,7 +11,9 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -40,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -69,6 +72,9 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.VelocityTracker1D
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -246,7 +252,7 @@ object KeepPlaying {
      * that lands in it. [w] × [h] is the window less the system's navigation bar.
      */
     internal fun dockTile(shell: Boolean, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density): Rect {
-        val bar = miniBarRect(if (shell) NavSpot.bounds ?: NavSpot.last else null, w, h, tablet, density)
+        val bar = miniBarRect(if (shell) NavSpot.bounds ?: NavSpot.last else null, w, h, tablet, density, InputSpot.top.takeIf { !shell })
         val barH = bar.height
         val gap = with(density) { BlockGap.toPx() }
         return miniGeo(barH * 16f / 9f, MiniDims(1f, barH * 16f / 9f, 1f), bar, null, 16f / 9f, Offset.Unspecified, Rect(0f, 0f, w, h), null, MiniPx(gap, 0f, 0f, 0f, 0f)).tile
@@ -347,6 +353,33 @@ object NavSpot {
         owner = null
         bounds = null
     }
+}
+
+/**
+ * Rows at the bottom of a page that take typing (a chat's composer, 发动态's toolbar), each
+ * reporting its top (window px) through [miniBarClear]: on a page without the nav bar the bar
+ * rests above the highest one instead of over it, and steps out of the way while the keyboard is
+ * up. Null: none on screen.
+ */
+object InputSpot {
+    private val tops = androidx.compose.runtime.mutableStateMapOf<Any, Float>()
+
+    val top: Float? get() = tops.values.minOrNull()
+
+    internal fun place(token: Any, top: Float) {
+        if (tops[token] != top) tops[token] = top
+    }
+
+    internal fun clear(token: Any) {
+        tops.remove(token)
+    }
+}
+
+/** This row takes typing at the bottom of its page: the mini bar keeps clear of it ([InputSpot]). */
+fun Modifier.miniBarClear(): Modifier = composed {
+    val token = remember { Any() }
+    DisposableEffect(token) { onDispose { InputSpot.clear(token) } }
+    onGloballyPositioned { InputSpot.place(token, it.boundsInWindow().top) }
 }
 
 /**
@@ -494,8 +527,14 @@ private val InnerCorner = 6.dp
 private val WindowCorner = 16.dp
 private val ProgressStroke = 3.dp
 
-/** The frame round the picture the progress line runs in, so it reads on any video. */
+/**
+ * The strip under the picture the progress line runs in, so it reads on any video; in the merged
+ * circle it runs all round the picture, and the line is a ring.
+ */
 private val ProgressGutter = 5.dp
+
+/** The progress line's track: clearly there on the tile, so the played part never reads as a stray line. */
+private const val ProgressTrackAlpha = 0.3f
 
 /** The nav bar's padding before its first tab: where the merged circle sits. */
 internal val NavLead = 10.dp
@@ -506,9 +545,9 @@ internal val NavRoom = CircleSize + 4.dp
 /**
  * Where the bar rests (window px, in a [w] × [h] area above the system's navigation bar): over
  * the nav bar (phone), left of it in its row (tablet, when there is room), or at the bottom on a
- * page without one.
+ * page without one, above its typing row ([input], that row's top) if it has one.
  */
-internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density): Rect = with(density) {
+internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density, input: Float? = null): Rect = with(density) {
     val barH = (if (tablet) BarHeightTablet else BarHeightPhone).toPx()
     val navGap = NavGap.toPx()
     val side = SideMargin.toPx()
@@ -521,7 +560,7 @@ internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, densit
         }
         else -> {
             val left = (w - bw) / 2f
-            val bottom = nav?.top?.minus(navGap) ?: (h - side)
+            val bottom = nav?.top?.minus(navGap) ?: minOf(h - side, input?.minus(navGap) ?: h)
             Rect(left, bottom - barH, left + bw, bottom)
         }
     }
@@ -561,6 +600,9 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
 
     /** Letting go now closes it: the scrim turns solid and the circle a cookie. */
     var dockArmed by mutableStateOf(false)
+
+    /** Typing on a page with an input row: the bar sinks out of sight and fades (1: away). */
+    val away = Animatable(0f)
 
     /** The circle's own scale while it springs away (1 at rest). */
     val dockScale = Animatable(1f)
@@ -684,7 +726,7 @@ private fun rememberVideoAspect(player: androidx.media3.common.Player?): Float {
  * (rubber-banding past its largest size). Tapping the picture is what opens the video; tapping
  * the circle opens it out into the bar.
  */
-@OptIn(FlowPreview::class)
+@OptIn(FlowPreview::class, ExperimentalLayoutApi::class)
 @Composable
 fun MiniBarHost() {
     val playing = currentPlaying()
@@ -766,7 +808,12 @@ fun MiniBarHost() {
         val dims = with(density) { MiniDims(circle = CircleSize.toPx(), row = barH * 16f / 9f, detachExtra = 40.dp.toPx()) }
         // Landing from the video page's swipe down: the shell's nav bar may not be back yet.
         val nav = KeepPlaying.navForBar()
-        val barTarget = miniBarRect(nav, w, h, tablet, density)
+        // A page's typing row: the bar rests above it. While the keyboard is up the bar is away,
+        // and keeps the place it had (it must not climb with the row only to sink out of sight).
+        val typing = nav == null && InputSpot.top != null && WindowInsets.isImeVisible
+        var input by remember { mutableStateOf<Float?>(null) }
+        if (nav != null || InputSpot.top == null) input = null else if (!typing) input = InputSpot.top
+        val barTarget = miniBarRect(nav, w, h, tablet, density, input)
         // The merged circle at the nav bar's start; kept after the nav bar goes so the picture
         // can fly back out of it.
         val circleTarget = nav?.let {
@@ -808,8 +855,9 @@ fun MiniBarHost() {
         frame.maxAxis = maxAxis
         frame.bounds = Rect(margin, statusTop + margin, w - margin, h - margin)
         // A window resting at a bottom corner rests above the nav bar and the bar.
-        // Without a nav bar (a pushed page) the bottom corners sit just above the system's inset.
-        val restBottom = if (nav != null) nav.top - with(density) { 32.dp.toPx() } else h - with(density) { 16.dp.toPx() }
+        // Without a nav bar (a pushed page) the bottom corners sit just above the system's inset,
+        // or above the page's typing row.
+        val restBottom = if (nav != null) nav.top - with(density) { 32.dp.toPx() } else minOf(h, input ?: h) - with(density) { 16.dp.toPx() }
         frame.restArea = Rect(margin, statusTop + margin, w - margin, restBottom)
         frame.dockRange = with(density) { DockSwipeAt.toPx() }
         frame.px = with(density) { MiniPx(BlockGap.toPx(), InnerCorner.toPx(), WindowCorner.toPx(), margin, 8.dp.toPx(), 32.dp.toPx(), 8.dp.toPx()) }
@@ -817,6 +865,10 @@ fun MiniBarHost() {
         // The bar follows the nav bar (a page opening hides it, coming back shows it) on a spring.
         LaunchedEffect(barTarget) {
             if (frame.anchor.targetValue != barTarget) frame.anchor.animateTo(barTarget, MiniSprings.def())
+        }
+        // The keyboard comes up over a typing row: the bar sinks away (and comes back as it goes).
+        LaunchedEffect(frame, typing) {
+            frame.away.animateTo(if (typing) 1f else 0f, MiniSprings.def())
         }
         // Rest changes from outside a gesture (scrolling, a new video, the nav bar going): spring there.
         val restAxis = frame.restAxis(KeepPlaying.rest, density.density)
@@ -900,16 +952,22 @@ fun MiniBarHost() {
                 .pointerInput(frame) { miniGestures(frame, scope, density.density) { latest } }
                 .graphicsLayer {
                     translationX = frame.swipeNow
-                    alpha = shown * (1f - (abs(frame.swipeNow) / (frame.anchor.value.width * 0.6f).coerceAtLeast(1f))).coerceIn(0f, 1f)
+                    val away = frame.away.value
+                    alpha = shown * (1f - away).coerceIn(0f, 1f) *
+                        (1f - (abs(frame.swipeNow) / (frame.anchor.value.width * 0.6f).coerceAtLeast(1f))).coerceIn(0f, 1f)
                     // Closing shrinks as it fades (the window where it is, the bar sinking a little).
                     val going = 0.85f + 0.15f * shown
                     if (frame.geo.windowed) {
                         scaleX = frame.press.value * going
                         scaleY = frame.press.value * going
+                        // Away for the keyboard, the window sinks off the screen's bottom edge as it fades
+                        // (only fading, it would still take the touches where it was).
+                        translationY = away * (h - frame.geo.hit.top + barH)
                     } else if (frame.dockClosing) {
                         // Swiped off the nav bar: the circle shrinks about its own centre instead.
                     } else {
-                        translationY = (1f - shown) * barH
+                        // Away for the keyboard, the bar sinks below the screen's bottom edge.
+                        translationY = (1f - shown) * barH + away * (h - frame.geo.hit.top + barH)
                         scaleX = going
                         scaleY = going
                     }
@@ -946,8 +1004,8 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
     val minSpan = 48f * density
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-        // Swiped away and going: a tap must not open it again on its way out.
-        if (frame.dockClosing) return@awaitEachGesture
+        // Swiped away and going: a tap must not open it again on its way out. Away for the keyboard: not there.
+        if (frame.dockClosing || frame.away.targetValue > 0f) return@awaitEachGesture
         frame.flingJob?.cancel()
         val g0 = frame.geo
         val windowAtDown = MiniGestures.isWindow(KeepPlaying.rest is MiniRest.Window, g0.windowed)
@@ -1493,9 +1551,11 @@ private fun PauseBlock(p: Playing, frame: MiniFrame) {
 
 /**
  * The picture: the bar's tile, the circle and the floating window are this one view (one
- * surface), reshaped. Its progress is a thin line in a narrow frame round the picture, from the
- * top centre, clockwise; in the circle that is the ring. Off the picture, it reads on any video
- * (a line drawn over it vanished into frames of its own colour).
+ * surface), reshaped. Its progress is a straight line in a narrow strip under the picture, left to
+ * right; in the circle the strip runs all round and the line is a ring from the top centre,
+ * clockwise. The strip and the line turn into the ring with the shape itself (the merge), so
+ * nothing jumps. Off the picture, it reads on any video (a line drawn over it vanished into
+ * frames of its own colour).
  */
 @Composable
 private fun Tile(p: Playing, frame: MiniFrame) {
@@ -1513,14 +1573,14 @@ private fun Tile(p: Playing, frame: MiniFrame) {
             shown.animateTo(to, MiniSprings.def())
         }
     }
-    // Paused, the ring breathes; playing, it holds full strength.
+    // Paused, the line breathes (never so faint it reads as gone); playing, it holds full strength.
     val breath = remember { Animatable(1f) }
     LaunchedEffect(p.isPlaying) {
         if (p.isPlaying) {
             breath.animateTo(1f, MiniSprings.def())
         } else {
             while (true) {
-                breath.animateTo(0.45f, androidx.compose.animation.core.tween(RingBreathMs, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                breath.animateTo(0.6f, androidx.compose.animation.core.tween(RingBreathMs, easing = androidx.compose.animation.core.FastOutSlowInEasing))
                 breath.animateTo(1f, androidx.compose.animation.core.tween(RingBreathMs, easing = androidx.compose.animation.core.FastOutSlowInEasing))
             }
         }
@@ -1557,31 +1617,55 @@ private fun Tile(p: Playing, frame: MiniFrame) {
             .drawWithContent {
                 drawContent()
                 val stroke = ProgressStroke.toPx()
-                val path = edgePath(size, frame.geo.tileCorner, ProgressGutter.toPx() / 2f)
+                val gutter = ProgressGutter.toPx()
+                val corner = frame.geo.tileCorner
+                // The bar and the window draw the line, the circle the ring; between them both, crossfaded.
+                val m = frame.geo.merge
                 // Swiping the circle away, the ring gives way to the scrim.
-                val ring = 1f - frame.dockNow.coerceIn(0f, 1f)
-                drawPath(path, primary.copy(alpha = 0.25f * ring), style = Stroke(stroke))
-                val measure = PathMeasure().apply { setPath(path, false) }
-                val seg = Path()
-                val head = measure.length * shown.value
-                val strength = breath.value * ring
-                measure.getSegment(0f, head, seg, true)
-                drawPath(seg, primary.copy(alpha = strength), style = Stroke(stroke, cap = StrokeCap.Round))
-                // A bright head where the line is: a dot a little wider than the line, in a soft halo.
-                if (shown.value > 0f) {
-                    val at = measure.getPosition(head)
-                    drawCircle(primary.copy(alpha = 0.3f * strength), radius = stroke * 1.6f, center = at)
-                    drawCircle(primary.copy(alpha = strength), radius = stroke * 0.85f, center = at)
-                    drawCircle(Color.White.copy(alpha = 0.7f * strength), radius = stroke * 0.35f, center = at)
+                val gone = 1f - frame.dockNow.coerceIn(0f, 1f)
+                val strength = breath.value * gone
+                if (m < 1f) {
+                    // Straight, in the strip's middle, stopping short of the rounded corners (cap included).
+                    val y = size.height - gutter / 2f
+                    val dy = gutter / 2f
+                    val edge = if (corner > dy) corner - kotlin.math.sqrt(corner * corner - (corner - dy) * (corner - dy)) else 0f
+                    val x0 = maxOf(gutter, edge + stroke)
+                    val x1 = (size.width - x0).coerceAtLeast(x0)
+                    val line = 1f - m
+                    drawLine(primary.copy(alpha = ProgressTrackAlpha * line * gone), Offset(x0, y), Offset(x1, y), stroke, StrokeCap.Round)
+                    if (shown.value > 0f) {
+                        drawLine(primary.copy(alpha = strength * line), Offset(x0, y), Offset(x0 + (x1 - x0) * shown.value, y), stroke, StrokeCap.Round)
+                    }
+                }
+                if (m > 0f) {
+                    val path = edgePath(size, corner, gutter / 2f)
+                    drawPath(path, primary.copy(alpha = ProgressTrackAlpha * m * gone), style = Stroke(stroke))
+                    val measure = PathMeasure().apply { setPath(path, false) }
+                    val seg = Path()
+                    measure.getSegment(0f, measure.length * shown.value, seg, true)
+                    drawPath(seg, primary.copy(alpha = strength * m), style = Stroke(stroke, cap = StrokeCap.Round))
                 }
             },
     ) {
         Box(
             Modifier
-                .fillMaxSize()
-                .padding(ProgressGutter)
+                // The picture fills the tile but for the strip under it; merging, the strip grows
+                // round its other sides too (read while laying out: the morph does not recompose).
+                .layout { measurable, constraints ->
+                    val gutter = ProgressGutter.toPx()
+                    val side = (gutter * frame.geo.merge).roundToInt()
+                    val bottom = gutter.roundToInt()
+                    val w = (constraints.maxWidth - side * 2).coerceAtLeast(0)
+                    val h = (constraints.maxHeight - side - bottom).coerceAtLeast(0)
+                    val placeable = measurable.measure(Constraints.fixed(w, h))
+                    layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(side, side) }
+                }
                 .graphicsLayer {
-                    shape = RoundedCornerShape((frame.geo.tileCorner - ProgressGutter.toPx()).coerceAtLeast(0f))
+                    val gutter = ProgressGutter.toPx()
+                    val corner = frame.geo.tileCorner
+                    val top = (corner - gutter * frame.geo.merge).coerceAtLeast(0f)
+                    val bottom = (corner - gutter).coerceAtLeast(0f)
+                    shape = RoundedCornerShape(topStart = top, topEnd = top, bottomEnd = bottom, bottomStart = bottom)
                     clip = true
                 },
         ) {

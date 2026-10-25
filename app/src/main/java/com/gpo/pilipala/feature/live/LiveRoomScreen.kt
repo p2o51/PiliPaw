@@ -114,6 +114,7 @@ import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.gpo.pilipala.ui.components.centered
+import com.gpo.pilipala.feature.sources.miniBarClear
 
 @Composable
 fun LiveRoomScreen(route: Route.LiveRoom) {
@@ -251,7 +252,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
                         .background(MaterialTheme.colorScheme.surfaceContainerLow),
                 ) {
                     ChatList(vm, Modifier.weight(1f))
-                    InputBar(vm, Modifier.windowInsetsPadding(WindowInsets.ime))
+                    InputBar(vm, Modifier.miniBarClear().windowInsetsPadding(WindowInsets.ime))
                 }
             }
             else -> Column(Modifier.fillMaxSize()) {
@@ -269,7 +270,7 @@ private fun LiveRoomContent(route: Route.LiveRoom, vm: LiveRoomViewModel) {
                 ) {
                     ChatList(vm, Modifier.fillMaxSize())
                 }
-                InputBar(vm, Modifier.windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)))
+                InputBar(vm, Modifier.miniBarClear().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)))
             }
         }
     }
