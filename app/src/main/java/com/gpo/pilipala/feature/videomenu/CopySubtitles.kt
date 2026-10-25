@@ -10,15 +10,12 @@ import com.gpo.pilipala.feature.player.SubtitleApi
 import com.gpo.pilipala.feature.player.SubtitleTrack
 import com.gpo.pilipala.feature.video.parseVideoDetail
 
-/** 复制字幕's text: the video's facts, then a subtitle track with a timestamp per line. */
-internal class VideoTranscript(val text: String, val hasSubtitles: Boolean)
-
 /**
  * Builds what 复制字幕 copies: 标题, 链接, UP主 and their UID, 分P (when there are several),
  * 标签, 简介, then the subtitles of [cid] (the first part when 0). A video without subtitles
- * (or whose AI ones need a login) still gets the rest, with [VideoTranscript.hasSubtitles] false.
+ * (or whose AI ones need a login) just gets the rest, quietly.
  */
-internal suspend fun loadVideoTranscript(target: ShareTarget): VideoTranscript {
+internal suspend fun loadVideoTranscript(target: ShareTarget): String {
     val params = mapOf("aid" to target.aid)
     val d = parseVideoDetail(BiliClient.getData("/x/web-interface/wbi/view", params, wbi = true).asObj!!)
     val cid = target.cid.takeIf { it > 0 } ?: d.cid
@@ -31,7 +28,7 @@ internal suspend fun loadVideoTranscript(target: ShareTarget): VideoTranscript {
     }.getOrNull()
     val lines = track?.let { runCatching { SubtitleApi.lines(it) }.getOrNull() }.orEmpty()
         .filter { it.text.isNotBlank() }
-    val text = buildString {
+    return buildString {
         appendLine("标题：${d.title}")
         appendLine("链接：https://www.bilibili.com/video/${d.bvid}")
         appendLine("UP主：${d.ownerName}（UID：${d.ownerMid}）")
@@ -41,15 +38,12 @@ internal suspend fun loadVideoTranscript(target: ShareTarget): VideoTranscript {
         if (tags.isNotEmpty()) appendLine("标签：${tags.joinToString("、")}")
         appendLine("简介：")
         appendLine(d.desc.trim().ifEmpty { "（无）" })
-        appendLine()
         if (track != null && lines.isNotEmpty()) {
+            appendLine()
             appendLine("字幕（${track.label}）：")
             lines.forEach { appendLine("[${stamp(it.fromMs)}] ${it.text.replace('\n', ' ')}") }
-        } else {
-            appendLine("字幕：（这个视频没有字幕）")
         }
     }.trimEnd()
-    return VideoTranscript(text, track != null && lines.isNotEmpty())
 }
 
 /** Uploaded Chinese first, then B站's AI Chinese, then whatever comes first. */
