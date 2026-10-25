@@ -1702,13 +1702,20 @@ private fun SideBlock(forward: Boolean, p: Playing, frame: MiniFrame) {
     ) { SeekGlyph(forward = forward, tint = MaterialTheme.colorScheme.onSecondaryContainer) }
 }
 
-/** Pause / play: the bare symbol on its block. */
+/** Pause / play: the bare symbol on its block (a live bar's last block: its outer side fully round, like +15). */
 @Composable
 private fun PauseBlock(p: Playing, frame: MiniFrame) {
+    val small = androidx.compose.foundation.shape.CornerSize(InnerCorner)
+    val round = androidx.compose.foundation.shape.CornerSize(50)
+    val shape = if (p.live) {
+        RoundedCornerShape(topStart = small, topEnd = round, bottomEnd = round, bottomStart = small)
+    } else {
+        RoundedCornerShape(InnerCorner)
+    }
     Box(
         Modifier
             .graphicsLayer { alpha = frame.geo.sideAlpha * (frame.sidesIn?.value ?: 1f) }
-            .clip(RoundedCornerShape(InnerCorner))
+            .clip(shape)
             .background(MaterialTheme.colorScheme.primaryContainer)
             .a11yClick(if (p.isPlaying) "暂停" else "播放", p.toggle),
         contentAlignment = Alignment.Center,
@@ -1906,7 +1913,8 @@ private fun Tile(p: Playing, frame: MiniFrame) {
  * ([merge] 1) it sits on the same diagonal, inside the round.
  */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLiveDot(corner: Float, merge: Float, ring: Color) {
-    val r = LiveDot.toPx() / 2f
+    // A little smaller in the circle.
+    val r = lerp(LiveDot.toPx(), LiveDotRound.toPx(), merge.coerceIn(0f, 1f)) / 2f
     val edge = LiveDotRing.toPx()
     // The corner's arc (radius [corner]) passes the diagonal at corner·(1 − 1/√2) in from each
     // side; the dot sits a little further in than that, never closer than 4dp to the sides.
@@ -1922,6 +1930,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLiveDot(corner:
 /** The live dot: the same red in any theme. */
 private val LiveRed = Color(0xFFFF3B30)
 private val LiveDot = 6.dp
+private val LiveDotRound = 5.dp
 private val LiveDotRing = 1.5.dp
 
 /**
