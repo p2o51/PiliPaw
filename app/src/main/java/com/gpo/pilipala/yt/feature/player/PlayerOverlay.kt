@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.lerp
 import androidx.core.text.HtmlCompat
 import androidx.media3.ui.compose.ContentFrame
@@ -369,14 +370,36 @@ fun PlayerOverlayHost() {
             val videoCorner = lerp(6.dp, if (twoPane) 16.dp else 0.dp, cornerP)
             val rangePx = with(density) { (miniY).toPx() }.coerceAtLeast(1f)
 
+            // Open, a drag up has nowhere to take the player: it counts toward fullscreen instead
+            // (as a swipe up on the B站 picture does), one tick each way across the line.
+            var lift by remember { mutableFloatStateOf(0f) }
+            val liftLine = with(density) { SwipeEnterDistance.toPx() }
             val drag = rememberDraggableState { delta ->
+                if (lift > 0f || (delta < 0f && Player.expanded && progress.value >= 0.999f && !Player.fullscreen && !Player.audioOnly)) {
+                    val was = lift >= liftLine
+                    lift = (lift - delta).coerceAtLeast(0f)
+                    if (was != (lift >= liftLine)) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    return@rememberDraggableState
+                }
                 scope.launch { progress.snapTo((progress.value - delta / rangePx).coerceIn(0f, 1f)) }
             }
             // The mini content fades out by p = 0.35; it stays composed while a drag that began
             // on it runs, or its draggable would be disposed mid-drag and never settle.
             var dragging by remember { mutableStateOf(false) }
-            val settle: (Float) -> Unit = { velocity ->
+            val settle: (Float) -> Unit = settle@{ velocity ->
                 dragging = false
+                if (lift > 0f) {
+                    // Lifted past the line, or flicked up: fullscreen; the player itself never moved.
+                    val enters = with(density) {
+                        lift >= liftLine || (lift >= SwipeEnterFlick.toPx() && velocity < -SwipeEnterSpeed.toPx())
+                    }
+                    lift = 0f
+                    if (enters) {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        Player.fullscreen = true
+                    }
+                    return@settle
+                }
                 val target = when {
                     velocity > FlingVelocity -> false
                     velocity < -FlingVelocity -> true
@@ -550,6 +573,13 @@ fun PlayerOverlayHost() {
 }
 
 private const val FlingVelocity = 1200f
+
+/** A swipe up on the open picture enters fullscreen past this, as the B站 picture's does. */
+private val SwipeEnterDistance = 72.dp
+
+/** A shorter swipe up still enters past this, if it leaves the finger fast enough. */
+private val SwipeEnterFlick = 24.dp
+private val SwipeEnterSpeed = 800.dp
 
 @Composable
 private fun BoxScope.Picture(session: Player.Session) {

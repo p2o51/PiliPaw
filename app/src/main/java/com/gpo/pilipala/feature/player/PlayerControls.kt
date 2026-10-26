@@ -220,7 +220,8 @@ internal fun ChromeAutoHide(ctrl: PiliPlayerController, ui: PlayerChromeState, f
  * double tap skips 10 s on the left / right third (quick follow-up taps add 10 s each,
  * [DoubleTapSeek]) and plays / pauses in the middle, horizontal drag seeks and vertical drags set volume (right
  * half) or brightness (left half); in fullscreen a downward drag that starts in the middle
- * third goes to [onSwipeExit] once it passes [SwipeExitDistance] and lifts. In both, holding
+ * third goes to [onSwipeExit] once it passes [SwipeExitDistance] and lifts; inline an upward drag
+ * from the middle third goes to [onSwipeEnter] (fullscreen) the same way, or on a quick flick. In both, holding
  * still on a playing picture speeds it up and sliding while held sets the speed ([holdSpeed]).
  *
  * Arbitration. Two detectors on the same node: the tap detector (outer) only does tap and
@@ -246,6 +247,7 @@ internal fun Modifier.playerGestures(
     minimal: Boolean,
     onDoubleTap: ((Offset) -> Unit)?,
     onSwipeExit: (() -> Unit)? = null,
+    onSwipeEnter: (() -> Unit)? = null,
     swipeBack: FullscreenBackState? = null,
 ): Modifier {
     val haptics = LocalHapticFeedback.current
@@ -255,6 +257,7 @@ internal fun Modifier.playerGestures(
     val latestFullscreen by rememberUpdatedState(fullscreen)
     val latestDoubleTap by rememberUpdatedState(onDoubleTap)
     val latestSwipeExit by rememberUpdatedState(onSwipeExit)
+    val latestSwipeEnter by rememberUpdatedState(onSwipeEnter)
     val latestSwipeDown by rememberUpdatedState(LocalPictureSwipeDown.current)
     val locked = ui.locked
     val hasDoubleTap = onDoubleTap != null
@@ -315,6 +318,8 @@ internal fun Modifier.playerGestures(
             val step = HoldSpeedStep.toPx()
             val edge = 40.dp.toPx()
             val exitDistance = SwipeExitDistance.toPx()
+            val flick = SwipeFlickDistance.toPx()
+            val flickSpeed = SwipeFlickSpeed.toPx()
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 val early = withTimeoutOrNull(holdTimeout) {
@@ -342,7 +347,8 @@ internal fun Modifier.playerGestures(
                 val seekBase = ctrl.exactPositionMs()
                 var seekTarget = seekBase
                 // 1 seek, 2 volume, 3 brightness, 4 swipe down to exit fullscreen, 5 swipe down to leave
-                // the page (inline, the middle third: the side thirds keep volume / brightness), -1 ignored. The minimal chrome only seeks;
+                // the page (inline, the middle third: the side thirds keep volume / brightness), 6 swipe up to
+                // enter fullscreen (inline, the middle third), -1 ignored. The minimal chrome only seeks;
                 // in fullscreen a drag from the very top / bottom edge is the system's.
                 var mode = when {
                     minimal -> 1
@@ -366,6 +372,8 @@ internal fun Modifier.playerGestures(
                                 tapThird(startX, size.width) == 0 -> 4
                             drag.y > 0f && !latestFullscreen && latestSwipeDown != null &&
                                 tapThird(startX, size.width) == 0 -> 5
+                            drag.y < 0f && !latestFullscreen && latestSwipeEnter != null &&
+                                tapThird(startX, size.width) == 0 -> 6
                             startX > size.width / 2f -> 2
                             else -> 3
                         }
@@ -419,6 +427,15 @@ internal fun Modifier.playerGestures(
                             downVelocity.addPosition(change.uptimeMillis, Offset(0f, travel))
                             latestSwipeDown?.drag(travel)
                         }
+                        6 -> {
+                            val was = -travel >= exitDistance
+                            travel += drag.y
+                            downVelocity.addPosition(change.uptimeMillis, Offset(0f, travel))
+                            // One tick each way across the line, so the finger knows a lift enters.
+                            if (was != (-travel >= exitDistance)) {
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            }
+                        }
                         4 -> {
                             val was = travel >= exitDistance
                             travel += drag.y
@@ -447,6 +464,13 @@ internal fun Modifier.playerGestures(
                         r != null -> r.close(kotlinx.coroutines.CancellationException("swipe back cancelled"))
                         exits -> latestSwipeExit?.invoke()
                     }
+                    if (mode == 6 && ended && !latestFullscreen) {
+                        // Lifted past the line, or flicked up: fullscreen.
+                        val up = -travel
+                        if (up >= exitDistance || (up >= flick && downVelocity.calculateVelocity().y < -flickSpeed)) {
+                            latestSwipeEnter?.invoke()
+                        }
+                    }
                     if (mode == 5) {
                         // Lifted: the page decides from the travel and the finger's speed; cut short: back.
                         if (ended) latestSwipeDown?.end(travel, downVelocity.calculateVelocity().y)
@@ -461,6 +485,12 @@ internal fun Modifier.playerGestures(
 
 /** How far a fullscreen swipe down from the middle travels before lifting it exits fullscreen. */
 private val SwipeExitDistance = 72.dp
+
+/** An inline swipe up shorter than [SwipeExitDistance] still enters fullscreen past this, if quick. */
+private val SwipeFlickDistance = 24.dp
+
+/** How fast that short swipe up has to leave the finger. */
+private val SwipeFlickSpeed = 800.dp
 
 /** The share of the picture's height a swipe travels for the back ride's full progress. */
 private const val SwipeRideFraction = 0.45f
