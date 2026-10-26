@@ -93,6 +93,12 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
         immersive = on
     }
 
+    /**
+     * 清屏 in the immersive pager (a sideways swipe on the picture): what sits on the picture
+     * is hidden. Kept while the user pages through videos, never remembered past the page.
+     */
+    var immersiveCleared by mutableStateOf(false)
+
     /** Set when the archive is really a bangumi episode → the screen replaces itself. */
     var redirect by mutableStateOf<Route?>(null)
         private set

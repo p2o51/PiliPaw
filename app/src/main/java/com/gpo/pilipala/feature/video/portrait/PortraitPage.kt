@@ -68,7 +68,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.util.fastFirstOrNull
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -77,6 +80,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.feature.player.BiliPlayerState
 import com.gpo.pilipala.feature.player.GestureFeedback
@@ -105,7 +109,9 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.random.Random
 import com.gpo.pilipala.ui.components.inlineIconSize
 import com.gpo.pilipala.ui.components.centered
@@ -180,6 +186,26 @@ internal fun PortraitPage(
         if (pipEntering) snap() else YoinMotion.defaultEffectsSpec(),
         label = "overlayAlpha",
     )
+    // 清屏: a sideways swipe on the picture hides what sits on it (left clears, right brings it
+    // back), following the finger. [clearDrag] is the swipe's progress while the finger is down.
+    var clearDrag by remember { mutableStateOf<Float?>(null) }
+    val clear by animateFloatAsState(
+        clearDrag ?: if (vm.immersiveCleared) 1f else 0f,
+        if (clearDrag != null) snap() else YoinMotion.defaultSpatialSpec(),
+        label = "clear",
+    )
+    // The first 清屏 says how to undo it, once.
+    var clearHint by remember { mutableStateOf(false) }
+    LaunchedEffect(host, vm.immersiveCleared) {
+        if (host && vm.immersiveCleared && !ClearHinted.value) {
+            AppSettings.set(ClearHinted, true)
+            clearHint = true
+            delay(2200)
+            clearHint = false
+        } else if (!vm.immersiveCleared) {
+            clearHint = false
+        }
+    }
 
     val ownerMid = detail?.ownerMid ?: item.ownerMid
     val ownerName = detail?.ownerName?.ifEmpty { null } ?: item.ownerName
@@ -289,17 +315,47 @@ internal fun PortraitPage(
         val slop = viewConfiguration.touchSlop
         val holdTimeout = viewConfiguration.longPressTimeoutMillis
         val step = HoldSpeedStep.toPx()
+        val clearSpan = ClearSpan.toPx()
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
-            when (withTimeoutOrNull(holdTimeout) { awaitLeave(down.id, slop) }) {
+            when (val press = withTimeoutOrNull(holdTimeout) { awaitLeave(down.id, slop) }) {
                 // Held still: a playing video speeds up until the finger lifts.
                 null -> if (ctrl != null && ctrl.isPlaying) {
                     holdSpeed(down.id, step, ctrl, hold, haptic)
                 } else {
                     consumeUntilRelease(down.id)
                 }
-                // A swipe: the pager's if it takes it, otherwise nothing (and not a tap).
-                is Press.Moved -> swallowRelease(down.id)
+                // Sideways: 清屏 (taken before the pager sees it).
+                is Press.Moved -> if (abs(press.overSlop.x) > abs(press.overSlop.y)) {
+                    val from = vm.immersiveCleared
+                    var dx = press.overSlop.x
+                    fun progress() = (if (from) 1f - dx / clearSpan else -dx / clearSpan).coerceIn(0f, 1f)
+                    var past = false
+                    press.change.consume()
+                    try {
+                        while (true) {
+                            clearDrag = progress()
+                            val crossed = if (from) progress() < 1f - ClearCommit else progress() > ClearCommit
+                            if (crossed != past) {
+                                past = crossed
+                                if (crossed) haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                            }
+                            val c = awaitPointerEvent().changes.fastFirstOrNull { it.id == down.id } ?: break
+                            dx += c.positionChange().x
+                            c.consume()
+                            if (!c.pressed) break
+                        }
+                        if (past) {
+                            vm.immersiveCleared = !from
+                            expanded = false
+                        }
+                    } finally {
+                        clearDrag = null
+                    }
+                } else {
+                    // A swipe: the pager's if it takes it, otherwise nothing (and not a tap).
+                    swallowRelease(down.id)
+                }
                 // A tap, or the pager already has it.
                 else -> Unit
             }
@@ -341,9 +397,10 @@ internal fun PortraitPage(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .height(h * 0.42f)
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = scrimAlpha)))),
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = scrimAlpha * (1f - clear))))),
             )
-            Box(Modifier.matchParentSize().revealed(callbacks.reveal) { overlayAlpha }) {
+            // Gone once cleared, so nothing hidden still takes a tap.
+            if (clear < 1f) Box(Modifier.matchParentSize().revealed(callbacks.reveal) { overlayAlpha }.cleared { clear }) {
                 if (showInfo) InfoBlock(
                     ownerName = ownerName,
                     onOwner = openOwner,
@@ -388,7 +445,7 @@ internal fun PortraitPage(
                         key(b.id) { LikeBurst(b) { bursts.remove(b) } }
                     }
                 }
-                ImmersiveSeekBar(
+                if (clear < 1f) ImmersiveSeekBar(
                     ctrl = ctrl,
                     state = playerState,
                     onScrubbingChange = {
@@ -399,9 +456,26 @@ internal fun PortraitPage(
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .padding(bottom = bottom)
-                        .graphicsLayer { alpha = if (pipEntering) 0f else 1f },
+                        .graphicsLayer { alpha = if (pipEntering) 0f else 1f }
+                        .cleared { clear },
                     horizontalPadding = if (framed) 12.dp else 0.dp,
                 )
+                AnimatedVisibility(
+                    visible = clearHint,
+                    enter = fadeIn(YoinMotion.defaultEffectsSpec()) + scaleIn(YoinMotion.fastSpatialSpec(), initialScale = 0.9f),
+                    exit = fadeOut(YoinMotion.defaultEffectsSpec()),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bottom + 32.dp),
+                ) {
+                    Text(
+                        "已清屏 · 右滑恢复",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = OnPicture,
+                        modifier = Modifier
+                            .clip(ContinuousRoundedCornerShape(16.dp))
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
             }
         }
     }
@@ -410,7 +484,7 @@ internal fun PortraitPage(
         // Panel: the layout's one backdrop shows through.
         if (mode != PortraitMode.Panel) CoverBackdrop(item.cover, Modifier.matchParentSize())
         val sideActions: @Composable (Modifier) -> Unit = { m ->
-            Column(m.revealed(callbacks.reveal) { overlayAlpha }, horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(m.revealed(callbacks.reveal) { overlayAlpha }.cleared { clear }.inertWhen(clear >= 1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 actions(Modifier)
                 Spacer(Modifier.height(16.dp))
                 CollapseButton(callbacks.onCollapse)
@@ -428,7 +502,9 @@ internal fun PortraitPage(
                     actions(
                         Modifier
                             .padding(bottom = navBottom + 12.dp)
-                            .revealed(callbacks.reveal) { overlayAlpha },
+                            .revealed(callbacks.reveal) { overlayAlpha }
+                            .cleared { clear }
+                            .inertWhen(clear >= 1f),
                     )
                 }
                 // 缩小 in the window's bottom-right corner, clear of the column.
@@ -437,7 +513,9 @@ internal fun PortraitPage(
                         .align(Alignment.BottomEnd)
                         .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.End))
                         .padding(end = 16.dp, bottom = navBottom + 16.dp)
-                        .revealed(callbacks.reveal) { overlayAlpha },
+                        .revealed(callbacks.reveal) { overlayAlpha }
+                        .cleared { clear }
+                        .inertWhen(clear >= 1f),
                 ) {
                     CollapseButton(callbacks.onCollapse)
                 }
@@ -492,6 +570,29 @@ internal fun PortraitPage(
                 }
             }
         }
+    }
+}
+
+/** How far a sideways swipe travels to 清屏 (or back), and the share of it that commits. */
+private val ClearSpan = 120.dp
+private const val ClearCommit = 0.4f
+
+private val ClearHinted = AppSettings.register("portrait_clear_hinted", false)
+
+/** 清屏's fade: what sits on the picture drifts a little left as it goes. */
+private fun Modifier.cleared(clear: () -> Float): Modifier = graphicsLayer {
+    val c = clear()
+    alpha = 1f - c
+    translationX = -c * 24.dp.toPx()
+}
+
+/**
+ * Beside the picture (tablet, landscape) the actions keep their place when cleared, so the
+ * picture does not move: hidden, they take no tap.
+ */
+private fun Modifier.inertWhen(inert: Boolean): Modifier = if (!inert) this else pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
     }
 }
 
