@@ -40,6 +40,7 @@ import com.gpo.pilipala.core.settings.AppSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.core.util.inflateBounded
 
 /**
@@ -156,7 +157,7 @@ internal object DanmakuApi {
             if (p.size < 4) continue
             val mode = p[1].toIntOrNull() ?: continue
             if (mode == 7 || mode == 8 || mode == 9) continue
-            val text = unescape(m.groupValues[2]).trim()
+            val text = Fmt.decodeEntities(m.groupValues[2]).trim()
             if (text.isEmpty()) continue
             list += DanmakuItem(
                 timeMs = ((p[0].toDoubleOrNull() ?: 0.0) * 1000).toLong(),
@@ -172,12 +173,6 @@ internal object DanmakuApi {
         }
         list.sortBy { it.timeMs }
         return list
-    }
-
-    private fun unescape(s: String): String {
-        if (!s.contains('&')) return s
-        return s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
-            .replace("&apos;", "'").replace("&#39;", "'").replace("&amp;", "&")
     }
 }
 

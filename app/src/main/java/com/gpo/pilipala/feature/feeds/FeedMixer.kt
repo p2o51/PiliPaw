@@ -1,7 +1,6 @@
 package com.gpo.pilipala.feature.feeds
 
 import android.util.Log
-import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.feature.home.Blacklist
 import com.gpo.pilipala.feature.member.ArchiveOrder
 import com.gpo.pilipala.feature.member.MemberRepo
@@ -183,9 +182,7 @@ internal class FeedMixer(
             val bili = if (where != KeywordWhere.YouTube && page > 0) {
                 val res = SearchApi.search(SearchTab.Video, source.term, page, source.order.key, duration = 0, tids = -1)
                 biliMore = page < res.numPages
-                res.items.filterIsInstance<VideoHit>().map { hit ->
-                    hit.item.copy(title = Fmt.stripTags(hit.item.title), ownerName = Fmt.stripTags(hit.item.ownerName))
-                }
+                res.items.filterIsInstance<VideoHit>().map { it.item }
             } else {
                 emptyList()
             }
