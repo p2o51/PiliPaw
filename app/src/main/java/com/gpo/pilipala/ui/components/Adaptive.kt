@@ -27,10 +27,44 @@ fun widthClass(): WidthClass {
     }
 }
 
+/**
+ * Large windows put the shell's navigation in a side rail instead of the bottom bar: Expanded
+ * width, or Medium width held sideways. Short windows (a phone on its side, under 480dp) keep the
+ * bottom bar, as everything else does.
+ */
+fun sideRailFor(widthDp: Int, heightDp: Int): Boolean =
+    heightDp >= 480 && (widthDp >= 840 || (widthDp >= 600 && widthDp > heightDp))
+
+@Composable
+fun useSideRail(): Boolean {
+    val c = LocalConfiguration.current
+    return sideRailFor(c.screenWidthDp, c.screenHeightDp)
+}
+
+/** The side rail's column. */
+const val SideRailWidthDp = 88
+
+/** 侧栏位置 (设置 › 外观): false = 左, true = 右. Dragging the rail across writes it too. */
+val SideRailRight: AppSettings.Key<Boolean> = AppSettings.register("side_rail_right", false)
+
+/**
+ * Where the side rail is, shared by the shell (its content gives way), the rail itself and the
+ * mini player that docks under it: 0 at the left edge, 1 at the right, live while it is dragged
+ * across or springs over. Only meaningful while [useSideRail].
+ */
+object SideRailState {
+    val position = androidx.compose.animation.core.Animatable(if (SideRailRight.value) 1f else 0f)
+
+    /** The side it rests on (or is heading for). */
+    val right: Boolean get() = position.targetValue > 0.5f
+}
+
 /** Grid columns for video cards at the current width (min card ~180dp, phone = 2). */
 @Composable
 fun videoGridColumns(): Int {
-    val w = LocalConfiguration.current.screenWidthDp
+    val c = LocalConfiguration.current
+    // The side rail takes its column out of the content's width.
+    val w = c.screenWidthDp - if (sideRailFor(c.screenWidthDp, c.screenHeightDp)) SideRailWidthDp else 0
     return (w / 200).coerceIn(2, 6)
 }
 
