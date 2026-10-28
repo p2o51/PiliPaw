@@ -47,6 +47,12 @@ internal object SettingsChoices {
         Choice(true, "单列"),
     )
 
+    /** 侧栏位置: false = 左, true = 右. */
+    val sideRail = listOf(
+        Choice(false, "左"),
+        Choice(true, "右"),
+    )
+
     /** 预览播放 for 单列 cards (FeedPreview.kt). */
     val feedPreview = listOf(
         Choice(com.gpo.pilipala.feature.player.PreviewOff, "关闭"),

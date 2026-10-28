@@ -143,6 +143,10 @@ private fun ColumnScope.StyleBody() {
     val singleColumn by HomeSingleColumn.state.collectAsState()
     val previewMode by FeedPreviewMode.state.collectAsState()
     val hiddenSections by ShellSections.hiddenKey.state.collectAsState()
+    val sideRailRight by com.gpo.pilipala.ui.components.SideRailRight.state.collectAsState()
+    val railCapable = androidx.compose.ui.platform.LocalConfiguration.current.let {
+        com.gpo.pilipala.ui.components.sideRailFor(maxOf(it.screenWidthDp, it.screenHeightDp), minOf(it.screenWidthDp, it.screenHeightDp))
+    }
     // 底栏 lists only the sections the ticked sources have (订阅 with YouTube alone, 排行 / 动态 with Bilibili).
     val barSources by com.gpo.pilipala.core.source.Sources.enabled.collectAsState()
     val seamStyle = currentSeamTopStyle()
@@ -255,6 +259,17 @@ private fun ColumnScope.StyleBody() {
         }
     }
     SettingsGroup("底栏") {
+        // 侧栏位置: the side rail of large windows (横屏平板); dragging the rail across sets it too.
+        // Only where the window gets a rail when held sideways (not on a phone).
+        if (railCapable) item(key = "side_rail") {
+            SettingsToggleItem(
+                title = "侧栏位置",
+                icon = com.gpo.yoin.symbols.YoinSymbols.Tablet,
+                choices = SettingsChoices.sideRail,
+                selected = sideRailRight,
+                onSelect = { AppSettings.set(com.gpo.pilipala.ui.components.SideRailRight, it) },
+            )
+        }
         ShellSection.entries.filter { it.removable && it.fits(barSources) }.forEach { section ->
             item(key = "shell_${section.key}") {
                 SettingsSwitchItem(
