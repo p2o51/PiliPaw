@@ -4,6 +4,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.Column
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
@@ -79,7 +82,13 @@ fun FloatingNavBar(
     hasLongPress: (Int) -> Boolean = { false },
     /** A small dot on a tab's icon (动态 with new posts). */
     badge: (Int) -> Boolean = { false },
+    /** The side rail's pill: a column, the selected tab taller with its label under the icon. */
+    vertical: Boolean = false,
 ) {
+    if (vertical) {
+        VerticalNavBar(tabs, selected, onSelect, modifier, onLongPress, hasLongPress, badge)
+        return
+    }
     val compact = widthClass() == WidthClass.Compact
     val rowHeight = if (compact) 68.dp else 60.dp
     val buttonHeight = if (compact) 48.dp else 44.dp
@@ -142,8 +151,72 @@ fun FloatingNavBar(
     }
 }
 
+/**
+ * The same button group stood up for the side rail: a 68dp pill of 52dp buttons, the selected one
+ * taller with its label under the icon, a press pushing its neighbours up and down. The merged
+ * mini player's circle joins at the pill's bottom end, which grows down to let it in.
+ */
 @Composable
-private fun NavButton(tab: NavTab, selected: Boolean, height: Dp, onClick: () -> Unit, onLongClick: (() -> Unit)? = null, badge: Boolean = false) {
+private fun VerticalNavBar(
+    tabs: List<NavTab>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier,
+    onLongPress: (Int) -> Unit,
+    hasLongPress: (Int) -> Boolean,
+    badge: (Int) -> Boolean,
+) {
+    val haptics = LocalHapticFeedback.current
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shadowElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .width(RailPillWidth)
+                .padding(vertical = 8.dp)
+                .layout { measurable, constraints ->
+                    val room = (com.gpo.pilipala.feature.sources.KeepPlaying.navRoom *
+                        com.gpo.pilipala.feature.sources.NavRoom.toPx()).roundToInt()
+                    val placeable = measurable.measure(constraints.offset(vertical = -room))
+                    layout(placeable.width, placeable.height + room) { placeable.place(0, 0) }
+                },
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            tabs.forEachIndexed { index, tab ->
+                NavButton(
+                    tab = tab,
+                    selected = index == selected,
+                    badge = badge(index),
+                    height = RailButtonSize,
+                    vertical = true,
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onSelect(index)
+                    },
+                    onLongClick = if (hasLongPress(index)) {
+                        {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onLongPress(index)
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** The side rail's pill and its buttons. */
+internal val RailPillWidth = 68.dp
+private val RailButtonSize = 52.dp
+
+@Composable
+private fun NavButton(tab: NavTab, selected: Boolean, height: Dp, onClick: () -> Unit, onLongClick: (() -> Unit)? = null, badge: Boolean = false, vertical: Boolean = false) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val sel by animateFloatAsState(if (selected) 1f else 0f, YoinMotion.defaultEffectsSpec(), label = "sel")
@@ -164,37 +237,59 @@ private fun NavButton(tab: NavTab, selected: Boolean, height: Dp, onClick: () ->
     val colors = MaterialTheme.colorScheme
     val container = lerp(lerp(colors.surfaceContainerHighest, colors.primaryContainer, sel), colors.tertiaryContainer, press)
     val content = lerp(lerp(colors.onSurfaceVariant, colors.onPrimaryContainer, sel), colors.onTertiaryContainer, press)
+    val frame = Modifier
+        .clip(RoundedCornerShape(corner))
+        .background(container)
+        .combinedClickable(interactionSource = interaction, indication = null, onLongClick = onLongClick, onClick = onClick)
+    val icon: @Composable () -> Unit = {
+            Box {
+                Icon(
+                    if (selected) tab.selectedIcon else tab.icon,
+                    contentDescription = tab.label,
+                    tint = content,
+                    modifier = Modifier.size(24.dp),
+                )
+                val dot by animateFloatAsState(if (badge) 1f else 0f, YoinMotion.fastSpatialSpec(), label = "badge")
+                if (dot > 0.01f) {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 2.dp, y = (-1).dp)
+                            .size(8.dp)
+                            .graphicsLayer {
+                                scaleX = dot
+                                scaleY = dot
+                            }
+                            .background(colors.error, CircleShape),
+                    )
+                }
+            }
+    }
+    if (vertical) {
+        Column(
+            modifier = frame
+                .width(height)
+                .padding(vertical = 14.dp + extra / 2),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            icon()
+            AnimatedVisibility(
+                visible = selected,
+                enter = fadeIn(YoinMotion.defaultEffectsSpec()) + expandVertically(YoinMotion.fastSpatialSpec()),
+                exit = fadeOut(YoinMotion.fastEffectsSpec()) + shrinkVertically(YoinMotion.fastSpatialSpec()),
+            ) {
+                Text(tab.label, style = MaterialTheme.typography.labelMedium, color = content, maxLines = 1)
+            }
+        }
+        return
+    }
     Row(
-        modifier = Modifier
+        modifier = frame
             .height(height)
-            .clip(RoundedCornerShape(corner))
-            .background(container)
-            .combinedClickable(interactionSource = interaction, indication = null, onLongClick = onLongClick, onClick = onClick)
             .padding(horizontal = 14.dp + extra / 2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box {
-            Icon(
-                if (selected) tab.selectedIcon else tab.icon,
-                contentDescription = tab.label,
-                tint = content,
-                modifier = Modifier.size(24.dp),
-            )
-            val dot by animateFloatAsState(if (badge) 1f else 0f, YoinMotion.fastSpatialSpec(), label = "badge")
-            if (dot > 0.01f) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .offset(x = 2.dp, y = (-1).dp)
-                        .size(8.dp)
-                        .graphicsLayer {
-                            scaleX = dot
-                            scaleY = dot
-                        }
-                        .background(colors.error, CircleShape),
-                )
-            }
-        }
+        icon()
         AnimatedVisibility(
             visible = selected,
             enter = fadeIn(YoinMotion.defaultEffectsSpec()) + expandHorizontally(YoinMotion.fastSpatialSpec()),
