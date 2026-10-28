@@ -252,12 +252,8 @@ object KeepPlaying {
      * Where the bar's picture will rest (window px) once the page over [shell] goes: for a flight
      * that lands in it. [w] × [h] is the window less the system's navigation bar.
      */
-    internal fun dockTile(shell: Boolean, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density, live: Boolean = false): Rect {
-        val bar = miniBarRect(if (shell) NavSpot.bounds ?: NavSpot.last else null, w, h, tablet, density, sides = !live)
-        val barH = bar.height
-        val gap = with(density) { BlockGap.toPx() }
-        return miniGeo(barH * 16f / 9f, MiniDims(1f, barH * 16f / 9f, 1f), bar, null, 16f / 9f, Offset.Unspecified, Rect(0f, 0f, w, h), null, MiniPx(gap, 0f, 0f, 0f, 0f), sides = !live).tile
-    }
+    internal fun dockTile(shell: Boolean, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density, live: Boolean = false, rail: RailSpot? = null): Rect =
+        dockTileOf(if (shell) NavSpot.bounds ?: NavSpot.last else null, w, h, tablet, density, live, rail)
 
     /**
      * The bar's picture was tapped open: its page grows out of it where it is, so the bar steps
@@ -363,6 +359,7 @@ internal fun DockFlightEffect(live: Boolean = false, enabled: () -> Boolean) {
     val navBottom = WindowInsets.navigationBars.getBottom(density)
     val tablet = widthClass() != WidthClass.Compact
     val metrics by rememberUpdatedState(Triple(window.width.toFloat(), (window.height - navBottom).toFloat(), tablet))
+    val rail by rememberUpdatedState(railSpot(window.width.toFloat()))
     val isEnabled by rememberUpdatedState(enabled)
     val key = remember { nav.backStack.lastOrNull()?.toString() } ?: return
     DisposableEffect(transitions, key) {
@@ -378,7 +375,7 @@ internal fun DockFlightEffect(live: Boolean = false, enabled: () -> Boolean) {
             target = {
                 // Opened from the floating window (or circle): back to it, else the bar's tile.
                 val form = PlayerHost.front?.let(PlayerHost::remembered) as? DockForm
-                form?.rect ?: metrics.let { (w, h, tablet) -> KeepPlaying.dockTile(shellBeneath(), w, h, tablet, density, live) }
+                form?.rect ?: metrics.let { (w, h, tablet) -> KeepPlaying.dockTile(shellBeneath(), w, h, tablet, density, live, rail) }
             },
             corner = {
                 val form = PlayerHost.front?.let(PlayerHost::remembered) as? DockForm
@@ -634,6 +631,11 @@ private fun currentPlaying(): Playing? {
     return null
 }
 
+/** The side rail's strip: as wide as its pill, the keys under the picture this tall, its ends this round. */
+private val StripWidth = com.gpo.pilipala.ui.shell.RailPillWidth
+private val StripKey = 40.dp
+private val StripEnd = 14.dp
+
 private val BarHeightPhone = 56.dp
 private val BarHeightTablet = 52.dp
 private val CircleSize = 48.dp
@@ -664,7 +666,10 @@ internal val NavRoom = CircleSize + 4.dp
  * the nav bar (phone), left of it in its row (tablet, when there is room), or at the bottom on a
  * page without one. A live bar has no ±15 blocks ([sides] false), so it is narrower.
  */
-internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density, sides: Boolean = true): Rect = with(density) {
+internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density, sides: Boolean = true, rail: RailSpot? = null): Rect = with(density) {
+    if (rail != null) {
+        return railStripRect(nav, rail.left, rail.width, h, StripWidth.toPx(), StripKey.toPx(), BlockGap.toPx(), NavGap.toPx(), SideMargin.toPx(), sides)
+    }
     val barH = (if (tablet) BarHeightTablet else BarHeightPhone).toPx()
     val navGap = NavGap.toPx()
     val side = SideMargin.toPx()
@@ -681,6 +686,35 @@ internal fun miniBarRect(nav: Rect?, w: Float, h: Float, tablet: Boolean, densit
             Rect(left, bottom - barH, left + bw, bottom)
         }
     }
+}
+
+/** [KeepPlaying.dockTile] for a nav bar (or the rail's pill) at [nav]; null: a page without one. */
+internal fun dockTileOf(nav: Rect?, w: Float, h: Float, tablet: Boolean, density: androidx.compose.ui.unit.Density, live: Boolean = false, rail: RailSpot? = null): Rect {
+    val bar = miniBarRect(nav, w, h, tablet, density, sides = !live, rail = rail)
+    val row = if (rail != null) bar.width else bar.height * 16f / 9f
+    val gap = with(density) { BlockGap.toPx() }
+    return miniGeo(row, MiniDims(1f, row, 1f), bar, null, 16f / 9f, Offset.Unspecified, Rect(0f, 0f, w, h), null, MiniPx(gap, 0f, 0f, 0f, 0f), sides = !live, orient = rail?.orient ?: MiniOrient.Row).tile
+}
+
+/** The side rail's column (window px) while it is up: the bar is its strip there, docked under its pill. */
+internal class RailSpot(val left: Float, val width: Float, val right: Boolean) {
+    val orient: MiniOrient get() = if (right) MiniOrient.StripRight else MiniOrient.StripLeft
+}
+
+/** Where the side rail is in a window [w] px wide, live as it moves across; null without one. */
+@Composable
+internal fun railSpot(w: Float): RailSpot? {
+    if (!com.gpo.pilipala.ui.components.useSideRail()) return null
+    val width = with(LocalDensity.current) { com.gpo.pilipala.ui.components.SideRailWidthDp.dp.toPx() }
+    val position = com.gpo.pilipala.ui.components.SideRailState.position
+    return RailSpot(position.value * (w - width), width, position.targetValue > 0.5f)
+}
+
+/** The merged circle at the end of the rail's pill ([nav] as reported, without the room it grows for it). */
+internal fun railCircle(nav: Rect, circle: Float, density: androidx.compose.ui.unit.Density): Rect = with(density) {
+    // The pill's last button ends 8dp above its bottom; the circle follows 4dp on.
+    val top = nav.bottom - 8.dp.toPx() + 4.dp.toPx()
+    Rect(nav.center.x - circle / 2f, top, nav.center.x + circle / 2f, top + circle)
 }
 
 /** Extra bottom room a shell list needs while the bar sits above the nav bar (phones). */
@@ -777,6 +811,15 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
     /** The ±15 blocks are there (not for a live stream). */
     var sides by mutableStateOf(true)
 
+    /** The row, or the side rail's strip on the left or right. */
+    var orient by mutableStateOf(MiniOrient.Row)
+
+    /** A window made from the bar starts in a bottom corner: the right one, or the rail's side's. */
+    val newWindowCorner: Int get() = when (orient) {
+        MiniOrient.StripLeft -> 2
+        else -> BottomRight
+    }
+
     val canMerge: Boolean get() = nav != null
 
     val geo by derivedStateOf {
@@ -792,13 +835,14 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
             px = px,
             pinned = popping,
             sides = sides,
+            orient = orient,
         )
     }
 
     fun restAxis(rest: MiniRest, density: Float): Float = restAxisOf(rest, dims, canMerge, maxAxis, density)
 
     /** Where the bar's picture sits at rest (a merging window travels there). */
-    fun rowTile(): Rect = miniGeo(dims.row, dims, anchor.value, circle, aspect, Offset.Unspecified, bounds, nav, px, sides = sides).tile
+    fun rowTile(): Rect = miniGeo(dims.row, dims, anchor.value, circle, aspect, Offset.Unspecified, bounds, nav, px, sides = sides, orient = orient).tile
 
     /** The smallest size it may take: the window's while a page keeps it floating, else the circle or the bar. */
     val minAxis: Float get() = when {
@@ -944,16 +988,21 @@ fun MiniBarHost() {
         val barH = with(density) { (if (tablet) BarHeightTablet else BarHeightPhone).toPx() }
         val navGap = with(density) { NavGap.toPx() }
         val side = with(density) { SideMargin.toPx() }
-        val dims = with(density) { MiniDims(circle = CircleSize.toPx(), row = barH * 16f / 9f, detachExtra = 40.dp.toPx()) }
+        // Large windows: the strip in the side rail's column, under its pill.
+        val rail = railSpot(w)
+        val orient = rail?.orient ?: MiniOrient.Row
+        val row = with(density) { if (rail != null) StripWidth.toPx() else barH * 16f / 9f }
+        val dims = with(density) { MiniDims(circle = CircleSize.toPx(), row = row, detachExtra = 40.dp.toPx()) }
         // Landing from the video page's swipe down: the shell's nav bar may not be back yet.
         val nav = KeepPlaying.navForBar()
-        val barTarget = miniBarRect(nav, w, h, tablet, density, sides = !p.live)
-        // The merged circle at the nav bar's start; kept after the nav bar goes so the picture
-        // can fly back out of it.
+        val barTarget = miniBarRect(nav, w, h, tablet, density, sides = !p.live, rail = rail)
+        // The merged circle at the nav bar's start (the rail's pill's end); kept after the nav bar
+        // goes so the picture can fly back out of it.
         val circleTarget = nav?.let {
             val c = with(density) { CircleSize.toPx() }
             val lead = with(density) { NavLead.toPx() }
-            Rect(it.left + lead, it.center.y - c / 2f, it.left + lead + c, it.center.y + c / 2f)
+            if (rail != null) railCircle(it, c, density)
+            else Rect(it.left + lead, it.center.y - c / 2f, it.left + lead + c, it.center.y + c / 2f)
         }
         val widthCap = if (tablet) minOf(with(density) { 520.dp.toPx() }, w - with(density) { 24.dp.toPx() }) else w - with(density) { 24.dp.toPx() }
         val maxAxis = MiniAxis.maxAxis(widthCap, (h - statusTop) * 0.6f, aspect).coerceAtLeast(dims.detach)
@@ -974,6 +1023,7 @@ fun MiniBarHost() {
         }
         frame.dims = dims
         frame.sides = !p.live
+        frame.orient = orient
         frame.view = androidx.compose.ui.platform.LocalView.current
         // A bar swiped away waits out there; the next one to show comes back in the middle.
         LaunchedEffect(frame, up) {
@@ -991,10 +1041,14 @@ fun MiniBarHost() {
         frame.bounds = Rect(margin, statusTop + margin, w - margin, h - margin)
         // A window resting at a bottom corner rests above the nav bar and the bar.
         // Without a nav bar (a pushed page) the bottom corners sit just above the system's inset.
-        val restBottom = if (nav != null) nav.top - with(density) { 32.dp.toPx() } else h - with(density) { 16.dp.toPx() }
-        frame.restArea = Rect(margin, statusTop + margin, w - margin, restBottom)
+        val restBottom = if (nav != null && rail == null) nav.top - with(density) { 32.dp.toPx() } else h - with(density) { 16.dp.toPx() }
+        // Beside the side rail its corners leave the rail's column out.
+        val railIn = rail != null && nav != null
+        val restLeft = if (railIn && !rail!!.right) rail.left + rail.width + margin else margin
+        val restRight = if (railIn && rail!!.right) rail.left - margin else w - margin
+        frame.restArea = Rect(restLeft, statusTop + margin, restRight, restBottom)
         frame.dockRange = with(density) { DockSwipeAt.toPx() }
-        frame.px = with(density) { MiniPx(BlockGap.toPx(), InnerCorner.toPx(), WindowCorner.toPx(), margin, 8.dp.toPx(), 32.dp.toPx(), 8.dp.toPx()) }
+        frame.px = with(density) { MiniPx(BlockGap.toPx(), InnerCorner.toPx(), WindowCorner.toPx(), margin, 8.dp.toPx(), 32.dp.toPx(), 8.dp.toPx(), StripEnd.toPx()) }
 
         // The bar follows the nav bar (a page opening hides it, coming back shows it) on a spring.
         LaunchedEffect(barTarget) {
@@ -1047,8 +1101,16 @@ fun MiniBarHost() {
                 KeepPlaying.rest = back
             }
         }
+        // The rail went to the other edge: a window resting on the side it takes goes to the
+        // mirrored corner at the same height (then the effect below springs it there).
+        val railRight = rail?.right
+        val lastRailRight = remember { arrayOfNulls<Boolean>(1) }
+        if (railRight != null && lastRailRight[0] != null && lastRailRight[0] != railRight && !frame.gesturing) {
+            KeepPlaying.windowCorner?.let { KeepPlaying.windowCorner = MiniGestures.cornerAfterRailFlip(it, railRight) }
+        }
+        lastRailRight[0] = railRight
         // A resting window keeps its corner when the screen around it changes (rotation, nav bar).
-        LaunchedEffect(frame.restArea, maxAxis) {
+        LaunchedEffect(frame.restArea, maxAxis, railRight) {
             val corner = KeepPlaying.windowCorner ?: return@LaunchedEffect
             if (frame.gesturing || KeepPlaying.rest !is MiniRest.Window || !KeepPlaying.windowCenter.isSpecified) return@LaunchedEffect
             snapWindow(frame, scope, restAxis, corner, KeepPlaying.windowCenter, Offset.Zero)
@@ -1078,11 +1140,13 @@ fun MiniBarHost() {
             Modifier.fillMaxSize().drawBehind {
                 val n = frame.geo.neck ?: return@drawBehind
                 val span = n.bottom - n.top
+                // Drawn from the picture (narrow) to the nav bar (flared); the strip's pours up.
+                fun y(v: Float) = if (n.up) n.top + n.bottom - v else v
                 val path = Path().apply {
-                    moveTo(n.cx - n.halfTop, n.top)
-                    cubicTo(n.cx - n.pinch, n.top + span * 0.55f, n.cx - n.pinch, n.bottom - span * 0.3f, n.cx - n.flare, n.bottom)
-                    lineTo(n.cx + n.flare, n.bottom)
-                    cubicTo(n.cx + n.pinch, n.bottom - span * 0.3f, n.cx + n.pinch, n.top + span * 0.55f, n.cx + n.halfTop, n.top)
+                    moveTo(n.cx - n.halfTop, y(n.top))
+                    cubicTo(n.cx - n.pinch, y(n.top + span * 0.55f), n.cx - n.pinch, y(n.bottom - span * 0.3f), n.cx - n.flare, y(n.bottom))
+                    lineTo(n.cx + n.flare, y(n.bottom))
+                    cubicTo(n.cx + n.pinch, y(n.bottom - span * 0.3f), n.cx + n.pinch, y(n.top + span * 0.55f), n.cx + n.halfTop, y(n.top))
                     close()
                 }
                 drawPath(path, navColor, alpha = shown)
@@ -1265,7 +1329,10 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             travel += delta
             finger += delta
             if (!dragging && !giveUp && travel.getDistance() > viewConfiguration.touchSlop &&
-                windowAtDown && !KeepPlaying.floatOnly && MiniGestures.startsMerge(KeepPlaying.windowCorner, travel)
+                windowAtDown && !KeepPlaying.floatOnly && (
+                    if (frame.orient.strip) MiniGestures.startsStripMerge(KeepPlaying.windowCorner, travel, frame.orient.right)
+                    else MiniGestures.startsMerge(KeepPlaying.windowCorner, travel)
+                    )
             ) {
                 dragging = true
                 merging = true
@@ -1275,12 +1342,20 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                 mergeFrom = frame.geo.tile.center
                 mergeTo = frame.rowTile().center
                 // The window's way down to the nav bar (or the bar's place) is the whole merge.
-                val navY = frame.nav?.center?.y ?: frame.anchor.value.center.y
-                mergeRange = (navY - frame.geo.tile.bottom).coerceIn(80f * density, 120f * density)
+                mergeRange = if (frame.orient.strip) {
+                    // The strip's way: from the window's rail side to the strip.
+                    val edge = if (frame.orient.right) frame.geo.tile.right else frame.geo.tile.left
+                    abs(edge - mergeTo.x).coerceIn(80f * density, 120f * density)
+                } else {
+                    val navY = frame.nav?.center?.y ?: frame.anchor.value.center.y
+                    (navY - frame.geo.tile.bottom).coerceIn(80f * density, 120f * density)
+                }
                 frame.pinchAxis = mergeFromAxis
             }
             if (!dragging && !giveUp && travel.getDistance() > viewConfiguration.touchSlop) {
-                when (MiniGestures.dragIntent(travel, windowAtDown, mergedAtDown, g0.tile.contains(downAt))) {
+                val intent = if (frame.orient.strip) MiniGestures.stripDragIntent(travel, windowAtDown, mergedAtDown, g0.tile.contains(downAt), frame.orient.right)
+                else MiniGestures.dragIntent(travel, windowAtDown, mergedAtDown, g0.tile.contains(downAt))
+                when (intent) {
                     MiniDragIntent.MoveWindow, MiniDragIntent.SwipeAway -> dragging = true
                     MiniDragIntent.DockSwipe -> {
                         dragging = true
@@ -1310,7 +1385,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                 // 1:1 with the finger: it shrinks and travels to the bar's picture, the side
                 // blocks unfold around it; back up undoes it.
                 val was = mergeProgress
-                mergeProgress = MiniGestures.mergeProgress(travel.y, mergeRange)
+                mergeProgress = MiniGestures.mergeProgress(if (frame.orient.strip) -MiniGestures.intoWindow(travel, frame.orient.right) else travel.y, mergeRange)
                 // A tick where letting go would dock it, and again coming back over it.
                 if (MiniGestures.crosses(was, mergeProgress, MiniGestures.MergeAt)) frame.haptic(dock = false)
                 frame.pinchAxis = lerp(mergeFromAxis, frame.dims.row, mergeProgress)
@@ -1330,7 +1405,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                 velocity.addPosition(c.uptimeMillis, finger)
                 if (popped) {
                     val was = popProgress
-                    popProgress = MiniGestures.popProgress(-travel.y, popRange)
+                    popProgress = MiniGestures.popProgress(if (frame.orient.strip) MiniGestures.intoWindow(travel, frame.orient.right) else -travel.y, popRange)
                     frame.pinchAxis = lerp(frame.dims.row, frame.dims.detach, popProgress)
                     // A tick the moment it comes off the bar.
                     if (was < 1f && popProgress >= 1f) frame.haptic(dock = false)
@@ -1360,7 +1435,12 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
         )
         when {
             docking && !pinching -> releaseDockSwipe(frame, scope, latest)
-            merging && !pinching -> releaseMerge(frame, scope, mergeProgress, velocity.calculateVelocity().y, mergeFromAxis, mergeRange, density)
+            merging && !pinching -> {
+                val v = velocity.calculateVelocity()
+                // The speed toward the bar (down) or the rail's strip (toward its edge).
+                val toward = if (frame.orient.strip) -MiniGestures.intoWindow(Offset(v.x, v.y), frame.orient.right) else v.y
+                releaseMerge(frame, scope, mergeProgress, toward, mergeFromAxis, mergeRange, density)
+            }
             pinching -> releasePinch(frame, scope, raw, axisVelocity.calculateVelocity().takeIf { it.isFinite() } ?: 0f, density, latest)
             popped -> releasePop(frame, scope, popProgress, velocity.calculateVelocity(), density, latest)
             kind == MiniGestureKind.Drag && windowAtDown -> releaseWindow(frame, scope, velocity.calculateVelocity(), density, latest)
@@ -1495,7 +1575,7 @@ private fun releasePinch(frame: MiniFrame, scope: CoroutineScope, raw: Float, v:
     // (never left mid-screen over a page).
     if (window) {
         frame.haptic(dock = false)
-        snapWindow(frame, scope, target, KeepPlaying.windowCorner ?: BottomRight, frame.geo.tile.center, Offset.Zero)
+        snapWindow(frame, scope, target, KeepPlaying.windowCorner ?: frame.newWindowCorner, frame.geo.tile.center, Offset.Zero)
     } else if (wasWindow) {
         // Pinched back into the bar.
         frame.haptic(dock = true)
@@ -1686,7 +1766,11 @@ private fun SideBlock(forward: Boolean, p: Playing, frame: MiniFrame) {
     val inner = InnerCorner
     val small = androidx.compose.foundation.shape.CornerSize(inner)
     val round = androidx.compose.foundation.shape.CornerSize(50)
-    val shape = if (forward) {
+    val end = androidx.compose.foundation.shape.CornerSize(StripEnd)
+    val shape = if (frame.orient.strip) {
+        // The strip: −15 in the middle, +15 its rounded bottom end.
+        if (forward) RoundedCornerShape(topStart = small, topEnd = small, bottomEnd = end, bottomStart = end) else RoundedCornerShape(inner)
+    } else if (forward) {
         RoundedCornerShape(topStart = small, topEnd = round, bottomEnd = round, bottomStart = small)
     } else {
         RoundedCornerShape(topStart = round, topEnd = small, bottomEnd = small, bottomStart = round)
@@ -1707,7 +1791,10 @@ private fun SideBlock(forward: Boolean, p: Playing, frame: MiniFrame) {
 private fun PauseBlock(p: Playing, frame: MiniFrame) {
     val small = androidx.compose.foundation.shape.CornerSize(InnerCorner)
     val round = androidx.compose.foundation.shape.CornerSize(50)
-    val shape = if (p.live) {
+    val end = androidx.compose.foundation.shape.CornerSize(StripEnd)
+    val shape = if (p.live && frame.orient.strip) {
+        RoundedCornerShape(topStart = small, topEnd = small, bottomEnd = end, bottomStart = end)
+    } else if (p.live) {
         RoundedCornerShape(topStart = small, topEnd = round, bottomEnd = round, bottomStart = small)
     } else {
         RoundedCornerShape(InnerCorner)
@@ -1776,7 +1863,9 @@ private fun Tile(p: Playing, frame: MiniFrame) {
             .graphicsLayer {
                 val a = armed.value
                 shape = when {
-                    a <= 0f -> RoundedCornerShape(frame.geo.tileCorner)
+                    a <= 0f -> frame.geo.let { g ->
+                        RoundedCornerShape(topStart = g.tileTopCorner, topEnd = g.tileTopCorner, bottomEnd = g.tileCorner, bottomStart = g.tileCorner)
+                    }
                     a >= 1f -> cookie
                     else -> CookieMorphShape(morph, a)
                 }
@@ -1846,7 +1935,7 @@ private fun Tile(p: Playing, frame: MiniFrame) {
                 .graphicsLayer {
                     val gutter = if (p.live) 0f else ProgressGutter.toPx()
                     val corner = frame.geo.tileCorner
-                    val top = (corner - gutter * frame.geo.merge).coerceAtLeast(0f)
+                    val top = (frame.geo.tileTopCorner - gutter * frame.geo.merge).coerceAtLeast(0f)
                     val bottom = (corner - gutter).coerceAtLeast(0f)
                     shape = RoundedCornerShape(topStart = top, topEnd = top, bottomEnd = bottom, bottomStart = bottom)
                     clip = true
