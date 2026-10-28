@@ -990,6 +990,7 @@ fun MiniBarHost() {
         val side = with(density) { SideMargin.toPx() }
         // Large windows: the strip in the side rail's column, under its pill.
         val rail = railSpot(w)
+        val railColumn = rail?.width
         val orient = rail?.orient ?: MiniOrient.Row
         val row = with(density) { if (rail != null) StripWidth.toPx() else barH * 16f / 9f }
         val dims = with(density) { MiniDims(circle = CircleSize.toPx(), row = row, detachExtra = 40.dp.toPx()) }
@@ -1051,8 +1052,10 @@ fun MiniBarHost() {
         frame.px = with(density) { MiniPx(BlockGap.toPx(), InnerCorner.toPx(), WindowCorner.toPx(), margin, 8.dp.toPx(), 32.dp.toPx(), 8.dp.toPx(), StripEnd.toPx()) }
 
         // The bar follows the nav bar (a page opening hides it, coming back shows it) on a spring.
+        // Moving across with the side rail, the strip stays docked under its pill frame by frame.
         LaunchedEffect(barTarget) {
-            if (frame.anchor.targetValue != barTarget) frame.anchor.animateTo(barTarget, MiniSprings.def())
+            if (rail != null && com.gpo.pilipala.ui.components.SideRailState.moving) frame.anchor.snapTo(barTarget)
+            else if (frame.anchor.targetValue != barTarget) frame.anchor.animateTo(barTarget, MiniSprings.def())
         }
         // Rest changes from outside a gesture (scrolling, a new video, the nav bar going): spring there.
         val restAxis = frame.restAxis(KeepPlaying.rest, density.density)
@@ -1167,7 +1170,15 @@ fun MiniBarHost() {
                 }
             },
             modifier = Modifier
-                .offset { frame.geo.hit.let { IntOffset(it.left.roundToInt(), it.top.roundToInt()) } }
+                .offset {
+                    // Crossing with the side rail, the strip (or its circle) reads the rail's place
+                    // as the rail itself is placed, a frame ahead of the docked anchor.
+                    val follow = if (railColumn != null && !frame.geo.windowed && com.gpo.pilipala.ui.components.SideRailState.moving) {
+                        val live = com.gpo.pilipala.ui.components.SideRailState.position.value * (w - railColumn) + (railColumn - frame.anchor.value.width) / 2f
+                        live - frame.anchor.value.left
+                    } else 0f
+                    frame.geo.hit.let { IntOffset((it.left + follow).roundToInt(), it.top.roundToInt()) }
+                }
                 // The system's back gesture must not take a swipe that starts on the bar near an edge.
                 .systemGestureExclusion()
                 .pointerInput(frame) { miniGestures(frame, scope, density.density) { latest } }

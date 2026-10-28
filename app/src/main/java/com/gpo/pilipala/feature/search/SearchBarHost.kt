@@ -282,7 +282,8 @@ internal fun PiliSearchPage(
     val vm = viewModel(key = "pili_search") { SearchViewModel() }
     val submit = rememberSearchSubmit(state, hint, onSubmit, clearOnSubmit = true)
     val open = state.isOpen
-    BackHandler(enabled = open) { scope.launch { state.bar.animateToCollapsed() } }
+    // Registered as it opens, so it outranks the shell's back (which may have been composed after it).
+    if (open) BackHandler { scope.launch { state.bar.animateToCollapsed() } }
     val progress = state.bar.progress
     if (!open && progress <= 0.001f) return
     val focus = remember { FocusRequester() }

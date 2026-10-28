@@ -57,6 +57,15 @@ object SideRailState {
 
     /** The side it rests on (or is heading for). */
     val right: Boolean get() = position.targetValue > 0.5f
+
+    /** A finger is moving it across. */
+    private val draggingState = androidx.compose.runtime.mutableStateOf(false)
+    var dragging: Boolean
+        get() = draggingState.value
+        set(value) { draggingState.value = value }
+
+    /** On its way across (dragged or springing): what docks to it follows it frame by frame. */
+    val moving: Boolean get() = dragging || position.isRunning
 }
 
 /** Grid columns for video cards at the current width (min card ~180dp, phone = 2). */
