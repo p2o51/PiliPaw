@@ -100,6 +100,27 @@ internal object MiniAxis {
     }
 }
 
+/**
+ * How the bar's blocks stand: the row ([−15][picture][pause][+15]) over or beside the nav bar,
+ * or the side rail's strip (picture on top, then pause, −15, +15), on the rail's edge.
+ */
+internal enum class MiniOrient {
+    Row, StripLeft, StripRight;
+
+    val strip: Boolean get() = this != Row
+
+    /** The rail (and the strip) are on the right edge. */
+    val right: Boolean get() = this == StripRight
+
+    companion object {
+        fun of(rail: Boolean, right: Boolean) = when {
+            !rail -> Row
+            right -> StripRight
+            else -> StripLeft
+        }
+    }
+}
+
 /** One frame of the bar, in the host's px: its four blocks, the hit area and the goo. */
 internal class MiniGeo(
     val left: Rect,
@@ -117,10 +138,12 @@ internal class MiniGeo(
     val play: Rect = Rect.Zero,
     val close: Rect = Rect.Zero,
     val buttonsAlpha: Float = 0f,
+    /** The picture's top corners (the strip's rounded top end); [tileCorner] elsewhere. */
+    val tileTopCorner: Float = tileCorner,
 )
 
 /** The liquid bridge between the shrinking picture and the nav bar it merges into. */
-internal class Neck(val cx: Float, val top: Float, val bottom: Float, val halfTop: Float, val pinch: Float, val flare: Float)
+internal class Neck(val cx: Float, val top: Float, val bottom: Float, val halfTop: Float, val pinch: Float, val flare: Float, val up: Boolean = false)
 
 /** Lengths the geometry needs, in px. */
 internal data class MiniPx(
@@ -132,6 +155,8 @@ internal data class MiniPx(
     /** The window's keys (never smaller than this), and their inset from its corners. */
     val button: Float = 0f,
     val buttonInset: Float = 0f,
+    /** The strip's two ends: the picture's top corners and the last block's bottom ones. */
+    val stripEnd: Float = 0f,
 )
 
 internal fun lerpRect(a: Rect, b: Rect, t: Float) = Rect(lerp(a.left, b.left, t), lerp(a.top, b.top, t), lerp(a.right, b.right, t), lerp(a.bottom, b.bottom, t))
@@ -167,17 +192,39 @@ internal fun miniGeo(
     /** Popping out under a finger: the picture's centre is the finger's ([windowCenter]) at once. */
     pinned: Boolean = false,
     sides: Boolean = true,
+    orient: MiniOrient = MiniOrient.Row,
 ): MiniGeo {
     val m = if (circle != null) MiniAxis.merge(axis, d) else 0f
     val det = MiniAxis.detach(axis, d)
     val windowed = axis >= d.detach
-    val sideW = if (sides) ((bar.width - d.row - px.gap * 3f) / 3f).coerceAtLeast(0f) else (bar.width - d.row - px.gap).coerceAtLeast(0f)
-    val l0 = Rect(bar.left, bar.top, if (sides) bar.left + sideW else bar.left, bar.bottom)
-    val t0 = if (sides) Rect(l0.right + px.gap, bar.top, l0.right + px.gap + d.row, bar.bottom) else Rect(bar.left, bar.top, bar.left + d.row, bar.bottom)
-    val p0 = Rect(t0.right + px.gap, bar.top, t0.right + px.gap + sideW, bar.bottom)
-    val r0 = if (sides) Rect(p0.right + px.gap, bar.top, bar.right, bar.bottom) else Rect(bar.right, bar.top, bar.right, bar.bottom)
-    // Where a window made from the bar sits: centred over the bar, its bottom on the bar's.
-    fun home(h: Float) = if (windowCenter.isSpecified) windowCenter else Offset(bar.center.x, bar.bottom - h / 2f)
+    val l0: Rect
+    val t0: Rect
+    val p0: Rect
+    val r0: Rect
+    if (orient.strip) {
+        // The strip: the picture as wide as the strip on top (16:9), the keys stacked under it.
+        val tileH = d.row * 9f / 16f
+        val n = if (sides) 3 else 1
+        val keyH = ((bar.height - tileH - px.gap * n) / n).coerceAtLeast(0f)
+        t0 = Rect(bar.left, bar.top, bar.left + d.row, bar.top + tileH)
+        p0 = Rect(bar.left, t0.bottom + px.gap, bar.right, t0.bottom + px.gap + keyH)
+        l0 = if (sides) Rect(bar.left, p0.bottom + px.gap, bar.right, p0.bottom + px.gap + keyH) else Rect(bar.left, bar.bottom, bar.right, bar.bottom)
+        r0 = if (sides) Rect(bar.left, l0.bottom + px.gap, bar.right, bar.bottom) else Rect(bar.left, bar.bottom, bar.right, bar.bottom)
+    } else {
+        val sideW = if (sides) ((bar.width - d.row - px.gap * 3f) / 3f).coerceAtLeast(0f) else (bar.width - d.row - px.gap).coerceAtLeast(0f)
+        l0 = Rect(bar.left, bar.top, if (sides) bar.left + sideW else bar.left, bar.bottom)
+        t0 = if (sides) Rect(l0.right + px.gap, bar.top, l0.right + px.gap + d.row, bar.bottom) else Rect(bar.left, bar.top, bar.left + d.row, bar.bottom)
+        p0 = Rect(t0.right + px.gap, bar.top, t0.right + px.gap + sideW, bar.bottom)
+        r0 = if (sides) Rect(p0.right + px.gap, bar.top, bar.right, bar.bottom) else Rect(bar.right, bar.top, bar.right, bar.bottom)
+    }
+    // Where a window made from the bar sits: centred over the bar, its bottom on the bar's; from
+    // the strip, its top on the picture's and its rail side on the strip's.
+    fun home(w: Float, h: Float) = when {
+        windowCenter.isSpecified -> windowCenter
+        orient == MiniOrient.StripLeft -> Offset(t0.left + w / 2f, t0.top + h / 2f)
+        orient == MiniOrient.StripRight -> Offset(t0.right - w / 2f, t0.top + h / 2f)
+        else -> Offset(bar.center.x, bar.bottom - h / 2f)
+    }
     val tile: Rect
     val corner: Float
     when {
@@ -187,7 +234,7 @@ internal fun miniGeo(
         }
         windowed -> {
             val (w, h) = MiniAxis.pictureSize(axis, aspect)
-            tile = rectAt(clampCenter(home(h), w, h, bounds), w, h)
+            tile = rectAt(clampCenter(home(w, h), w, h, bounds), w, h)
             corner = px.windowCorner
         }
         det > 0f -> {
@@ -195,7 +242,7 @@ internal fun miniGeo(
             val (w, h) = MiniAxis.pictureSize(axis, lerp(16f / 9f, aspect, det))
             val (dw, dh) = MiniAxis.pictureSize(d.detach, aspect)
             val c = if (pinned && windowCenter.isSpecified) clampCenter(windowCenter, w, h, bounds)
-            else lerpOffset(t0.center, clampCenter(home(dh), dw, dh, bounds), det)
+            else lerpOffset(t0.center, clampCenter(home(dw, dh), dw, dh, bounds), det)
             tile = rectAt(c, w, h)
             corner = lerp(px.inner, px.windowCorner, det)
         }
@@ -207,7 +254,9 @@ internal fun miniGeo(
     val fold = max(m, det)
     fun folded(r: Rect): Rect {
         val c = lerpOffset(r.center, tile.center, fold)
-        return rectAt(c, r.width * (1f - fold), r.height * (1f - 0.4f * fold))
+        // Along the bar they fold away; across it they only thin a little.
+        return if (orient.strip) rectAt(c, r.width * (1f - 0.4f * fold), r.height * (1f - fold))
+        else rectAt(c, r.width * (1f - fold), r.height * (1f - 0.4f * fold))
     }
     val left = folded(l0)
     val pause = folded(p0)
@@ -216,13 +265,28 @@ internal fun miniGeo(
     val hit = when {
         // Merged: the circle plus the nav bar's margin around it, for the sideways swipe; never
         // past the circle's right edge (the first tab starts there).
+        // The rail's strip: the circle at the pill's end with the pill's side margin, never over its tabs.
+        !windowed && m >= 0.999f && nav != null && orient.strip -> Rect(minOf(nav.left, tile.left), tile.top, maxOf(nav.right, tile.right), tile.bottom + (tile.left - nav.left).coerceAtLeast(0f))
         !windowed && m >= 0.999f && nav != null -> Rect(minOf(nav.left, tile.left), minOf(nav.top, tile.top), tile.right, maxOf(nav.bottom, tile.bottom))
         windowed || m >= 0.999f -> tile
         sideAlpha <= 0f -> tile
         else -> tile.union(left).union(pause).union(right)
     }
-    // The goo: only while the bar, stacked over the nav bar, pours down into it.
-    val neck = if (nav != null && circle != null && m > 0.02f && m < 0.98f && bar.bottom <= nav.top + 1f) {
+    // The goo: only while the bar, stacked over the nav bar, pours down into it (the strip under
+    // the rail's pill pours up into it).
+    val neck = if (orient.strip && nav != null && circle != null && m > 0.02f && m < 0.98f && bar.top >= nav.bottom - 1f) {
+        val s = sin(PI.toFloat() * m)
+        val halfTop = tile.width * 0.32f * (0.4f + 0.6f * s)
+        Neck(
+            cx = tile.center.x,
+            top = nav.bottom - px.neckInset,
+            bottom = tile.center.y,
+            halfTop = halfTop,
+            pinch = halfTop * (0.35f + 0.25f * s),
+            flare = halfTop * 1.5f,
+            up = true,
+        )
+    } else if (!orient.strip && nav != null && circle != null && m > 0.02f && m < 0.98f && bar.bottom <= nav.top + 1f) {
         val s = sin(PI.toFloat() * m)
         val halfTop = tile.width * 0.32f * (0.4f + 0.6f * s)
         Neck(
@@ -242,7 +306,16 @@ internal fun miniGeo(
     val close = if (windowed) Rect(tile.right - inset - bs, tile.bottom - inset - bs, tile.right - inset, tile.bottom - inset) else Rect.Zero
     // Always there on a window, the smallest included (they may reach over its edge).
     val buttonsAlpha = if (windowed) 1f else 0f
-    return MiniGeo(left, tile, pause, right, sideAlpha, corner, hit, m, windowed, neck, play, close, buttonsAlpha)
+    // The strip's picture keeps its rounded top end until it turns into the circle or a window.
+    val topCorner = if (orient.strip) {
+        when {
+            m > 0f -> lerp(px.stripEnd, circle!!.width / 2f, m)
+            windowed -> px.windowCorner
+            det > 0f -> lerp(px.stripEnd, px.windowCorner, det)
+            else -> px.stripEnd
+        }
+    } else corner
+    return MiniGeo(left, tile, pause, right, sideAlpha, corner, hit, m, windowed, neck, play, close, buttonsAlpha, topCorner)
 }
 
 internal fun Rect.union(o: Rect) = Rect(minOf(left, o.left), minOf(top, o.top), maxOf(right, o.right), maxOf(bottom, o.bottom))
@@ -324,6 +397,40 @@ internal object MiniGestures {
         travel.y < 0f && onPicture -> MiniDragIntent.PopOut
         else -> MiniDragIntent.None
     }
+
+    /**
+     * [dragIntent] for the side rail's strip: the merged circle as on the bar; on the strip a
+     * sideways drag that started on the picture and heads into the window pops it out under the
+     * finger, any other sideways one swipes it away. Up and down are the rail's.
+     */
+    fun stripDragIntent(travel: Offset, windowed: Boolean, merged: Boolean, onPicture: Boolean, railRight: Boolean): MiniDragIntent = when {
+        windowed -> MiniDragIntent.MoveWindow
+        merged && kotlin.math.abs(travel.x) > kotlin.math.abs(travel.y) -> MiniDragIntent.DockSwipe
+        merged -> MiniDragIntent.None
+        kotlin.math.abs(travel.x) <= kotlin.math.abs(travel.y) -> MiniDragIntent.None
+        onPicture && (if (railRight) travel.x < 0f else travel.x > 0f) -> MiniDragIntent.PopOut
+        else -> MiniDragIntent.SwipeAway
+    }
+
+    /** How far a strip's picture has been pulled into the window (px; negative: toward the rail). */
+    fun intoWindow(travel: Offset, railRight: Boolean): Float = if (railRight) -travel.x else travel.x
+
+    /**
+     * With the side rail, a window merges back into the strip from the bottom corner on the
+     * rail's side only (2 on the left, 3 on the right), pushed mostly toward the rail.
+     */
+    fun startsStripMerge(corner: Int?, travel: Offset, railRight: Boolean): Boolean {
+        if (corner == null || corner and 2 == 0 || (corner and 1 == 1) != railRight) return false
+        val toward = -intoWindow(travel, railRight)
+        return toward > 0f && toward > kotlin.math.abs(travel.y)
+    }
+
+    /**
+     * The rail moved to the other edge: a window resting in a corner on the side it now takes
+     * goes to the mirrored corner at the same height; one on the other side stays.
+     */
+    fun cornerAfterRailFlip(corner: Int, railRight: Boolean): Int =
+        if ((corner and 1 == 1) == railRight) corner xor 1 else corner
 
     /**
      * A drag that merges a window back into the bar: only from a bottom corner (2, 3), once it
@@ -423,6 +530,29 @@ internal object MiniTouch {
     /** The first two fingers' distance and middle (window px), while two are down. */
     fun span(): Float = Offset(xs[0] - xs[1], ys[0] - ys[1]).getDistance()
     fun centroid(): Offset = Offset((xs[0] + xs[1]) / 2f, (ys[0] + ys[1]) / 2f)
+}
+
+/**
+ * The side rail's strip (window px): as wide as the rail's pill and under it, [navGap] below; on a
+ * page without the rail (it slid away) in the rail's column at the bottom, [bottomMargin] up.
+ * The picture 16:9 on top, then pause and (unless live: no [sides]) −15 and +15, [keyH] each.
+ */
+internal fun railStripRect(
+    nav: Rect?,
+    railLeft: Float,
+    railWidth: Float,
+    h: Float,
+    stripW: Float,
+    keyH: Float,
+    gap: Float,
+    navGap: Float,
+    bottomMargin: Float,
+    sides: Boolean = true,
+): Rect {
+    val height = stripW * 9f / 16f + (if (sides) 3 else 1) * (gap + keyH)
+    val left = nav?.let { it.center.x - stripW / 2f } ?: (railLeft + (railWidth - stripW) / 2f)
+    val top = nav?.let { it.bottom + navGap } ?: (h - bottomMargin - height)
+    return Rect(left, top, left + stripW, top + height)
 }
 
 /**
