@@ -1,5 +1,16 @@
 package com.gpo.pilipala.feature.search
 
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.background
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.IntOffset
@@ -177,9 +188,17 @@ internal fun rememberPiliSearchState(
     initialText: String = "",
     initialOrder: String = DefaultSearchOrder,
     expanded: Boolean = false,
+    /** Grows on the default spatial spring (the side rail's page, which draws its own growth). */
+    spatial: Boolean = false,
 ): PiliSearchState {
     val motion = MaterialTheme.motionScheme
-    val bar = rememberContainedSearchBarState(
+    val bar = if (spatial) rememberContainedSearchBarState(
+        initialValue = if (expanded) SearchBarValue.Expanded else SearchBarValue.Collapsed,
+        animationSpecForExpand = motion.defaultSpatialSpec(),
+        animationSpecForCollapse = motion.defaultSpatialSpec(),
+        animationSpecForContentFadeIn = motion.defaultEffectsSpec(),
+        animationSpecForContentFadeOut = motion.fastEffectsSpec(),
+    ) else rememberContainedSearchBarState(
         initialValue = if (expanded) SearchBarValue.Expanded else SearchBarValue.Collapsed,
         // Springs, not M3's default eased tweens. The scheme's specs are cached instances, so
         // they are stable inputs for the saveable state.
@@ -217,9 +236,122 @@ internal fun PiliSearchBar(
     modifier: Modifier = Modifier,
     clearOnSubmit: Boolean = false,
 ) {
-    val scope = rememberCoroutineScope()
     val vm = viewModel(key = "pili_search") { SearchViewModel() }
     val colors = SearchBarDefaults.containedColors(state.bar)
+    val submit = rememberSearchSubmit(state, hint, onSubmit, clearOnSubmit)
+    val inputField: @Composable () -> Unit = {
+        SearchInputField(state = state, hint = hint, onSearch = submit)
+    }
+    SearchBar(
+        state = state.bar,
+        inputField = inputField,
+        modifier = modifier,
+        colors = colors,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    )
+    // M3 reads the dialog's system-bar icon appearance from LocalContentColor, and the panel's
+    // uncoloured text inherits it: give it the page's own content colour so both follow the theme.
+    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+        ExpandedFullScreenContainedSearchBar(
+            state = state.bar,
+            inputField = inputField,
+            colors = colors,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {
+            SearchExpandedContent(state = state, vm = vm, hint = hint, onSubmit = submit)
+        }
+    }
+}
+
+/**
+ * The side rail's search: no bar of its own, the same page [PiliSearchBar] opens into, growing out
+ * of [from] (the rail's search button, window px) to fill [area] (the content column) on the
+ * state's spatial spring, and shrinking back into it. The rail beside it stays. Back folds it.
+ */
+@Composable
+internal fun PiliSearchPage(
+    state: PiliSearchState,
+    hint: String,
+    onSubmit: (SearchRequest) -> Unit,
+    from: Rect,
+    area: Rect,
+) {
+    val scope = rememberCoroutineScope()
+    val vm = viewModel(key = "pili_search") { SearchViewModel() }
+    val submit = rememberSearchSubmit(state, hint, onSubmit, clearOnSubmit = true)
+    val open = state.isOpen
+    BackHandler(enabled = open) { scope.launch { state.bar.animateToCollapsed() } }
+    val progress = state.bar.progress
+    if (!open && progress <= 0.001f) return
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(open) {
+        if (open) {
+            withFrameNanos { }
+            runCatching { focus.requestFocus() }
+        }
+    }
+    val density = LocalDensity.current
+    val corner = with(density) { 24.dp.toPx() }
+    val surface = MaterialTheme.colorScheme.surface
+    Box(
+        Modifier
+            .offset { IntOffset(area.left.roundToInt(), area.top.roundToInt()) }
+            .size(with(density) { area.width.toDp() }, with(density) { area.height.toDp() })
+            .graphicsLayer {
+                // The page as a rectangle travelling from the button to the column (unclipped while
+                // the spring overshoots a little past either end).
+                val p = state.bar.progress
+                val r = lerpRect(from.translate(-area.left, -area.top), Rect(Offset.Zero, area.size), p)
+                shape = RectShape(r, corner * (1f - p).coerceIn(0f, 1f))
+                clip = true
+            }
+            .background(surface),
+    ) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+            androidx.compose.foundation.layout.Column(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = ((state.bar.progress - 0.25f) / 0.5f).coerceIn(0f, 1f) }
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .imePadding(),
+            ) {
+                Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).focusRequester(focus)) {
+                    SearchInputField(state = state, hint = hint, onSearch = submit)
+                }
+                SearchExpandedContent(state = state, vm = vm, hint = hint, onSubmit = submit)
+            }
+        }
+    }
+}
+
+private fun lerpRect(a: Rect, b: Rect, t: Float) = Rect(
+    a.left + (b.left - a.left) * t,
+    a.top + (b.top - a.top) * t,
+    a.right + (b.right - a.right) * t,
+    a.bottom + (b.bottom - a.bottom) * t,
+)
+
+/** A rounded rectangle at [rect] inside the layer, for the growing page's clip. */
+private class RectShape(private val rect: Rect, private val corner: Float) : androidx.compose.ui.graphics.Shape {
+    override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: LayoutDirection, density: androidx.compose.ui.unit.Density): androidx.compose.ui.graphics.Outline =
+        androidx.compose.ui.graphics.Outline.Rounded(androidx.compose.ui.geometry.RoundRect(rect, androidx.compose.ui.geometry.CornerRadius(corner)))
+}
+
+/**
+ * A submit folds the search away first, then hands [onSubmit] the request; an empty field submits
+ * [hint]. [clearOnSubmit] empties the folded bar first (see [PiliSearchBar]).
+ */
+@Composable
+private fun rememberSearchSubmit(
+    state: PiliSearchState,
+    hint: String,
+    onSubmit: (SearchRequest) -> Unit,
+    clearOnSubmit: Boolean,
+): (String) -> Unit {
+    val scope = rememberCoroutineScope()
     val latestSubmit by rememberUpdatedState(onSubmit)
 
     LaunchedEffect(state) {
@@ -247,30 +379,7 @@ internal fun PiliSearchBar(
         }
     }
 
-    val inputField: @Composable () -> Unit = {
-        SearchInputField(state = state, hint = hint, onSearch = ::submit)
-    }
-    SearchBar(
-        state = state.bar,
-        inputField = inputField,
-        modifier = modifier,
-        colors = colors,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    )
-    // M3 reads the dialog's system-bar icon appearance from LocalContentColor, and the panel's
-    // uncoloured text inherits it: give it the page's own content colour so both follow the theme.
-    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
-        ExpandedFullScreenContainedSearchBar(
-            state = state.bar,
-            inputField = inputField,
-            colors = colors,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-        ) {
-            SearchExpandedContent(state = state, vm = vm, hint = hint, onSubmit = ::submit)
-        }
-    }
+    return ::submit
 }
 
 @Composable

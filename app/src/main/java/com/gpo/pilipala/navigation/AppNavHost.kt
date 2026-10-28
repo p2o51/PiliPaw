@@ -155,6 +155,8 @@ fun AppNavHost(navigator: Navigator) {
                 )
             }
             BeneathPage(transitions, backdrop, over = true)
+            // Large windows: the shell's side rail, over the pages so it can slide away from them.
+            com.gpo.pilipala.ui.shell.SideRailHost(transitions, navigator)
             HeroOverlay(transitions)
             BackInputBlocker(transitions)
             // The YouTube player floats over every page of the one stack (it is not a route).

@@ -34,6 +34,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -135,6 +136,12 @@ internal fun rememberHoldMenu(onHome: (VideoSource) -> Unit, onSettings: () -> U
 private fun itemCenterY(state: HoldMenu, density: androidx.compose.ui.unit.Density, i: Int): Float =
     with(density) { state.anchorH + FirstGap.toPx() + ItemSize.toPx() / 2 + i * ItemStep.toPx() }
 
+/**
+ * The avatar sits at the window's right edge (the side rail on the right): the fan opens toward
+ * the window, its labels on the items' left.
+ */
+internal val LocalHoldFanEnd = androidx.compose.runtime.compositionLocalOf { false }
+
 /** The fan itself; call it inside the avatar's box, so its popup starts at the avatar. */
 @Composable
 internal fun HoldFan(state: HoldMenu) {
@@ -144,26 +151,31 @@ internal fun HoldFan(state: HoldMenu) {
     val anchorW = state.anchorW
     val anchorH = state.anchorH
     fun itemCenterY(i: Int): Float = itemCenterY(state, density, i)
+    val end = LocalHoldFanEnd.current
+    val fanW = with(density) { FanWidth.toPx() }
     val shown by animateFloatAsState(if (holding) 1f else 0f, YoinMotion.defaultSpatialSpec(), label = "holdShown")
     if (shown > 0.001f) {
-        Popup(properties = PopupProperties(focusable = false, clippingEnabled = false)) {
+        Popup(alignment = if (end) Alignment.TopEnd else Alignment.TopStart, properties = PopupProperties(focusable = false, clippingEnabled = false)) {
             // The popup window is as big as this box: room for the whole column and its labels.
-            Box(Modifier.size(240.dp, with(density) { (anchorH + FirstGap.toPx() + Items.size * ItemStep.toPx() + 16.dp.toPx()).toDp() })) {
+            Box(Modifier.size(FanWidth, with(density) { (anchorH + FirstGap.toPx() + Items.size * ItemStep.toPx() + 16.dp.toPx()).toDp() })) {
                 Items.forEachIndexed { i, item ->
                     // One after another: each item starts a little later than the one before.
                     val local = ((shown - i * 0.12f) / (1f - (Items.size - 1) * 0.12f)).coerceIn(0f, 1f)
                     val lift by animateFloatAsState(if (hover == i) 1f else 0f, YoinMotion.fastSpatialSpec(), label = "holdLift")
                     val cy = itemCenterY(i)
                     val half = with(density) { ItemSize.toPx() / 2 }
+                    val y = ((cy - half) * local + (anchorH / 2f - half) * (1f - local)).roundToInt()
+                    // Mirrored at the right edge: the item under the avatar, its label before it.
                     androidx.compose.foundation.layout.Row(
-                        Modifier.offset {
-                            IntOffset(
-                                (anchorW / 2f - half).roundToInt(),
-                                ((cy - half) * local + (anchorH / 2f - half) * (1f - local)).roundToInt(),
-                            )
+                        Modifier.layout { measurable, constraints ->
+                            val p = measurable.measure(constraints)
+                            val itemX = if (end) fanW - anchorW / 2f - half else anchorW / 2f - half
+                            val x = if (end) itemX + 2 * half - p.width else itemX
+                            layout(p.width, p.height) { p.place(x.roundToInt(), y) }
                         },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        if (end) HoldLabel(item, lift, end = true)
                         Box(
                             Modifier
                                 .size(ItemSize)
@@ -183,29 +195,37 @@ internal fun HoldFan(state: HoldMenu) {
                                 HoldItem.Settings -> Icon(YoinSymbols.Settings, "设置", tint = MaterialTheme.colorScheme.onSurface)
                             }
                         }
-                        // The label shows beside the one the finger is on.
-                        Text(
-                            when (item) {
-                                is HoldItem.Home -> item.source.label
-                                HoldItem.Settings -> "设置"
-                            },
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier
-                                .graphicsLayer {
-                                    alpha = lift
-                                    translationX = (1f - lift) * -8.dp.toPx() + 10.dp.toPx()
-                                }
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                        )
+                        if (!end) HoldLabel(item, lift, end = false)
                     }
                 }
             }
         }
     }
 }
+
+/** The label beside the item the finger is on (after it, or before it at the right edge). */
+@Composable
+private fun HoldLabel(item: HoldItem, lift: Float, end: Boolean) {
+    Text(
+        when (item) {
+            is HoldItem.Home -> item.source.label
+            HoldItem.Settings -> "设置"
+        },
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .graphicsLayer {
+                alpha = lift
+                val out = (1f - lift) * -8.dp.toPx() + 10.dp.toPx()
+                translationX = if (end) -out else out
+            }
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+private val FanWidth = 240.dp
 
 @Composable
 private fun HoldAvatar(source: VideoSource) {
