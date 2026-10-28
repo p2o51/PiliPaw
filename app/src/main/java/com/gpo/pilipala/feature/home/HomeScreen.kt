@@ -179,7 +179,9 @@ fun HomeScreen() {
             .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
             .nestedScroll(behavior.nestedScrollConnection),
     ) {
-        CollapsingHeader(behavior) {
+        // The side rail holds the avatar, the search and the messages: only the chips stay up here.
+        val rail = com.gpo.pilipala.ui.components.useSideRail()
+        if (!rail) CollapsingHeader(behavior) {
             HomeHeader(
                 user = user,
                 // Bilibili's suggested word, and its messages, only while Bilibili is ticked.
@@ -199,7 +201,7 @@ fun HomeScreen() {
         LaunchedEffect(currentKey, mixed) {
             if (!mixed || currentKey !in splittable) com.gpo.pilipala.feature.sources.MixFilter.set(null)
         }
-        SegmentTabs(
+        val segments: @Composable () -> Unit = { SegmentTabs(
             labels = labels,
             selected = pagerState.targetPage,
             onSelect = { i ->
@@ -260,7 +262,12 @@ fun HomeScreen() {
                     }
                 }
             },
-        )
+        ) }
+        if (rail) {
+            CollapsingHeader(behavior) { Box(Modifier.padding(top = 8.dp)) { segments() } }
+        } else {
+            segments()
+        }
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -298,10 +305,7 @@ private fun HomeHeader(
             .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        com.gpo.pilipala.feature.sources.SourceDots(
-            singleFor = com.gpo.pilipala.core.source.VideoSource.Bilibili,
-            single = { open -> HeaderAvatar(user, open) },
-        )
+        HomeAvatarButton(user)
         Spacer(Modifier.width(8.dp))
         Box(Modifier.weight(1f).splashReveal(), contentAlignment = Alignment.Center) {
             // The native search: it opens full screen over the shell, the bottom bar included.
@@ -328,6 +332,18 @@ private fun HomeHeader(
             Spacer(Modifier.size(48.dp))
         }
     }
+}
+
+/**
+ * The account at Home's top left (at the side rail's top on a large window): the ticked sources'
+ * dots, or Bilibili's own avatar alone, which the launch animation lands in.
+ */
+@Composable
+internal fun HomeAvatarButton(user: UserInfo? = Account.user.collectAsState().value) {
+    com.gpo.pilipala.feature.sources.SourceDots(
+        singleFor = com.gpo.pilipala.core.source.VideoSource.Bilibili,
+        single = { open -> HeaderAvatar(user, open) },
+    )
 }
 
 @Composable

@@ -32,6 +32,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.layout.layout
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
+import kotlin.math.roundToInt
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.core.source.Sources
 import com.gpo.pilipala.core.source.VideoSource
@@ -177,6 +183,37 @@ fun MainShell() {
         ShellRequests.consume()
     }
 
+    // Large windows: the bar, the account, search and messages go to the side rail (SideRail.kt),
+    // drawn above the pages; the shell hands it what it needs and keeps a column free for it.
+    val rail = com.gpo.pilipala.ui.components.useSideRail()
+    val headerVm: com.gpo.pilipala.feature.home.HomeHeaderViewModel =
+        androidx.lifecycle.viewmodel.compose.viewModel(key = "home_header") { com.gpo.pilipala.feature.home.HomeHeaderViewModel() }
+    val user by com.gpo.pilipala.core.account.Account.user.collectAsState()
+    val nav = com.gpo.pilipala.navigation.LocalNavigator.current
+    val biliOn = VideoSource.Bilibili in enabled
+    val onSelect: (Int) -> Unit = { i ->
+        val tapped = sections[i]
+        if (tapped == current) reselects.tryEmit(tapped.ordinal) else selectedOrdinal = tapped.ordinal
+    }
+    val hasLongPress: (Int) -> Boolean = { i -> sections.getOrNull(i) == ShellSection.Home }
+    val badge: (Int) -> Boolean = { i -> sections.getOrNull(i) == ShellSection.Dynamics && current != ShellSection.Dynamics && com.gpo.pilipala.feature.dynamics.DynUnread.hasNew }
+    val onLongPress: (Int) -> Unit = {
+        selectedOrdinal = ShellSection.Home.ordinal
+        if (rail) SideRail.searchRequests.tryEmit(Unit) else homeSearch.tryEmit(Unit)
+    }
+    androidx.compose.runtime.SideEffect {
+        SideRail.model = RailModel(
+            tabs = tabs,
+            selected = selected,
+            onSelect = onSelect,
+            hasLongPress = hasLongPress,
+            badge = badge,
+            onLongPress = onLongPress,
+            searchHint = if (biliOn) headerVm.searchHint else "",
+            onMessages = if (biliOn) ({ nav.push(if (user != null) Route.Messages else Route.Login) }) else null,
+        )
+    }
+
     // The floating bar reports where it sits; main-tab lists marked with seamViewport
     // break their graphics into the halftone field around it (Yoin's dissolve).
     ProvideSeamBarField {
@@ -195,11 +232,14 @@ fun MainShell() {
             Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
-                // Scrolling down folds the mini bar into its circle beside the nav bar.
-                .nestedScroll(com.gpo.pilipala.feature.sources.KeepPlaying.scroll),
+                // Scrolling down folds the mini bar into its circle beside the nav bar (not the
+                // rail's strip: it stays open).
+                .then(if (rail) Modifier else Modifier.nestedScroll(com.gpo.pilipala.feature.sources.KeepPlaying.scroll)),
         ) {
-            val barInset = floatingBarInset() + if (widthClass() == WidthClass.Compact) com.gpo.pilipala.feature.sources.miniBarInset() else 0.dp
+            val railInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp
+            val barInset = if (rail) railInset else floatingBarInset() + if (widthClass() == WidthClass.Compact) com.gpo.pilipala.feature.sources.miniBarInset() else 0.dp
             CompositionLocalProvider(LocalBottomBarInset provides barInset) {
+              Box(if (rail) Modifier.railContent() else Modifier.fillMaxSize()) {
                 val enterFade = YoinMotion.defaultEffectsSpec<Float>()
                 val enterScale = YoinMotion.defaultSpatialSpec<Float>()
                 val exitFade = YoinMotion.fastEffectsSpec<Float>()
@@ -227,20 +267,15 @@ fun MainShell() {
                         }
                     }
                 }
+              }
             }
-            FloatingNavBar(
+            if (!rail) FloatingNavBar(
                 tabs = tabs,
                 selected = selected,
-                onSelect = { i ->
-                    val tapped = sections[i]
-                    if (tapped == current) reselects.tryEmit(tapped.ordinal) else selectedOrdinal = tapped.ordinal
-                },
-                hasLongPress = { i -> sections.getOrNull(i) == ShellSection.Home },
-                badge = { i -> sections.getOrNull(i) == ShellSection.Dynamics && current != ShellSection.Dynamics && com.gpo.pilipala.feature.dynamics.DynUnread.hasNew },
-                onLongPress = {
-                    selectedOrdinal = ShellSection.Home.ordinal
-                    homeSearch.tryEmit(Unit)
-                },
+                onSelect = onSelect,
+                hasLongPress = hasLongPress,
+                badge = badge,
+                onLongPress = onLongPress,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .splashReveal(lift = 22.dp),
@@ -250,6 +285,20 @@ fun MainShell() {
 }
 
 private const val ExitWindowMs = 2000L
+
+/**
+ * The shell's sections beside the side rail: laid out once in the window less the rail's column,
+ * and only moved (never re-laid out) while the rail is dragged or springs across.
+ */
+private fun Modifier.railContent(): Modifier = layout { measurable, constraints ->
+    val railW = com.gpo.pilipala.ui.components.SideRailWidthDp.dp.roundToPx()
+    val w = (constraints.maxWidth - railW).coerceAtLeast(0)
+    val placeable = measurable.measure(Constraints.fixed(w, constraints.maxHeight))
+    layout(constraints.maxWidth, constraints.maxHeight) {
+        val x = RailFlip.contentLeft(com.gpo.pilipala.ui.components.SideRailState.position.value, railW.toFloat())
+        placeable.place(x.roundToInt(), 0)
+    }
+}
 
 /**
  * 继续播放 on a phone: the mini bar's circle joins the nav bar's row, which then has room for four
