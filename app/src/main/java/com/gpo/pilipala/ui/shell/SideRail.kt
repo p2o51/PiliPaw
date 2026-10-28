@@ -211,6 +211,7 @@ internal fun SideRailHost(transitions: PageTransitions, navigator: Navigator) {
                         val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
                             ?: return@awaitEachGesture
                         scope.launch { position.stop() }
+                        SideRailState.dragging = true
                         var pos = position.value
                         fun move(dx: Float) {
                             pos = (pos + dx / travel).coerceIn(0f, 1f)
@@ -221,11 +222,15 @@ internal fun SideRailHost(transitions: PageTransitions, navigator: Navigator) {
                                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             }
                         }
-                        move(start.positionChange().x)
-                        horizontalDrag(start.id) { change ->
-                            tracker.addPosition(change.uptimeMillis, change.position + railOrigin)
-                            move(change.positionChange().x)
-                            change.consume()
+                        try {
+                            move(start.positionChange().x)
+                            horizontalDrag(start.id) { change ->
+                                tracker.addPosition(change.uptimeMillis, change.position + railOrigin)
+                                move(change.positionChange().x)
+                                change.consume()
+                            }
+                        } finally {
+                            SideRailState.dragging = false
                         }
                         val v = tracker.calculateVelocity().x
                         val landsRight = RailFlip.landsRight(startRight, pos, v / 1000f)
