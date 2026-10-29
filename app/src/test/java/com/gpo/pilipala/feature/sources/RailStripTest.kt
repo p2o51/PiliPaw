@@ -113,15 +113,31 @@ class RailStripTest {
     }
 
     @Test fun theStripsDrags() {
-        val pic = MiniGestures.stripDragIntent(Offset(30f, 4f), windowed = false, merged = false, onPicture = true, railRight = false)
-        assertEquals(MiniDragIntent.PopOut, pic)
-        assertEquals(MiniDragIntent.SwipeAway, MiniGestures.stripDragIntent(Offset(-30f, 4f), false, false, true, false))
-        assertEquals(MiniDragIntent.SwipeAway, MiniGestures.stripDragIntent(Offset(30f, 4f), false, false, false, false))
+        // Into the window from the picture: a floating window under the finger.
+        assertEquals(MiniDragIntent.PopOut, MiniGestures.stripDragIntent(Offset(30f, 4f), windowed = false, merged = false, onPicture = true, railRight = false))
         assertEquals(MiniDragIntent.PopOut, MiniGestures.stripDragIntent(Offset(-30f, 4f), false, false, true, true))
-        assertEquals(MiniDragIntent.None, MiniGestures.stripDragIntent(Offset(3f, 30f), false, false, true, false))
+        // Down closes it, from anywhere on the strip.
+        assertEquals(MiniDragIntent.SwipeDown, MiniGestures.stripDragIntent(Offset(3f, 30f), false, false, true, false))
+        assertEquals(MiniDragIntent.SwipeDown, MiniGestures.stripDragIntent(Offset(-5f, 30f), false, false, false, true))
+        // Toward the screen edge it only gives; never closes.
+        assertEquals(MiniDragIntent.Nudge, MiniGestures.stripDragIntent(Offset(-30f, 4f), false, false, true, false))
+        assertEquals(MiniDragIntent.Nudge, MiniGestures.stripDragIntent(Offset(30f, 4f), false, false, true, true))
+        // Into the window from a key: it gives too (only the picture lifts off).
+        assertEquals(MiniDragIntent.Nudge, MiniGestures.stripDragIntent(Offset(30f, 4f), false, false, false, false))
+        // Up: nothing (the rail's).
+        assertEquals(MiniDragIntent.None, MiniGestures.stripDragIntent(Offset(3f, -30f), false, false, true, false))
         assertEquals(MiniDragIntent.DockSwipe, MiniGestures.stripDragIntent(Offset(30f, 3f), false, true, true, false))
         assertEquals(MiniDragIntent.MoveWindow, MiniGestures.stripDragIntent(Offset(3f, 30f), true, false, true, false))
         assertEquals(30f, MiniGestures.intoWindow(Offset(-30f, 0f), railRight = true), 0f)
+    }
+
+    @Test fun theStripClosesPulledFarOrFlungDown() {
+        val h = 170f
+        assertTrue(MiniGestures.swipeDownCloses(dy = 70f, velocityY = 0f, height = h, minSpeed = 1000f))
+        assertFalse(MiniGestures.swipeDownCloses(dy = 40f, velocityY = 200f, height = h, minSpeed = 1000f))
+        assertTrue(MiniGestures.swipeDownCloses(dy = 20f, velocityY = 1500f, height = h, minSpeed = 1000f))
+        // Flung down after being pulled back up above its place: it stays.
+        assertFalse(MiniGestures.swipeDownCloses(dy = -5f, velocityY = 1500f, height = h, minSpeed = 1000f))
     }
 
     @Test fun aWindowOnTheSideTheRailTakesGoesToTheMirroredCorner() {
