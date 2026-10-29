@@ -15,7 +15,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :app:assembleRelease      # release, signed with the debug key
 ```
 
-Requires the Android SDK (compileSdk 36). Icons come from [Yoin Symbols](https://github.com/p2o51/yoin-symbols): with a checkout at `../yoin-symbols` Gradle builds it from source (so new symbols work before a release), otherwise it uses `io.github.p2o51:yoin-symbols` from Maven Central. `flutter-src/` (the original Flutter source, used as a reference) is git-ignored.
+Requires the Android SDK (compileSdk 36). Icons come from [Yoin Symbols](https://github.com/p2o51/yoin-symbols): Gradle builds it from source from a checkout at `../yoin-symbols` (`git clone https://github.com/p2o51/yoin-symbols ../yoin-symbols`; `git -C ../yoin-symbols pull` picks up icon updates). The build stops without that checkout. `flutter-src/` (the original Flutter source, used as a reference) is git-ignored.
 
 ## Layout
 
