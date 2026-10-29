@@ -101,6 +101,7 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.yt.feature.player.Player
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.FlowPreview
@@ -215,9 +216,28 @@ object KeepPlaying {
     /** A flight landed on the bar's tile, carrying [frame] (null: the picture itself comes on). */
     internal class Arrival(val frame: androidx.compose.ui.graphics.ImageBitmap?)
 
+    /**
+     * A page's picture is flying into the bar: the bar (which may get its player before the
+     * picture lands) stays hidden until it is there, never a second picture beside the flight.
+     */
+    internal var flying by mutableStateOf(false)
+        private set
+    private val flightOver = Runnable { flying = false }
+
+    internal fun flightLanded() {
+        clock.removeCallbacks(flightOver)
+        flying = false
+    }
+
     internal fun arrive(frame: androidx.compose.ui.graphics.ImageBitmap?, shell: Boolean = false) {
         val a = Arrival(frame)
         arrival = a
+        // Only a flight (a frame) lands later; it ends by itself should no landing come.
+        if (frame != null) {
+            flying = true
+            clock.removeCallbacks(flightOver)
+            clock.postDelayed(flightOver, 1_500)
+        }
         arrivalAt = android.os.SystemClock.uptimeMillis()
         clock.postDelayed({ if (arrival === a) arrival = null }, ArrivalMs)
         // Landing over the shell: hold the bar where the nav bar was until the shell reports it
@@ -382,6 +402,7 @@ internal fun DockFlightEffect(live: Boolean = false, enabled: () -> Boolean) {
                 form?.tileCorner ?: with(density) { InnerCorner.toPx() }
             },
             landing = { KeepPlaying.arrive(it, shellBeneath()) },
+            landed = { KeepPlaying.flightLanded() },
         )
         transitions.registerHeroDock(dock)
         onDispose { transitions.unregisterHeroDock(dock) }
@@ -739,6 +760,12 @@ private class MiniFrame(initialAxis: Float, initialBar: Rect) {
     var swipeDrag by mutableStateOf<Float?>(null)
     val swipeNow: Float get() = swipeDrag ?: swipe.value
 
+    /** The swipe runs down (the rail's strip closing), not sideways. */
+    var swipeDown by mutableStateOf(false)
+
+    /** The swipe only gives and springs back (the strip pulled toward the screen edge). */
+    var swipeNudge = false
+
     /** The merged circle's sideways swipe (px under the finger; null when not dragged), as progress. */
     var dockDrag by mutableStateOf<Float?>(null)
     val dockSwipe = Animatable(0f)
@@ -942,6 +969,8 @@ fun MiniBarHost() {
     LaunchedEffect(up) {
         if (up) {
             KeepPlaying.barOnScreen = true
+            // The page's picture still on its way: it shows here once landed.
+            snapshotFlow { !KeepPlaying.flying }.first { it }
             val arrival = KeepPlaying.takeArrival()
             KeepPlaying.landing = null
             if (arrival != null && shownA.value < 0.01f) {
@@ -968,7 +997,7 @@ fun MiniBarHost() {
             KeepPlaying.barGone()
         }
     }
-    val shown = if (up && KeepPlaying.arriving) 1f else shownA.value
+    val shown = if (up && KeepPlaying.arriving && !KeepPlaying.flying) 1f else shownA.value
     var last by remember { mutableStateOf<Playing?>(null) }
     if (playing != null) last = playing
     val p = playing ?: last ?: return
@@ -1182,8 +1211,11 @@ fun MiniBarHost() {
                 .systemGestureExclusion()
                 .pointerInput(frame) { miniGestures(frame, scope, density.density) { latest } }
                 .graphicsLayer {
-                    translationX = frame.swipeNow
-                    alpha = shown * (1f - (abs(frame.swipeNow) / (frame.anchor.value.width * 0.6f).coerceAtLeast(1f))).coerceIn(0f, 1f)
+                    // The rail's strip swipes down; the bar sideways.
+                    val swipeY = if (frame.swipeDown) frame.swipeNow else 0f
+                    translationX = if (frame.swipeDown) 0f else frame.swipeNow
+                    val fadeOver = if (frame.swipeDown) frame.anchor.value.height else frame.anchor.value.width
+                    alpha = shown * (1f - (abs(frame.swipeNow) / (fadeOver * 0.6f).coerceAtLeast(1f))).coerceIn(0f, 1f)
                     // Closing shrinks as it fades (the window where it is, the bar sinking a little).
                     val going = 0.85f + 0.15f * shown
                     if (frame.geo.windowed) {
@@ -1192,7 +1224,7 @@ fun MiniBarHost() {
                     } else if (frame.dockClosing) {
                         // Swiped off the nav bar: the circle shrinks about its own centre instead.
                     } else {
-                        translationY = (1f - shown) * barH
+                        translationY = (1f - shown) * barH + swipeY
                         scaleX = going
                         scaleY = going
                     }
@@ -1366,7 +1398,17 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                 val intent = if (frame.orient.strip) MiniGestures.stripDragIntent(travel, windowAtDown, mergedAtDown, g0.tile.contains(downAt), frame.orient.right)
                 else MiniGestures.dragIntent(travel, windowAtDown, mergedAtDown, g0.tile.contains(downAt))
                 when (intent) {
-                    MiniDragIntent.MoveWindow, MiniDragIntent.SwipeAway -> dragging = true
+                    MiniDragIntent.MoveWindow, MiniDragIntent.SwipeAway -> {
+                        dragging = true
+                        frame.swipeDown = false
+                        frame.swipeNudge = false
+                    }
+                    MiniDragIntent.SwipeDown, MiniDragIntent.Nudge -> {
+                        dragging = true
+                        frame.swipeDown = intent == MiniDragIntent.SwipeDown
+                        frame.swipeNudge = intent == MiniDragIntent.Nudge
+                        scope.launch { frame.swipe.stop() }
+                    }
                     MiniDragIntent.DockSwipe -> {
                         dragging = true
                         docking = true
@@ -1425,11 +1467,17 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
                     frame.dragCenter = (frame.dragCenter ?: frame.geo.tile.center) + delta
                 } else {
                     val was = frame.swipeDrag ?: frame.swipe.value
-                    val now = was + delta.x
+                    val now = when {
+                        // Toward the screen edge it only gives (a third of the finger's way).
+                        frame.swipeNudge -> was + delta.x * MiniAxis.RubberBand
+                        // The strip closes downward; back up past its place it gives only a little.
+                        frame.swipeDown -> (was + delta.y).let { if (it < 0f) was + delta.y * MiniAxis.RubberBand else it }
+                        else -> was + delta.x
+                    }
                     frame.swipeDrag = now
                     // A tick where letting go would swipe it away, and again coming back over it.
-                    val away = frame.anchor.value.width * MiniGestures.SwipeAwayAt
-                    if (MiniGestures.crosses(abs(was), abs(now), away)) frame.haptic(dock = false)
+                    val away = if (frame.swipeDown) frame.anchor.value.height * MiniGestures.SwipeDownAt else frame.anchor.value.width * MiniGestures.SwipeAwayAt
+                    if (!frame.swipeNudge && MiniGestures.crosses(abs(was), abs(now), away)) frame.haptic(dock = false)
                 }
                 c.consume()
             }
@@ -1454,7 +1502,9 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.miniGest
             pinching -> releasePinch(frame, scope, raw, axisVelocity.calculateVelocity().takeIf { it.isFinite() } ?: 0f, density, latest)
             popped -> releasePop(frame, scope, popProgress, velocity.calculateVelocity(), density, latest)
             kind == MiniGestureKind.Drag && windowAtDown -> releaseWindow(frame, scope, velocity.calculateVelocity(), density, latest)
-            kind == MiniGestureKind.Drag -> releaseSwipe(frame, scope, velocity.calculateVelocity().x, density, latest)
+            kind == MiniGestureKind.Drag -> velocity.calculateVelocity().let { v ->
+                releaseSwipe(frame, scope, if (frame.swipeDown) v.y else v.x, density, latest)
+            }
             else -> {
                 frame.gesturing = false
                 when {
@@ -1687,14 +1737,20 @@ private fun releaseSwipe(frame: MiniFrame, scope: CoroutineScope, vx: Float, den
     val width = frame.anchor.value.width
     // Swiping away is the docked bar's alone: a window (resting as one, or drawn as one) never goes.
     val bar = !MiniGestures.isWindow(KeepPlaying.rest is MiniRest.Window, frame.geo.windowed)
-    val away = bar && (abs(x) > width * MiniGestures.SwipeAwayAt || (abs(vx) > 1000f * density && sign(vx) == sign(x)))
+    val away = bar && !frame.swipeNudge && if (frame.swipeDown) {
+        MiniGestures.swipeDownCloses(x, vx, frame.anchor.value.height, 1000f * density)
+    } else {
+        abs(x) > width * MiniGestures.SwipeAwayAt || (abs(vx) > 1000f * density && sign(vx) == sign(x))
+    }
     scope.launch {
         frame.swipe.snapTo(x)
         frame.swipeDrag = null
         frame.gesturing = false
         if (away) {
             val dir = if (x != 0f) sign(x) else sign(vx)
-            frame.swipe.animateTo(dir * (width + 200f * density), MiniSprings.fast(), initialVelocity = vx)
+            // Down off the window's bottom (the strip), else off its side.
+            val out = if (frame.swipeDown) frame.bounds.bottom - frame.anchor.value.top + 200f * density else width + 200f * density
+            frame.swipe.animateTo(dir * out, MiniSprings.fast(), initialVelocity = vx)
             // It stays out there, faded, while it closes; it comes back to the middle only when
             // a bar shows again (snapping home here flashed it back in at full strength).
             latest().close()

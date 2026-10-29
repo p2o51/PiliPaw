@@ -324,7 +324,14 @@ internal fun Rect.union(o: Rect) = Rect(minOf(left, o.left), minOf(top, o.top), 
 internal enum class MiniKey { Play, Close }
 
 /** What one finger's drag does, decided once it passes touch slop. */
-internal enum class MiniDragIntent { MoveWindow, SwipeAway, PopOut, DockSwipe, None }
+internal enum class MiniDragIntent { MoveWindow, SwipeAway, PopOut, DockSwipe, None,
+
+    /** The rail's strip pulled down: it follows the finger and, let go far or fast enough, closes. */
+    SwipeDown,
+
+    /** The rail's strip pulled toward the screen edge: it gives a little and springs back. */
+    Nudge,
+}
 
 /** What one gesture on the bar or the window was, once every finger is up. */
 internal enum class MiniGestureKind { Tap, Pinch, Drag, None }
@@ -399,18 +406,25 @@ internal object MiniGestures {
     }
 
     /**
-     * [dragIntent] for the side rail's strip: the merged circle as on the bar; on the strip a
-     * sideways drag that started on the picture and heads into the window pops it out under the
-     * finger, any other sideways one swipes it away. Up and down are the rail's.
+     * [dragIntent] for the side rail's strip: the merged circle as on the bar; the strip closes by
+     * a pull down; a sideways drag that started on the picture and heads into the window pops it
+     * out under the finger; toward the screen edge it only gives a little (it never closes that way).
      */
     fun stripDragIntent(travel: Offset, windowed: Boolean, merged: Boolean, onPicture: Boolean, railRight: Boolean): MiniDragIntent = when {
         windowed -> MiniDragIntent.MoveWindow
         merged && kotlin.math.abs(travel.x) > kotlin.math.abs(travel.y) -> MiniDragIntent.DockSwipe
         merged -> MiniDragIntent.None
-        kotlin.math.abs(travel.x) <= kotlin.math.abs(travel.y) -> MiniDragIntent.None
-        onPicture && (if (railRight) travel.x < 0f else travel.x > 0f) -> MiniDragIntent.PopOut
-        else -> MiniDragIntent.SwipeAway
+        kotlin.math.abs(travel.y) >= kotlin.math.abs(travel.x) -> if (travel.y > 0f) MiniDragIntent.SwipeDown else MiniDragIntent.None
+        intoWindow(travel, railRight) > 0f -> if (onPicture) MiniDragIntent.PopOut else MiniDragIntent.Nudge
+        else -> MiniDragIntent.Nudge
     }
+
+    /** The strip's pull down, past this share of its height, closes it when let go. */
+    const val SwipeDownAt = 0.35f
+
+    /** Let go: a strip pulled down [dy] of its [height] closes past [SwipeDownAt], or flung down faster than [minSpeed]. */
+    fun swipeDownCloses(dy: Float, velocityY: Float, height: Float, minSpeed: Float): Boolean =
+        dy > height * SwipeDownAt || (velocityY > minSpeed && dy > 0f)
 
     /** How far a strip's picture has been pulled into the window (px; negative: toward the rail). */
     fun intoWindow(travel: Offset, railRight: Boolean): Float = if (railRight) -travel.x else travel.x
