@@ -5,6 +5,7 @@ import com.gpo.pilipala.ui.components.seam.seamViewport
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -65,6 +66,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import com.gpo.pilipala.feature.home.CollapsingHeader
+import com.gpo.pilipala.feature.home.rememberHeaderScrollBehavior
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -381,6 +385,19 @@ fun SearchResultScreen(route: Route.SearchResult) {
     var feedSheet by rememberSaveable { mutableStateOf(false) }
     val search = rememberPiliSearchState(initialText = keyword, initialOrder = videoVm.order)
     val pageSpec = YoinMotion.defaultSpatialSpec<Float>()
+    // The search bar slides away with the results (Home's header); the tabs stay.
+    val behavior = rememberHeaderScrollBehavior()
+    suspend fun showHeader() {
+        val bar = behavior.state
+        animate(bar.heightOffset, 0f, animationSpec = pageSpec) { v, _ -> bar.heightOffset = v }
+    }
+    // Opening the search or switching tabs brings the bar back.
+    LaunchedEffect(Unit) {
+        snapshotFlow { search.bar.targetValue == SearchBarValue.Expanded }.collect { if (it) showHeader() }
+    }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.targetPage }.collect { showHeader() }
+    }
 
     // The search opens on this page's keyword (all selected) and the video tab's order;
     // folding it away without a submit puts the keyword back.
@@ -403,62 +420,77 @@ fun SearchResultScreen(route: Route.SearchResult) {
         Modifier
             .fillMaxSize()
             .background(scheme.surface)
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .nestedScroll(behavior.nestedScrollConnection),
     ) {
-        ResultSearchBar(
-            search = search,
-            keyword = keyword,
-            onSubmit = { request ->
-                val target = request.target
-                if (target is SearchTarget.Keyword && target.text == keyword) {
-                    // Same keyword: the sort lands on this page's video tab.
-                    videoVm.selectOrder(request.order)
-                    val page = tabs.indexOf(SearchTab.Video)
-                    if (pagerState.currentPage != page) scope.launch { pagerState.animateScrollToPage(page, animationSpec = pageSpec) }
-                } else {
-                    // A new keyword replaces this page; a video or link opens over it, and this
-                    // page keeps its own keyword in the field for when it comes back.
-                    if (target !is SearchTarget.Keyword) search.input.setTextAndSelectAll(keyword)
-                    nav.openSearch(request, replace = target is SearchTarget.Keyword)
-                }
-            },
-            onAddToFeed = { feedSheet = true },
-        )
-        // Both sources ticked: search both (视频 interleaved) or one.
-        if (com.gpo.pilipala.feature.sources.SearchScope.mixing) {
+        CollapsingHeader(behavior) {
+            ResultSearchBar(
+                search = search,
+                keyword = keyword,
+                onSubmit = { request ->
+                    val target = request.target
+                    if (target is SearchTarget.Keyword && target.text == keyword) {
+                        // Same keyword: the sort lands on this page's video tab.
+                        videoVm.selectOrder(request.order)
+                        val page = tabs.indexOf(SearchTab.Video)
+                        if (pagerState.currentPage != page) scope.launch { pagerState.animateScrollToPage(page, animationSpec = pageSpec) }
+                    } else {
+                        // A new keyword replaces this page; a video or link opens over it, and this
+                        // page keeps its own keyword in the field for when it comes back.
+                        if (target !is SearchTarget.Keyword) search.input.setTextAndSelectAll(keyword)
+                        nav.openSearch(request, replace = target is SearchTarget.Keyword)
+                    }
+                },
+                onAddToFeed = { feedSheet = true },
+            )
+        }
+        // Both sources ticked: search both (视频 interleaved) or one. The pill sits right before the
+        // tabs, since the source decides which tabs there are (频道 comes with YouTube).
+        val mixing = com.gpo.pilipala.feature.sources.SearchScope.mixing
+        if (mixing) {
             val scopeNow by com.gpo.pilipala.feature.sources.SearchScope.only.collectAsState()
             LaunchedEffect(scopeNow) { if (videoVm.items.isNotEmpty() || videoVm.error != null) videoVm.refresh() }
-            com.gpo.pilipala.feature.sources.SourceChips(com.gpo.pilipala.feature.sources.SearchScope, Modifier.padding(top = 4.dp))
         }
-        PrimaryScrollableTabRow(
-            selectedTabIndex = pagerState.currentPage,
-            containerColor = scheme.surface,
-            contentColor = scheme.onSurface,
-            edgePadding = 16.dp,
-            divider = {},
-            indicator = {
-                TabRowDefaults.PrimaryIndicator(
-                    Modifier.tabIndicatorOffset(pagerState.currentPage, matchContentSize = true),
-                    width = Dp.Unspecified,
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (mixing) {
+                com.gpo.pilipala.feature.sources.InlineSourceChips(
+                    filter = com.gpo.pilipala.feature.sources.SearchScope,
+                    tuck = 0.dp,
+                    container = scheme.surfaceContainerHigh,
+                    modifier = Modifier.padding(start = 16.dp),
                 )
-            },
-        ) {
-            tabs.forEachIndexed { i, t ->
-                Tab(
-                    selected = pagerState.currentPage == i,
-                    onClick = {
-                        if (pagerState.currentPage == i) {
-                            vms[i].requestTop()
-                        } else {
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            scope.launch { pagerState.animateScrollToPage(i) }
-                        }
-                    },
-                    selectedContentColor = scheme.primary,
-                    unselectedContentColor = scheme.onSurfaceVariant,
-                    // The counts are Bilibili's: shown only while Bilibili is searched.
-                    text = { TabLabel(t.label, if (biliSearched) countsVm.counts[t.type] else null) },
-                )
+            }
+            PrimaryScrollableTabRow(
+                selectedTabIndex = pagerState.currentPage,
+                modifier = Modifier.weight(1f),
+                containerColor = scheme.surface,
+                contentColor = scheme.onSurface,
+                edgePadding = if (mixing) 8.dp else 16.dp,
+                divider = {},
+                indicator = {
+                    TabRowDefaults.PrimaryIndicator(
+                        Modifier.tabIndicatorOffset(pagerState.currentPage, matchContentSize = true),
+                        width = Dp.Unspecified,
+                    )
+                },
+            ) {
+                tabs.forEachIndexed { i, t ->
+                    Tab(
+                        selected = pagerState.currentPage == i,
+                        onClick = {
+                            if (pagerState.currentPage == i) {
+                                vms[i].requestTop()
+                            } else {
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                scope.launch { pagerState.animateScrollToPage(i) }
+                            }
+                        },
+                        selectedContentColor = scheme.primary,
+                        unselectedContentColor = scheme.onSurfaceVariant,
+                        // The counts are Bilibili's: shown only while Bilibili is searched.
+                        text = { TabLabel(t.label, if (biliSearched) countsVm.counts[t.type] else null) },
+                    )
+                }
             }
         }
         HorizontalPager(
@@ -553,7 +585,7 @@ private fun SearchTabPage(vm: SearchTabViewModel) {
                 choices = ArticleOrders,
                 selected = vm.order,
                 onSelect = vm::selectOrder,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
             )
             else -> Unit
         }
@@ -726,7 +758,7 @@ private fun VideoFilterBar(vm: SearchTabViewModel) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ConnectedChoiceRow(

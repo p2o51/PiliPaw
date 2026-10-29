@@ -178,17 +178,23 @@ private fun <T> kotlinx.coroutines.flow.StateFlow<T>.collectAsStateCompat() = co
  * Home's account chips, inline right after the selected 推荐 / 关注 chip: each account as its
  * avatar alone; the picked one grows its label and fills (the feed narrows to it), the other
  * stays where it is as an avatar (tap it to switch); tapping the picked one again lets go (both sources).
+ * Search puts the same pill on its own (no [tuck]) before its result tabs, for [SearchScope].
+ *
+ * [tuck]: the tonal tail that tucks under the selected 推荐 / 关注 (drawn behind it: HomeScreen), so the
+ * avatars read as part of that chip: the row's 8dp gap plus half the chip's 40dp end cap.
  */
 @androidx.compose.runtime.Composable
-fun InlineSourceChips() {
-    val only by MixFilter.only.collectAsStateCompat()
+fun InlineSourceChips(
+    filter: SourceFilter = MixFilter,
+    tuck: androidx.compose.ui.unit.Dp = 28.dp,
+    container: androidx.compose.ui.graphics.Color = androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer,
+    modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
+) {
+    val only by filter.only.collectAsStateCompat()
     val scheme = androidx.compose.material3.MaterialTheme.colorScheme
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
-    // One tonal tail that tucks under the selected 推荐 / 关注 (drawn behind it: HomeScreen), so the
-    // avatars read as part of that chip: the row's 8dp gap plus half the chip's 40dp end cap.
-    val tuck = 28.dp
     androidx.compose.foundation.layout.Row(
-        androidx.compose.ui.Modifier
+        modifier
             .layout { measurable, constraints ->
                 val t = tuck.roundToPx()
                 val p = measurable.measure(constraints)
@@ -196,7 +202,7 @@ fun InlineSourceChips() {
             }
             .height(40.dp)
             .clip(androidx.compose.foundation.shape.CircleShape)
-            .background(scheme.primaryContainer)
+            .background(container)
             .padding(start = tuck + 4.dp, end = 4.dp),
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -216,7 +222,7 @@ fun InlineSourceChips() {
                         .background(bg)
                         .clickable {
                             haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
-                            MixFilter.set(if (picked) null else source)
+                            filter.set(if (picked) null else source)
                         }
                         .padding(start = 4.dp, end = 4.dp),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
