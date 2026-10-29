@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -122,7 +123,17 @@ fun AppNavHost(navigator: Navigator) {
                     // A whole back gesture: the window's width, up to a wide phone's worth more.
                     transitions.gestureSpanPx = minOf(it.width.toFloat(), with(density) { GestureSpanMax.toPx() })
                 }
-                .voteHighFrameRate(transitions.phase != BackPhase.Idle),
+                .voteHighFrameRate(transitions.phase != BackPhase.Idle)
+                // Every finger, seen before the pages and never taken: one landing while a back
+                // finishes makes the page beneath live at once.
+                .pointerInput(transitions) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                            if (e.changes.any { it.pressed && !it.previousPressed }) transitions.touched()
+                        }
+                    }
+                },
         ) {
             BeneathPage(transitions, backdrop)
             Box(

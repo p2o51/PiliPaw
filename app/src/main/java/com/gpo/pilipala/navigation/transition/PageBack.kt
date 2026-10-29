@@ -146,10 +146,14 @@ internal fun Density.beneathPose(t: PageTransitions, size: Size): BackPose {
     )
 }
 
-/** Swallows touches while a back runs: neither the closing page nor the pixels beneath are live. */
+/**
+ * Swallows touches while a back rides home: neither the closing page nor the pixels beneath are
+ * live yet (a touch then hurries the ride, [PageTransitions.touched]). Once the page is popped the
+ * live page beneath takes touches, even while its snapshot still covers it.
+ */
 @Composable
 internal fun BackInputBlocker(t: PageTransitions) {
-    if (t.phase == BackPhase.Idle) return
+    if (t.phase == BackPhase.Idle || t.phase == BackPhase.Revealing) return
     Box(
         Modifier
             .fillMaxSize()

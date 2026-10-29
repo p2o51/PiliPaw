@@ -141,6 +141,17 @@ class PageTransitions internal constructor(
     internal var touchYDelta by mutableFloatStateOf(0f)
     internal var swipeEdge by mutableIntStateOf(BackEventCompat.EDGE_LEFT)
 
+    /**
+     * A finger came down while a back was finishing: the ride ends at once (on a quick spring)
+     * and the page beneath stops waiting for its covers, so it is live under that finger.
+     */
+    private var hurry by mutableStateOf(false)
+
+    /** A touch anywhere in the window (seen, never taken): see [hurry]. */
+    internal fun touched() {
+        if (phase == BackPhase.Committing || phase == BackPhase.Revealing) hurry = true
+    }
+
     /** Gesture progress at release: the revealed page keeps that scale while it rides home. */
     internal var seedProgress by mutableFloatStateOf(0f)
 
@@ -513,6 +524,7 @@ class PageTransitions internal constructor(
         val closingEntry = backStack.last()
         val fromRest = phase != BackPhase.Gesture
         pendingEnter = null
+        hurry = false
         // Synchronously, so a second pop in the same frame queues behind this one.
         phase = BackPhase.Committing
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -529,12 +541,37 @@ class PageTransitions internal constructor(
             if (beneath != null) {
                 prepareHero()
                 val ride = tween<Float>(BackMotionTokens.PostCommitDurationMs, easing = BackMotionTokens.EmphasizedEasing)
-                coroutineScope {
-                    launch { behind.animateTo(0f, ride) }
-                    launch { closing.animateTo(1f, ride) }
-                    launch { exit.animateTo(1f, tween(BackMotionTokens.PostCommitDurationMs, easing = LinearEasing)) }
-                    if (hero != null) launch { heroProgress.animateTo(1f, heroSpec) }
+                val hurried = coroutineScope {
+                    val rideJob = launch {
+                        coroutineScope {
+                            launch { behind.animateTo(0f, ride) }
+                            launch { closing.animateTo(1f, ride) }
+                            launch { exit.animateTo(1f, tween(BackMotionTokens.PostCommitDurationMs, easing = LinearEasing)) }
+                        }
+                    }
+                    // The flight keeps going on its own whether or not the ride is hurried.
+                    if (hero != null) scope.launch { heroProgress.animateTo(1f, heroSpec) }
+                    val watch = launch {
+                        snapshotFlow { hurry }.first { it }
+                        rideJob.cancel()
+                    }
+                    rideJob.join()
+                    watch.cancel()
+                    rideJob.isCancelled
                 }
+                if (hurried && generation == owner) {
+                    // A touch: the rest of the ride on a quick spring (no jump), then the page is live.
+                    val quick = YoinMotion.fastEffectsSpec<Float>(role = YoinMotionRole.Standard, expressiveScheme = MotionScheme.expressive())
+                    coroutineScope {
+                        launch { behind.animateTo(0f, quick) }
+                        launch { closing.animateTo(1f, quick) }
+                        launch { exit.animateTo(1f, quick) }
+                    }
+                }
+                // The page goes once the picture has landed (on its cover, or in the mini player,
+                // which takes the player and grows its keys around it), not after the slow
+                // spring's last settling; never before it lands (two pictures at once).
+                if (hero != null) snapshotFlow { heroProgress.value >= HeroLandedAt }.first { it }
             } else {
                 // Nothing to ride home (no valid pixels of the page beneath,
                 // e.g. taken before a rotation): end the moment the closing
@@ -583,7 +620,9 @@ class PageTransitions internal constructor(
             repeat(RevealHoldFrames) { withFrameNanos { } }
             withTimeoutOrNull(RevealWaitMs) {
                 snapshotFlow { leaving == null }.first { it }
-                com.gpo.pilipala.ui.components.ImageLoads.inFlight.first { it == 0 }
+                // A finger on the page beneath: it shows now, covers loading or not.
+                kotlinx.coroutines.flow.combine(snapshotFlow { hurry }, com.gpo.pilipala.ui.components.ImageLoads.inFlight) { h, n -> h || n == 0 }
+                    .first { it }
             }
             leaving = null
             holding = false
@@ -612,8 +651,12 @@ class PageTransitions internal constructor(
      * The closing page's picture, if its route came from a cover and the page can give a
      * frame of it: briefly waited for (a PixelCopy is a frame or two), else no hero.
      */
+    /** The hero flying now lands in the mini player (a [HeroDock]), not on a cover. */
+    private var heroDocked = false
+
     private suspend fun prepareHero() {
         hero = null
+        heroDocked = false
         heroProgress.snapTo(0f)
         val top = backStack.lastOrNull() as? Route ?: return
         val dock = heroDocks[top.toString()]?.takeIf { it.enabled() }
@@ -625,6 +668,7 @@ class PageTransitions internal constructor(
             dock.landing(shot.first)
             com.gpo.pilipala.feature.sources.MiniLog.event("hero flies to bar", top.toString())
             hero = HeroFlight(shot.first, shot.second, to, top.sharedKey().orEmpty(), dock.corner())
+            heroDocked = true
             return
         }
         val cover = pushedCovers[top.toString()] ?: return
@@ -655,6 +699,9 @@ class PageTransitions internal constructor(
 
         /** Frames the live page draws, hidden, before it fades over its snapshot. */
         const val RevealHoldFrames = 3
+
+        /** How far the picture's flight has gone when it counts as landed (the rest is the spring settling). */
+        const val HeroLandedAt = 0.97f
 
         /** The most the live page waits (past those frames) for its covers and the old page to go. */
         const val RevealWaitMs = 450L
