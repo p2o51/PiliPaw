@@ -11,6 +11,7 @@ import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -251,7 +252,8 @@ internal fun FullscreenPlayer(session: Player.Session) {
                     .pictureGestures(feedback, haptics) {
                         shown = !shown
                         poked = System.nanoTime()
-                    },
+                    }
+                    .swipeDownToExit(back, backScope, turnSpec, haptics),
             )
             DoubleTapSeekLayer(feedback.skip, big = true)
             HoldSpeedPill(feedback, big = true, modifier = Modifier.align(Alignment.Center))
@@ -367,6 +369,56 @@ private fun BottomBar(seek: SeekState, height: Dp, turned: Boolean, reveal: () -
 }
 
 private const val AutoHideMs = 3_000L
+
+/** A swipe down from the middle third leaves fullscreen once it passes this and lifts, as B站's does. */
+private val SwipeExitDistance = 72.dp
+
+/** The swipe's travel, against the frame's height, that rides the back preview all the way. */
+private const val SwipeRideFraction = 0.45f
+
+/**
+ * B站's fullscreen swipe down (PlayerControls.playerGestures mode 4): a drag that starts down in
+ * the middle third (not from the very top or bottom edge, those are the system's) rides the same
+ * shrink as predictive back with the finger, ticks as it crosses the line, and leaves fullscreen
+ * if lifted past it; short of it, it springs back. The side thirds stay free.
+ */
+private fun Modifier.swipeDownToExit(
+    back: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>,
+    scope: kotlinx.coroutines.CoroutineScope,
+    settleSpec: androidx.compose.animation.core.AnimationSpec<Float>,
+    haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
+): Modifier = pointerInput(back) {
+    val edge = 40.dp.toPx()
+    val line = SwipeExitDistance.toPx()
+    awaitEachGesture {
+        val down = androidx.compose.foundation.gestures.awaitFirstDown(requireUnconsumed = false)
+        if (down.position.y < edge || down.position.y > size.height - edge) return@awaitEachGesture
+        if (down.position.x < size.width / 3f || down.position.x > size.width * 2f / 3f) return@awaitEachGesture
+        var travel = 0f
+        val slop = androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation(down.id) { change, over ->
+            if (over > 0f) {
+                change.consume()
+                travel = over
+            }
+        } ?: return@awaitEachGesture
+        if (travel <= 0f) return@awaitEachGesture
+        val ride = { scope.launch { back.snapTo(YoinMotion.backGestureEasing.transform((travel / (size.height * SwipeRideFraction)).coerceIn(0f, 1f))) } }
+        ride()
+        val ended = androidx.compose.foundation.gestures.verticalDrag(slop.id) { c ->
+            val was = travel >= line
+            travel = (travel + c.position.y - c.previousPosition.y).coerceAtLeast(0f)
+            c.consume()
+            if (was != (travel >= line)) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
+            ride()
+        }
+        if (ended && travel >= line) {
+            haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm)
+            Player.fullscreen = false
+        } else {
+            scope.launch { back.animateTo(0f, settleSpec) }
+        }
+    }
+}
 
 /** How far the back gesture shrinks the fullscreen frame, and its corners at full travel. */
 private const val BackShrink = 0.12f
