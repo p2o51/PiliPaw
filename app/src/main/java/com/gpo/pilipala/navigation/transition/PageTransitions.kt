@@ -113,6 +113,60 @@ internal class PageEnter(
     val sourceCornerPx: Float = Float.NaN,
 )
 
+/**
+ * Debug builds: a back's timeline under the tag PiliBack, from the commit (release) on: the
+ * ride, the pop (the page beneath live), the snapshot giving way, the reveal, every finger and the
+ * first drag after the release, and every frame that took long, so "it does not answer at once"
+ * can be read in milliseconds.
+ */
+internal object BackLog {
+    private var t0 = 0L
+    private var downs = 0
+    private var moved = false
+
+    private val on: Boolean get() = com.gpo.pilipala.BuildConfig.DEBUG
+
+    fun start(page: String, fromRest: Boolean, scope: CoroutineScope, phase: () -> BackPhase) {
+        if (!on) return
+        t0 = android.os.SystemClock.uptimeMillis()
+        downs = 0
+        moved = false
+        android.util.Log.d("PiliBack", "commit $page ${if (fromRest) "(button / swipe)" else "(gesture)"}")
+        // Long frames from the release until the back is over.
+        scope.launch {
+            var last = 0L
+            while (phase() != BackPhase.Idle) {
+                androidx.compose.runtime.withFrameNanos { now ->
+                    val ms = now / 1_000_000
+                    if (last > 0L && ms - last > 24) mark("long frame ${ms - last} ms")
+                    last = ms
+                }
+            }
+        }
+    }
+
+    fun mark(what: String) {
+        if (!on || t0 == 0L) return
+        val dt = android.os.SystemClock.uptimeMillis() - t0
+        if (dt > 4_000) return
+        android.util.Log.d("PiliBack", "+$dt ms $what")
+    }
+
+    /** A finger came down (phase as it was), or the first one after the release moved. */
+    fun down(phase: BackPhase) {
+        if (!on) return
+        downs++
+        moved = false
+        mark("finger down #$downs during $phase")
+    }
+
+    fun move() {
+        if (!on || moved) return
+        moved = true
+        mark("finger moves #$downs")
+    }
+}
+
 @Stable
 class PageTransitions internal constructor(
     private val backStack: NavBackStack<NavKey>,
@@ -149,6 +203,7 @@ class PageTransitions internal constructor(
 
     /** A touch anywhere in the window (seen, never taken): see [hurry]. */
     internal fun touched() {
+        BackLog.down(phase)
         if (phase == BackPhase.Committing || phase == BackPhase.Revealing) hurry = true
     }
 
@@ -527,6 +582,7 @@ class PageTransitions internal constructor(
         hurry = false
         // Synchronously, so a second pop in the same frame queues behind this one.
         phase = BackPhase.Committing
+        BackLog.start(closingEntry.toString().substringBefore('('), fromRest, scope) { phase }
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             if (fromRest) {
                 prepareReveal()
@@ -559,6 +615,7 @@ class PageTransitions internal constructor(
                     watch.cancel()
                     rideJob.isCancelled
                 }
+                BackLog.mark(if (hurried) "ride cut short by a touch" else "ride done")
                 if (hurried && generation == owner) {
                     // A touch: the rest of the ride on a quick spring (no jump), then the page is live.
                     val quick = YoinMotion.fastEffectsSpec<Float>(role = YoinMotionRole.Standard, expressiveScheme = MotionScheme.expressive())
@@ -571,7 +628,10 @@ class PageTransitions internal constructor(
                 // The page goes once the picture has landed (on its cover, or in the mini player,
                 // which takes the player and grows its keys around it), not after the slow
                 // spring's last settling; never before it lands (two pictures at once).
-                if (hero != null) snapshotFlow { heroProgress.value >= HeroLandedAt }.first { it }
+                if (hero != null) {
+                    snapshotFlow { heroProgress.value >= HeroLandedAt }.first { it }
+                    BackLog.mark("picture landed (${if (heroDocked) "mini player" else "cover"})")
+                }
             } else {
                 // Nothing to ride home (no valid pixels of the page beneath,
                 // e.g. taken before a rotation): end the moment the closing
@@ -610,6 +670,7 @@ class PageTransitions internal constructor(
             holding = true
             leaving = closingEntry.toString()
             backStack.removeAt(closingIndex)
+            BackLog.mark("popped: page beneath is live")
             closing.snapTo(0f)
             exit.snapTo(0f)
             touchYDelta = 0f
@@ -626,12 +687,14 @@ class PageTransitions internal constructor(
             }
             leaving = null
             holding = false
+            BackLog.mark("snapshot gives way (hurried=$hurry)")
             com.gpo.pilipala.feature.sources.MiniLog.event(
                 "page beneath shows",
                 "after ${android.os.SystemClock.uptimeMillis() - rideEnd} ms (images still loading ${com.gpo.pilipala.ui.components.ImageLoads.inFlight.value})",
             )
             if (generation != owner) return@launch
             reveal.animateTo(1f, revealSpec)
+            BackLog.mark("revealed")
             if (generation != owner) return@launch
 
             beneath = null
@@ -640,6 +703,7 @@ class PageTransitions internal constructor(
             behind.snapTo(1f)
             snapshots.remove(revealedKey)
             phase = BackPhase.Idle
+            BackLog.mark("idle")
             if (pendingPops > 0) {
                 pendingPops--
                 if (backStack.size > 1) launchCommit() else pendingPops = 0
