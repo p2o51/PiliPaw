@@ -40,3 +40,25 @@ class RailFlipTest {
         assertTrue(sideRailFor(700, 600))
     }
 }
+
+class RailVisibilityTest {
+    private fun of(top: Boolean, beneath: Boolean, phase: com.gpo.pilipala.navigation.transition.BackPhase) = RailVisibility.of(top, beneath, phase)
+
+    @Test fun inOnlyWhenTheBackLandsOnTheShell() {
+        val p = com.gpo.pilipala.navigation.transition.BackPhase.entries.associateBy { it.name }
+        // Shell on top: in, whatever runs.
+        assertEquals(RailVisibility.In, of(top = true, beneath = false, p.getValue("Idle")))
+        // A video over the shell: out; a back gesture to the shell follows the finger; its commit comes in.
+        assertEquals(RailVisibility.Out, of(top = false, beneath = true, p.getValue("Idle")))
+        assertEquals(RailVisibility.FollowGesture, of(top = false, beneath = true, p.getValue("Gesture")))
+        assertEquals(RailVisibility.In, of(top = false, beneath = true, p.getValue("Committing")))
+        // Video over search results over the shell, after the pop (Revealing): search results is
+        // on top and the shell beneath it, but this back lands on search results: out.
+        assertEquals(RailVisibility.Out, of(top = false, beneath = true, p.getValue("Revealing")))
+        // Before the pop the entry beneath is search results: out all the way.
+        assertEquals(RailVisibility.Out, of(top = false, beneath = false, p.getValue("Gesture")))
+        assertEquals(RailVisibility.Out, of(top = false, beneath = false, p.getValue("Committing")))
+        // Back to the shell, popped: the shell is on top.
+        assertEquals(RailVisibility.In, of(top = true, beneath = false, p.getValue("Revealing")))
+    }
+}
