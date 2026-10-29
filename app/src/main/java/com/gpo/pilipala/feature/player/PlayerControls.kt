@@ -87,7 +87,6 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.pilipala.ui.theme.YoinShapeTokens
 import com.gpo.pilipala.ui.theme.withTabularFigures
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import com.gpo.yoin.symbols.rememberPlayPauseSymbolPainter
 import kotlinx.coroutines.delay
@@ -420,7 +419,7 @@ internal fun Modifier.playerGestures(
                                 lastStep = applied
                                 haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                             }
-                            feedback.level = PiliSymbols.Brightness to level
+                            feedback.level = YoinSymbols.Brightness to level
                         }
                         5 -> {
                             travel += drag.y
@@ -596,7 +595,7 @@ private fun DanmakuToggleIcon(on: Boolean) {
         label = "danmakuToggle",
     ) { o ->
         Icon(
-            if (o) PiliSymbols.Danmaku else PiliSymbols.DanmakuOff,
+            if (o) YoinSymbols.Danmaku else YoinSymbols.DanmakuOff,
             contentDescription = if (o) "关闭弹幕" else "开启弹幕",
             tint = if (o) OnVideo else OnVideoVariant,
             modifier = Modifier.size(22.dp),
@@ -667,7 +666,7 @@ internal fun InlineCorners(
                 }
                 InlineGroupButton(onClick = actions.onDanmaku) { DanmakuToggleIcon(danmakuOn) }
                 if (canPip) {
-                    InlineGroupButton(onClick = actions.onPip) { Icon(PiliSymbols.Pip, contentDescription = "画中画", modifier = Modifier.size(22.dp)) }
+                    InlineGroupButton(onClick = actions.onPip) { Icon(YoinSymbols.Pip, contentDescription = "画中画", modifier = Modifier.size(22.dp)) }
                 }
                 InlineGroupButton(onClick = actions.onMore) { Icon(YoinSymbols.MoreVertical, contentDescription = "更多", modifier = Modifier.size(22.dp)) }
             }
@@ -781,7 +780,7 @@ private fun FullscreenButton(fullscreen: Boolean, onClick: () -> Unit) {
         modifier = Modifier.size(44.dp),
     ) {
         Icon(
-            if (fullscreen) PiliSymbols.FullscreenExit else PiliSymbols.Fullscreen,
+            if (fullscreen) YoinSymbols.FullscreenExit else YoinSymbols.Fullscreen,
             contentDescription = if (fullscreen) "退出全屏" else "全屏",
         )
     }
@@ -803,7 +802,7 @@ private fun SubtitleButton(ctrl: PiliPlayerController, onClick: () -> Unit) {
         colors = IconButtonDefaults.iconButtonColors(containerColor = block, contentColor = OnVideo),
         modifier = Modifier.size(44.dp),
     ) {
-        Icon(PiliSymbols.Subtitles, contentDescription = "字幕")
+        Icon(YoinSymbols.Subtitles, contentDescription = "字幕")
     }
 }
 
@@ -957,12 +956,12 @@ internal fun FullscreenTopBar(
                 exit = fadeOut(YoinMotion.fastEffectsSpec()) + scaleOut(YoinMotion.fastSpatialSpec(), targetScale = 0.6f),
             ) {
                 IconButton(onClick = { shot?.invoke() }, shapes = IconButtonDefaults.shapes()) {
-                    Icon(ScreenshotSymbol, contentDescription = "截图")
+                    Icon(YoinSymbols.Camera, contentDescription = "截图")
                 }
             }
             if (canPip) {
                 IconButton(onClick = actions.onPip, shapes = IconButtonDefaults.shapes()) {
-                    Icon(PiliSymbols.Pip, contentDescription = "画中画")
+                    Icon(YoinSymbols.Pip, contentDescription = "画中画")
                 }
             }
             IconButton(onClick = actions.onMore, shapes = IconButtonDefaults.shapes()) {
@@ -1055,7 +1054,7 @@ internal fun LockButton(ui: PlayerChromeState, visible: Boolean, turned: Boolean
             shapes = IconButtonDefaults.shapes(),
             colors = IconButtonDefaults.filledIconButtonColors(containerColor = lockContainer, contentColor = lockContent),
         ) {
-            Icon(PiliSymbols.Lock, contentDescription = if (locked) "解锁" else "锁定")
+            Icon(YoinSymbols.Lock, contentDescription = if (locked) "解锁" else "锁定")
         }
     }
 }
@@ -1324,7 +1323,7 @@ internal fun PlayerErrorPanel(message: String, onRetry: () -> Unit, modifier: Mo
                 overflow = TextOverflow.Ellipsis,
             )
             FilledTonalButton(onClick = onRetry) {
-                Icon(PiliSymbols.Replay, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(YoinSymbols.Replay, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("重试")
             }

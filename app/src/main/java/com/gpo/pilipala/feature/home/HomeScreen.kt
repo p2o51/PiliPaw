@@ -69,7 +69,6 @@ import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.launch.splashAvatarSlot
 import com.gpo.pilipala.ui.launch.splashReveal
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import com.gpo.pilipala.ui.shell.LocalHomeSearchRequest
 import com.gpo.pilipala.ui.shell.LocalTabReselect
@@ -322,7 +321,7 @@ private fun HomeHeader(
                 shapes = IconButtonDefaults.shapes(),
                 modifier = Modifier.size(48.dp).splashReveal(),
             ) {
-                Icon(PiliSymbols.Mail, contentDescription = "消息")
+                Icon(YoinSymbols.Mail, contentDescription = "消息")
             }
         } else {
             // Holds the search bar centred where the messages button would be.

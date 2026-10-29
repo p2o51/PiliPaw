@@ -28,7 +28,6 @@ import com.gpo.pilipala.feature.reply.EmotePanel
 import com.gpo.pilipala.feature.reply.EmotePeekOverlay
 import com.gpo.pilipala.feature.reply.EmotePeekState
 import com.gpo.pilipala.feature.reply.PictureRow
-import com.gpo.pilipala.feature.reply.ReplyIcons
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.snapshots.SnapshotStateList
@@ -36,7 +35,6 @@ import androidx.compose.runtime.toMutableStateList
 import com.gpo.pilipala.feature.reply.crossfade
 import com.gpo.pilipala.feature.reply.replyMotion
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -756,7 +754,7 @@ private fun InputBar(vm: WhisperDetailViewModel, peek: EmotePeekState, onError: 
                             label = "whisperEmoteToggle",
                         ) { showingPanel ->
                             Icon(
-                                if (showingPanel) ReplyIcons.Keyboard else ReplyIcons.Emoji,
+                                if (showingPanel) YoinSymbols.Keyboard else YoinSymbols.Emoji,
                                 contentDescription = if (showingPanel) "键盘" else "表情",
                             )
                         }
@@ -776,7 +774,7 @@ private fun InputBar(vm: WhisperDetailViewModel, peek: EmotePeekState, onError: 
                         enabled = !vm.sending && remaining > 0,
                         shapes = IconButtonDefaults.shapes(),
                     ) {
-                        Icon(PiliSymbols.Image, contentDescription = "图片")
+                        Icon(YoinSymbols.Image, contentDescription = "图片")
                     }
                 },
                 maxLines = 5,

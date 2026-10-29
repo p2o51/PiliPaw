@@ -66,7 +66,6 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.LocalPiliDark
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -304,7 +303,7 @@ private fun StatusRow(vm: LoginViewModel, align: Alignment.Horizontal) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(PiliSymbols.Qr, null, modifier = Modifier.size(18.dp))
+                    Icon(YoinSymbols.Qr, null, modifier = Modifier.size(18.dp))
                     Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 }
             }
@@ -328,7 +327,7 @@ private fun LoginActions(vm: LoginViewModel, onWebLogin: () -> Unit) {
             shapes = ButtonDefaults.shapes(),
             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
         ) {
-            Icon(PiliSymbols.Link, null, modifier = Modifier.size(ButtonDefaults.IconSize))
+            Icon(YoinSymbols.Link, null, modifier = Modifier.size(ButtonDefaults.IconSize))
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
             Text("网页登录")
         }

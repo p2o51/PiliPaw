@@ -66,7 +66,6 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinArtworkShapes
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import com.gpo.pilipala.ui.components.sheetNavBottom
 import com.gpo.pilipala.ui.components.rememberSheetProperties
@@ -125,8 +124,8 @@ internal fun BangumiHeader(
             }
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Stat(PiliSymbols.Views, Fmt.count(d.views), revealable = true)
-                Stat(PiliSymbols.Danmaku, Fmt.count(d.danmakus), revealable = true)
+                Stat(YoinSymbols.Views, Fmt.count(d.views), revealable = true)
+                Stat(YoinSymbols.Danmaku, Fmt.count(d.danmakus), revealable = true)
             }
             Spacer(Modifier.height(6.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -433,7 +432,6 @@ internal fun EpisodeGridSheet(
         }
     }
 }
-
 
 /** The index line of an episode tile / row: tight label, so the playing glyph and tag centre on it. */
 @Composable

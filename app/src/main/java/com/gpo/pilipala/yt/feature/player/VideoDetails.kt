@@ -97,7 +97,6 @@ import com.gpo.pilipala.yt.feature.subscriptions.Subscriptions
 import com.gpo.pilipala.yt.navigation.LocalNavigator
 import com.gpo.pilipala.yt.navigation.Route
 import com.gpo.pilipala.yt.ui.components.friendlyMessage
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -240,7 +239,7 @@ private fun YtVideoHeader(session: Player.Session, info: StreamInfo?, onSeek: (L
         if (info == null) return@Column
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (info.viewCount >= 0) Stat(PiliSymbols.Views, Fmt.count(info.viewCount), revealable = true)
+            if (info.viewCount >= 0) Stat(YoinSymbols.Views, Fmt.count(info.viewCount), revealable = true)
             val uploaded = info.uploadDate?.offsetDateTime()?.toEpochSecond() ?: 0L
             if (uploaded > 0) {
                 Text(
@@ -448,8 +447,8 @@ private fun YtVideoActions(info: StreamInfo) {
     val first = if (signedIn) {
         ActionSpec(
             label = likeLabel,
-            icon = PiliSymbols.ThumbUp,
-            checkedIcon = PiliSymbols.ThumbUpFilled,
+            icon = YoinSymbols.ThumbUp,
+            checkedIcon = YoinSymbols.ThumbUpFilled,
             checked = liked,
             onLongClick = {
                 if (!liked) like(true)
@@ -468,8 +467,8 @@ private fun YtVideoActions(info: StreamInfo) {
     val disliked = YtLikes.disliked(info.url)
     val dislike = if (!signedIn) null else ActionSpec(
         label = "点踩",
-        icon = PiliSymbols.ThumbDown,
-        checkedIcon = PiliSymbols.ThumbDownFilled,
+        icon = YoinSymbols.ThumbDown,
+        checkedIcon = YoinSymbols.ThumbDownFilled,
         checked = disliked,
         onClick = { scope.launch { YtLikes.setDislike(info.url, info.id, !disliked)?.let(toast) } },
     )
@@ -479,7 +478,7 @@ private fun YtVideoActions(info: StreamInfo) {
             dislike,
             ActionSpec(
                 label = "稍后再看",
-                icon = PiliSymbols.WatchLater,
+                icon = YoinSymbols.WatchLater,
                 checked = inLater,
                 onClick = {
                     if (signedIn) {

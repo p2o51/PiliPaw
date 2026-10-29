@@ -64,7 +64,7 @@ import com.gpo.pilipala.ui.components.SheetInsets
 import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.sheetNavBottom
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import com.gpo.yoin.symbols.rememberPlayModeSymbolPainter
 
 /**
@@ -146,8 +146,8 @@ private class BiliListenSource(
     override fun Like() {
         ChargeLikeButton(
             checked = vm.actions.liked,
-            icon = PiliSymbols.ThumbUp,
-            checkedIcon = PiliSymbols.ThumbUpFilled,
+            icon = YoinSymbols.ThumbUp,
+            checkedIcon = YoinSymbols.ThumbUpFilled,
             label = "点赞",
             checkedLabel = "取消点赞",
             onClick = { gate { vm.actions.toggleLike() } },

@@ -93,7 +93,6 @@ import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinShapeTokens
 import com.gpo.pilipala.ui.theme.withTabularFigures
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -462,7 +461,7 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
     // 1 · 画质, 倍速, 字幕, 弹幕, 章节: settings, each a row with its value; tap for its page.
     SegmentedGroup(
         buildList {
-            add(RowSpec(PiliSymbols.Hd, "画质", value = Qualities.videoShort(ctrl.currentQn)) { onOpen(SheetPage.Quality) })
+            add(RowSpec(YoinSymbols.Hd, "画质", value = Qualities.videoShort(ctrl.currentQn)) { onOpen(SheetPage.Quality) })
             add(RowSpec(YoinSymbols.Speed, "倍速", value = speedLabel(ctrl.speed)) { onOpen(SheetPage.Speed) })
             if (t != null) {
                 val found = ctrl.skips.size
@@ -471,13 +470,13 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
             if (ctrl.subtitles.isNotEmpty()) {
                 add(
                     RowSpec(
-                        PiliSymbols.Subtitles,
+                        YoinSymbols.Subtitles,
                         "字幕",
                         value = ctrl.subtitles.getOrNull(ctrl.subtitleIndex)?.label ?: "关闭",
                     ) { onOpen(SheetPage.Subtitle) },
                 )
             }
-            add(RowSpec(PiliSymbols.Danmaku, "弹幕设置") { onOpen(SheetPage.Danmaku) })
+            add(RowSpec(YoinSymbols.Danmaku, "弹幕设置") { onOpen(SheetPage.Danmaku) })
             if (ctrl.chapters.isNotEmpty()) {
                 add(RowSpec(YoinSymbols.Playlist, "章节", value = "${ctrl.chapters.size}") { onOpen(SheetPage.Chapters) })
             }
@@ -502,7 +501,7 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
         Spacer(Modifier.height(GroupGap))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(SheetGroupSpacing)) {
             if (canLater && t != null) {
-                SheetGroupButton(PiliSymbols.WatchLater, "稍后再看", modifier = Modifier.weight(1f), done = laterDone, enabled = laterDone == null, onClick = {
+                SheetGroupButton(YoinSymbols.WatchLater, "稍后再看", modifier = Modifier.weight(1f), done = laterDone, enabled = laterDone == null, onClick = {
                     scope.launch {
                         val result = runCatching {
                             BiliClient.postData(
@@ -524,13 +523,13 @@ private fun MainPage(ctrl: PiliPlayerController, onOpen: (SheetPage) -> Unit, on
             }
             if (t != null) SheetGroupButton(YoinSymbols.Download, "缓存", modifier = Modifier.weight(1f), onClick = { onOpen(SheetPage.Cache) })
             if (shot != null) {
-                SheetGroupButton(ScreenshotSymbol, "截图", modifier = Modifier.weight(1f), onClick = {
+                SheetGroupButton(YoinSymbols.Camera, "截图", modifier = Modifier.weight(1f), onClick = {
                     onClose()
                     shot()
                 })
             }
             if (report != null) {
-                SheetGroupButton(PiliSymbols.Flag, "举报", modifier = Modifier.weight(1f), onClick = {
+                SheetGroupButton(YoinSymbols.Flag, "举报", modifier = Modifier.weight(1f), onClick = {
                     onClose()
                     report()
                 })

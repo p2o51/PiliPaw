@@ -70,7 +70,6 @@ import com.gpo.pilipala.yt.navigation.LocalNavigator
 import com.gpo.pilipala.yt.navigation.Route
 import com.gpo.pilipala.yt.ui.components.Page
 import com.gpo.pilipala.yt.ui.components.Pager
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -188,7 +187,7 @@ fun CommentsList(
                 ErrorState(pager.error.orEmpty(), Modifier.heightIn(min = StateMinHeight).animateItem(), onRetry = pager::refresh)
             }
             pager.items.isEmpty() -> item(key = "empty") {
-                EmptyState("暂无评论", Modifier.heightIn(min = StateMinHeight).animateItem(), icon = PiliSymbols.Comment)
+                EmptyState("暂无评论", Modifier.heightIn(min = StateMinHeight).animateItem(), icon = YoinSymbols.Comment)
             }
             else -> items(pager.items, key = { it.id }) { c ->
                 CommentRow(c, state, onSeek, Modifier.readingWidth().animateItem())
@@ -344,7 +343,7 @@ private fun ActionRow(c: Comment) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Icon(PiliSymbols.ThumbUp, null, Modifier.size(16.dp), tint = scheme.outline)
+                Icon(YoinSymbols.ThumbUp, null, Modifier.size(16.dp), tint = scheme.outline)
                 FameCount(Fmt.count(c.likes), style = MaterialTheme.typography.labelMedium.centered(), color = scheme.outline)
             }
         }

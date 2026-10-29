@@ -17,8 +17,10 @@ palette = "1.0.0"
 graphicsShapes = "1.1.0"
 zxing = "3.5.3"
 desugar = "2.1.5"
+yoinSymbols = "0.2.0"
 
 [libraries]
+yoin-symbols = { group = "io.github.p2o51", name = "yoin-symbols", version.ref = "yoinSymbols" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }

@@ -95,7 +95,6 @@ import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.LocalPiliDark
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -140,12 +139,12 @@ private data class MineTile(val label: String, val icon: ImageVector, val route:
 private val YouTubeTile = MineTile("YouTube", YoinSymbols.PlayFilled, com.gpo.pilipala.yt.navigation.Route.Settings)
 
 private val MineTiles = listOf(
-    MineTile("历史记录", PiliSymbols.History, Route.History),
+    MineTile("历史记录", YoinSymbols.History, Route.History),
     MineTile("我的收藏", YoinSymbols.Star, Route.Fav()),
-    MineTile("稍后再看", PiliSymbols.WatchLater, Route.Later),
+    MineTile("稍后再看", YoinSymbols.WatchLater, Route.Later),
     MineTile("离线缓存", YoinSymbols.Download, Route.Downloads),
     MineTile("我的订阅", YoinSymbols.LibraryAdded, Route.Subscription(0)),
-    MineTile("消息", PiliSymbols.Mail, Route.Messages),
+    MineTile("消息", YoinSymbols.Mail, Route.Messages),
     MineTile("设置", YoinSymbols.Settings, Route.Settings),
 )
 
@@ -235,7 +234,7 @@ private fun MineTopRow(asPage: Boolean) {
                 transitionSpec = { fadeIn(enterFade) togetherWith fadeOut(exitFade) },
                 label = "themeIcon",
             ) { d ->
-                Icon(if (d) YoinSymbols.LightMode else PiliSymbols.DarkMode, contentDescription = if (d) "浅色" else "深色")
+                Icon(if (d) YoinSymbols.LightMode else YoinSymbols.DarkMode, contentDescription = if (d) "浅色" else "深色")
             }
         }
         IconButton(onClick = { nav.push(Route.Settings) }, shapes = IconButtonDefaults.shapes()) {
@@ -332,7 +331,7 @@ private fun UserProfile(u: UserInfo) {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     val coinStyle = MaterialTheme.typography.labelLarge.centered()
-                    Icon(PiliSymbols.Coin, contentDescription = "硬币", Modifier.size(coinStyle.inlineIconSize()), tint = MaterialTheme.colorScheme.outline)
+                    Icon(YoinSymbols.Coin, contentDescription = "硬币", Modifier.size(coinStyle.inlineIconSize()), tint = MaterialTheme.colorScheme.outline)
                     Text(
                         formatCoins(u.coins),
                         style = coinStyle,

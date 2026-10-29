@@ -68,7 +68,6 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import com.gpo.pilipala.ui.components.inlineIconSize
 import com.gpo.pilipala.ui.components.centered
@@ -128,8 +127,8 @@ internal fun VideoHeader(d: VideoDetail, onSeek: ((Long) -> Unit)?, modifier: Mo
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
             val self = d.isFameSelf
-            Stat(PiliSymbols.Views, Fmt.count(d.view), revealable = true, self = self)
-            Stat(PiliSymbols.Danmaku, Fmt.count(d.danmaku), revealable = true, self = self)
+            Stat(YoinSymbols.Views, Fmt.count(d.view), revealable = true, self = self)
+            Stat(YoinSymbols.Danmaku, Fmt.count(d.danmaku), revealable = true, self = self)
             Text(
                 Fmt.date(d.pubdate, "yyyy-MM-dd HH:mm"),
                 style = MaterialTheme.typography.labelSmall.centered(),
@@ -158,7 +157,7 @@ internal fun VideoHeader(d: VideoDetail, onSeek: ((Long) -> Unit)?, modifier: Mo
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         val honorStyle = MaterialTheme.typography.labelSmall.centered()
-                        Icon(PiliSymbols.Trophy, null, Modifier.size(honorStyle.inlineIconSize()), tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                        Icon(YoinSymbols.Trophy, null, Modifier.size(honorStyle.inlineIconSize()), tint = MaterialTheme.colorScheme.onTertiaryContainer)
                         Spacer(Modifier.width(4.dp))
                         Text(h, style = honorStyle, color = MaterialTheme.colorScheme.onTertiaryContainer)
                     }
@@ -336,7 +335,7 @@ internal fun FollowToggle(
             label = "follow",
         ) { text ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (text != followLabel) PiliSymbols.PersonCheck else PiliSymbols.PersonAdd, null, Modifier.size(18.dp))
+                Icon(if (text != followLabel) YoinSymbols.PersonCheck else YoinSymbols.PersonAdd, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(text, style = MaterialTheme.typography.labelLarge)
             }

@@ -55,7 +55,6 @@ import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -210,7 +209,7 @@ private fun SuggestionList(
                     overflow = TextOverflow.Ellipsis,
                 )
                 IconButton(onClick = { onFill(s) }, shapes = IconButtonDefaults.shapes()) {
-                    Icon(SearchGlyphs.Insert, contentDescription = "填入", tint = scheme.outline)
+                    Icon(YoinSymbols.NorthWest, contentDescription = "填入", tint = scheme.outline)
                 }
             }
         }
@@ -238,7 +237,7 @@ private fun SearchHome(
             item(key = "historyHead") {
                 SectionHeader("搜索历史", Modifier.animateItem()) {
                     IconButton(onClick = onClearHistory, shapes = IconButtonDefaults.shapes()) {
-                        Icon(PiliSymbols.Clear, contentDescription = "清空", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(YoinSymbols.DeleteSweep, contentDescription = "清空", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -414,8 +413,8 @@ private fun HotRow(rank: Int, word: HotWord, onClick: () -> Unit, modifier: Modi
 private fun HotMarkView(mark: HotMark) {
     val scheme = MaterialTheme.colorScheme
     when (mark) {
-        HotMark.Hot -> Icon(PiliSymbols.Fire, contentDescription = "热", modifier = Modifier.size(18.dp), tint = scheme.error)
-        HotMark.Live -> Icon(PiliSymbols.Live, contentDescription = "直播", modifier = Modifier.size(18.dp), tint = scheme.primary)
+        HotMark.Hot -> Icon(YoinSymbols.Fire, contentDescription = "热", modifier = Modifier.size(18.dp), tint = scheme.error)
+        HotMark.Live -> Icon(YoinSymbols.Live, contentDescription = "直播", modifier = Modifier.size(18.dp), tint = scheme.primary)
         HotMark.New -> Tag("新", container = scheme.primaryContainer, content = scheme.onPrimaryContainer)
         HotMark.First -> Tag("首发", container = scheme.tertiaryContainer, content = scheme.onTertiaryContainer)
         HotMark.Topic -> Tag("话题")

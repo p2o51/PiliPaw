@@ -43,7 +43,6 @@ import com.gpo.pilipala.core.util.Images
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import com.gpo.pilipala.ui.components.centered
 
@@ -258,7 +257,7 @@ private fun GiftRow(chat: LiveChat) {
                 modifier = Modifier.size(28.dp),
             )
         } else {
-            Icon(PiliSymbols.Gift, null, Modifier.padding(4.dp).size(20.dp), tint = cs.secondary)
+            Icon(YoinSymbols.Gift, null, Modifier.padding(4.dp).size(20.dp), tint = cs.secondary)
         }
         chat.medal?.let { MedalChip(it, onSecondary = true) }
         Text(

@@ -94,7 +94,6 @@ import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
@@ -105,7 +104,6 @@ import com.gpo.pilipala.ui.components.centered
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import com.gpo.pilipala.feature.home.FeedActions
-import com.gpo.pilipala.feature.member.BlockGlyph
 import com.gpo.pilipala.feature.reply.ReportSheet
 import com.gpo.pilipala.ui.components.SheetOutlinedAction
 
@@ -482,7 +480,7 @@ private fun AdditionalContent(item: JsonObject, blockColor: Color) {
         "ADDITIONAL_TYPE_UPOWER_LOTTERY" -> add.obj("upower_lottery")?.let { l ->
             RowBlock(
                 cover = null,
-                icon = PiliSymbols.Gift,
+                icon = YoinSymbols.Gift,
                 title = l.str("title"),
                 subtitle = l.obj("desc").str("text"),
                 badge = null,
@@ -586,8 +584,8 @@ private fun VideoBlock(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (play.isNotEmpty() && play != "-") Stat(PiliSymbols.Views, Fmt.count(play), tint = Color.White)
-                if (danmaku.isNotEmpty() && danmaku != "-") Stat(PiliSymbols.Danmaku, Fmt.count(danmaku), tint = Color.White)
+                if (play.isNotEmpty() && play != "-") Stat(YoinSymbols.Views, Fmt.count(play), tint = Color.White)
+                if (danmaku.isNotEmpty() && danmaku != "-") Stat(YoinSymbols.Danmaku, Fmt.count(danmaku), tint = Color.White)
                 Spacer(Modifier.weight(1f))
                 if (duration.isNotEmpty()) DurationChip(duration)
             }
@@ -650,7 +648,7 @@ private fun LiveBlock(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     val areaStyle = MaterialTheme.typography.labelSmall.centered()
-                    Icon(PiliSymbols.Live, null, Modifier.size(areaStyle.inlineIconSize()).seamText(), tint = Color.White)
+                    Icon(YoinSymbols.Live, null, Modifier.size(areaStyle.inlineIconSize()).seamText(), tint = Color.White)
                     Text(area, style = areaStyle, color = Color.White, modifier = Modifier.seamText())
                 }
             }
@@ -794,7 +792,7 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
             contentPadding = pad,
             modifier = Modifier.weight(1f),
         ) {
-            ActionLabel(PiliSymbols.Forward, stat.obj("forward").long("count"), "转发")
+            ActionLabel(YoinSymbols.Forward, stat.obj("forward").long("count"), "转发")
         }
         if (!detail) {
             Button(
@@ -807,7 +805,7 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
                 contentPadding = pad,
                 modifier = Modifier.weight(1f),
             ) {
-                ActionLabel(PiliSymbols.Comment, stat.obj("comment").long("count"), "评论", fame = false)
+                ActionLabel(YoinSymbols.Comment, stat.obj("comment").long("count"), "评论", fame = false)
             }
         }
         ToggleButton(
@@ -844,7 +842,7 @@ private fun ActionRow(item: DynItem, detail: Boolean) {
                 },
                 label = "likeIcon",
             ) { liked ->
-                Icon(if (liked) PiliSymbols.ThumbUpFilled else PiliSymbols.ThumbUp, null, Modifier.size(18.dp))
+                Icon(if (liked) YoinSymbols.ThumbUpFilled else YoinSymbols.ThumbUp, null, Modifier.size(18.dp))
             }
             Spacer(Modifier.width(6.dp))
             AnimatedContent(
@@ -912,7 +910,7 @@ private fun MoreSheet(dyn: DynItem, onDismiss: () -> Unit, onReport: () -> Unit,
         ) {
             SheetGroup {
                 if (archive != null) {
-                    SheetRow(PiliSymbols.WatchLater, "稍后再看") {
+                    SheetRow(YoinSymbols.WatchLater, "稍后再看") {
                         scope.launch {
                             runCatching { DynamicsApi.watchLater(archive.long("aid"), archive.str("bvid")) }
                                 .onSuccess { toast("已添加到稍后再看") }
@@ -941,11 +939,11 @@ private fun MoreSheet(dyn: DynItem, onDismiss: () -> Unit, onReport: () -> Unit,
             if (BiliClient.isLoggedIn && authorMid > 0 && authorMid != BiliClient.mid && dyn.id.isNotEmpty()) {
                 Spacer(Modifier.height(20.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SheetOutlinedAction(PiliSymbols.Flag, "举报", modifier = Modifier.weight(1f), onClick = {
+                    SheetOutlinedAction(YoinSymbols.Flag, "举报", modifier = Modifier.weight(1f), onClick = {
                         close()
                         onReport()
                     }, destructive = true)
-                    SheetOutlinedAction(BlockGlyph, "拉黑", modifier = Modifier.weight(1f), onClick = {
+                    SheetOutlinedAction(YoinSymbols.Block, "拉黑", modifier = Modifier.weight(1f), onClick = {
                         close()
                         onBlock()
                     }, destructive = true)

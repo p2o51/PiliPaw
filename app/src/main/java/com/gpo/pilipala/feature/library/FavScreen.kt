@@ -63,7 +63,6 @@ import com.gpo.pilipala.ui.components.Page
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 import com.gpo.pilipala.ui.components.rememberSheetProperties
@@ -374,7 +373,7 @@ internal fun FolderEditorSheet(
                     .padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(PiliSymbols.Lock, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(YoinSymbols.Lock, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("私密", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(start = 16.dp))
                 Switch(checked = private, onCheckedChange = { private = it })
             }

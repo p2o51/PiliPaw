@@ -138,7 +138,6 @@ import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.CoverTheme
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -820,9 +819,9 @@ private fun RelationButtons(vm: MemberViewModel, onFollow: () -> Unit, onMessage
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         when {
-                            r.blocked -> BlockGlyph
-                            r.following -> PiliSymbols.PersonCheck
-                            else -> PiliSymbols.PersonAdd
+                            r.blocked -> YoinSymbols.Block
+                            r.following -> YoinSymbols.PersonCheck
+                            else -> YoinSymbols.PersonAdd
                         },
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
@@ -833,7 +832,7 @@ private fun RelationButtons(vm: MemberViewModel, onFollow: () -> Unit, onMessage
             }
         }
         FilledTonalIconButton(onClick = onMessage, shapes = IconButtonDefaults.shapes()) {
-            Icon(PiliSymbols.Mail, contentDescription = "发消息")
+            Icon(YoinSymbols.Mail, contentDescription = "发消息")
         }
     }
 }
@@ -850,7 +849,7 @@ private fun LiveBadge(modifier: Modifier, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         val style = MaterialTheme.typography.labelSmall.centered()
-        Icon(PiliSymbols.Live, null, Modifier.size(style.inlineIconSize()), tint = MaterialTheme.colorScheme.onPrimary)
+        Icon(YoinSymbols.Live, null, Modifier.size(style.inlineIconSize()), tint = MaterialTheme.colorScheme.onPrimary)
         Text("直播中", style = style, color = MaterialTheme.colorScheme.onPrimary)
     }
 }
@@ -938,9 +937,9 @@ private fun MemberMenuSheet(
     ) {
         Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
             SheetRow(YoinSymbols.Share, if (vm.isOwner) "分享我的主页" else "分享UP主") { close(onShare) }
-            SheetRow(PiliSymbols.Link, "复制链接") { close(onCopyLink) }
+            SheetRow(YoinSymbols.Link, "复制链接") { close(onCopyLink) }
             if (!vm.isOwner) {
-                SheetRow(BlockGlyph, if (vm.relation.blocked) "移出黑名单" else "加入黑名单") { close(onBlock) }
+                SheetRow(YoinSymbols.Block, if (vm.relation.blocked) "移出黑名单" else "加入黑名单") { close(onBlock) }
             }
         }
     }
@@ -969,12 +968,12 @@ private fun HomeTab(vm: MemberViewModel, contentPadding: PaddingValues, onArchiv
     val profile = vm.profile
     val name = profile?.name ?: vm.initName
     val tiles = listOf(
-        EntryTile("投稿", PiliSymbols.Video, vm.archiveTotal.takeIf { it >= 0 } ?: profile?.archiveCount ?: -1, onArchive),
-        EntryTile("动态", PiliSymbols.Dynamic, -1) { nav.push(Route.MemberDynamics(vm.mid, name)) },
+        EntryTile("投稿", YoinSymbols.Video, vm.archiveTotal.takeIf { it >= 0 } ?: profile?.archiveCount ?: -1, onArchive),
+        EntryTile("动态", YoinSymbols.Dynamic, -1) { nav.push(Route.MemberDynamics(vm.mid, name)) },
         EntryTile("收藏", YoinSymbols.Star, -1) { nav.push(Route.Fav(vm.mid)) },
-        EntryTile("专栏", PiliSymbols.Article, profile?.articleCount ?: -1) { nav.push(Route.MemberArticle(vm.mid)) },
-        EntryTile("投币", PiliSymbols.Coin, -1) { nav.push(Route.MemberCoin(vm.mid)) },
-        EntryTile("点赞", PiliSymbols.ThumbUp, -1) { nav.push(Route.MemberLike(vm.mid)) },
+        EntryTile("专栏", YoinSymbols.Article, profile?.articleCount ?: -1) { nav.push(Route.MemberArticle(vm.mid)) },
+        EntryTile("投币", YoinSymbols.Coin, -1) { nav.push(Route.MemberCoin(vm.mid)) },
+        EntryTile("点赞", YoinSymbols.ThumbUp, -1) { nav.push(Route.MemberLike(vm.mid)) },
     )
     val scheme = MaterialTheme.colorScheme
     val palette = listOf(

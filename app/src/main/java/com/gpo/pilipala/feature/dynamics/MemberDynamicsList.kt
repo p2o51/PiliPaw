@@ -26,8 +26,7 @@ import com.gpo.pilipala.ui.components.LoadingState
 import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.components.seam.seamViewport
-import com.gpo.yoin.symbols.PiliSymbols
-
+import com.gpo.yoin.symbols.YoinSymbols
 internal class MemberDynamicsViewModel(mid: Long) : ViewModel() {
     val pager = Pager<DynItem>(viewModelScope, dedupKey = { it.key }) { cursor ->
         DynamicsApi.space(mid, cursor)
@@ -69,7 +68,7 @@ fun MemberDynamicsList(
                 ErrorState(pager.error ?: "", Modifier.height(320.dp), onRetry = pager::refresh)
             }
             pager.items.isEmpty() -> item(key = "empty") {
-                EmptyState("暂无动态", Modifier.height(320.dp), icon = PiliSymbols.Dynamic)
+                EmptyState("暂无动态", Modifier.height(320.dp), icon = YoinSymbols.Dynamic)
             }
         }
         items(pager.items, key = { it.key }, contentType = { it.kind }) { item ->

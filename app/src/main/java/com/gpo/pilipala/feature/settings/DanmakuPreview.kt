@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import kotlin.math.floor
 
 private val PreviewLines = listOf(
@@ -172,7 +172,7 @@ internal fun DanmakuPreview(
             verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(PiliSymbols.DanmakuOff, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(32.dp))
+            Icon(YoinSymbols.DanmakuOff, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(32.dp))
             Text("弹幕已关闭", style = MaterialTheme.typography.labelLarge, color = Color.White.copy(alpha = 0.85f))
         }
     }

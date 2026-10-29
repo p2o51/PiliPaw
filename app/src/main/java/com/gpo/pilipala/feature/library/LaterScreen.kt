@@ -62,7 +62,6 @@ import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.singleRoute
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 
@@ -219,7 +218,7 @@ fun LaterScreen() {
                 top = padding.calculateTopPadding(),
                 bottom = padding.calculateBottomPadding() + toolbarRoom,
             )
-            PagerBody(vm.pager, bodyPadding, emptyLabel = "稍后再看为空", emptyIcon = PiliSymbols.WatchLater) { listPadding ->
+            PagerBody(vm.pager, bodyPadding, emptyLabel = "稍后再看为空", emptyIcon = YoinSymbols.WatchLater) { listPadding ->
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(RowGridMinCell),
                     state = gridState,

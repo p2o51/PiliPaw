@@ -71,7 +71,6 @@ import com.gpo.pilipala.yt.core.util.Fmt
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.pilipala.ui.theme.withTabularFigures
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.delay
 
@@ -311,7 +310,7 @@ private fun TopBar(title: String, height: Dp, turned: Boolean, reveal: () -> Flo
         val activity = LocalActivity.current
         if (activity != null && pipSupported(activity)) {
             IconButton(onClick = { enterPip(activity, Player.videoAspect, title = title) }, shapes = IconButtonDefaults.shapes()) {
-                Icon(PiliSymbols.Pip, contentDescription = "画中画")
+                Icon(YoinSymbols.Pip, contentDescription = "画中画")
             }
         }
     }
@@ -352,7 +351,7 @@ private fun BottomBar(seek: SeekState, height: Dp, turned: Boolean, reveal: () -
         }
         if (Player.subtitleTracks.isNotEmpty()) {
             IconButton(onClick = open, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(44.dp)) {
-                Icon(PiliSymbols.Subtitles, contentDescription = "字幕", tint = if (Player.subtitleIndex >= 0) OnVideo else OnVideoVariant)
+                Icon(YoinSymbols.Subtitles, contentDescription = "字幕", tint = if (Player.subtitleIndex >= 0) OnVideo else OnVideoVariant)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -361,7 +360,7 @@ private fun BottomBar(seek: SeekState, height: Dp, turned: Boolean, reveal: () -
         }
         if (sheet) PlaybackSheet(onDismiss = { sheet = false })
         IconButton(onClick = { Player.fullscreen = false }, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(44.dp)) {
-            Icon(PiliSymbols.FullscreenExit, contentDescription = "退出全屏")
+            Icon(YoinSymbols.FullscreenExit, contentDescription = "退出全屏")
         }
     }
 }

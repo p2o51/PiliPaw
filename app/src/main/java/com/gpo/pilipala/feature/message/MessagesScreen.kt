@@ -83,7 +83,7 @@ import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
-import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -215,10 +215,10 @@ private data class NoticeEntry(
 )
 
 private val Notices = listOf(
-    NoticeEntry("reply", "回复我的", PiliSymbols.Comment, { MaterialTheme.colorScheme.primaryContainer }, { MaterialTheme.colorScheme.onPrimaryContainer }),
-    NoticeEntry("at", "@我的", PiliSymbols.At, { MaterialTheme.colorScheme.secondaryContainer }, { MaterialTheme.colorScheme.onSecondaryContainer }),
-    NoticeEntry("like", "收到的赞", PiliSymbols.ThumbUp, { MaterialTheme.colorScheme.tertiaryContainer }, { MaterialTheme.colorScheme.onTertiaryContainer }),
-    NoticeEntry("system", "系统通知", PiliSymbols.Bell, { MaterialTheme.colorScheme.surfaceContainerHighest }, { MaterialTheme.colorScheme.onSurface }),
+    NoticeEntry("reply", "回复我的", YoinSymbols.Comment, { MaterialTheme.colorScheme.primaryContainer }, { MaterialTheme.colorScheme.onPrimaryContainer }),
+    NoticeEntry("at", "@我的", YoinSymbols.At, { MaterialTheme.colorScheme.secondaryContainer }, { MaterialTheme.colorScheme.onSecondaryContainer }),
+    NoticeEntry("like", "收到的赞", YoinSymbols.ThumbUp, { MaterialTheme.colorScheme.tertiaryContainer }, { MaterialTheme.colorScheme.onTertiaryContainer }),
+    NoticeEntry("system", "系统通知", YoinSymbols.Bell, { MaterialTheme.colorScheme.surfaceContainerHighest }, { MaterialTheme.colorScheme.onSurface }),
 )
 
 /**
@@ -260,7 +260,7 @@ fun MessagesScreen() {
                 label = "whisperPane",
             ) { talker ->
                 if (talker == null) {
-                    EmptyState("私信", Modifier.statusBarsPadding(), icon = PiliSymbols.Mail)
+                    EmptyState("私信", Modifier.statusBarsPadding(), icon = YoinSymbols.Mail)
                 } else {
                     val s = vm.sessions.items.firstOrNull { it.talkerId == talker }
                     WhisperConversation(
@@ -356,7 +356,7 @@ private fun MessagesList(
                         ErrorState(pager.error!!, Modifier.height(320.dp), onRetry = pager::refresh)
                     }
                     pager.items.isEmpty() -> item(key = "empty") {
-                        EmptyState("暂无私信", Modifier.height(280.dp), icon = PiliSymbols.Mail)
+                        EmptyState("暂无私信", Modifier.height(280.dp), icon = YoinSymbols.Mail)
                     }
                 }
                 items(pager.items, key = { it.talkerId }) { s ->

@@ -74,7 +74,6 @@ import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinShapeTokens
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -278,9 +277,9 @@ private fun sentArgb(rgb: Int): Int = rgb or 0xFF000000.toInt()
 @Composable
 private fun ModeRow(mode: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val modes: List<Triple<Int, String, ImageVector>> = listOf(
-        Triple(DanmakuMode.SCROLL, "滚动", PiliSymbols.DanmakuScroll),
-        Triple(DanmakuMode.TOP, "顶部", PiliSymbols.DanmakuTop),
-        Triple(DanmakuMode.BOTTOM, "底部", PiliSymbols.DanmakuBottom),
+        Triple(DanmakuMode.SCROLL, "滚动", YoinSymbols.DanmakuScroll),
+        Triple(DanmakuMode.TOP, "顶部", YoinSymbols.DanmakuTop),
+        Triple(DanmakuMode.BOTTOM, "底部", YoinSymbols.DanmakuBottom),
     )
     Row(
         modifier.fillMaxWidth(),

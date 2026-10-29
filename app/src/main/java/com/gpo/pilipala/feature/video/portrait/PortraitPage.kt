@@ -106,7 +106,6 @@ import com.gpo.pilipala.ui.components.VideoItem
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -686,8 +685,8 @@ private fun ExpandedInfo(d: VideoDetail, tags: List<String>, onSeek: (Long) -> U
     Column(Modifier.padding(top = 10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
             val self = d.isFameSelf
-            IconCount(PiliSymbols.Views, Fmt.count(d.view), self)
-            IconCount(PiliSymbols.Danmaku, Fmt.count(d.danmaku), self)
+            IconCount(YoinSymbols.Views, Fmt.count(d.view), self)
+            IconCount(YoinSymbols.Danmaku, Fmt.count(d.danmaku), self)
             val time = Fmt.relativeTime(d.pubdate)
             if (time.isNotEmpty()) {
                 Text(time, style = MaterialTheme.typography.labelMedium.onPicture(), color = OnPicture.copy(alpha = 0.72f))
@@ -786,7 +785,7 @@ private fun LikeBurst(spec: LikeBurstSpec, onDone: () -> Unit) {
     val half = with(density) { BurstSize.toPx() } / 2f
     val rise = with(density) { 110.dp.toPx() }
     Icon(
-        PiliSymbols.ThumbUpFilled,
+        YoinSymbols.ThumbUpFilled,
         contentDescription = null,
         tint = MaterialTheme.colorScheme.primary,
         modifier = Modifier

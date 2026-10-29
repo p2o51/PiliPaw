@@ -15,7 +15,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :app:assembleRelease      # release, signed with the debug key
 ```
 
-Requires the Android SDK (compileSdk 36). `flutter-src/` (the original Flutter source, used as a reference) is git-ignored.
+Requires the Android SDK (compileSdk 36). Icons come from [Yoin Symbols](https://github.com/p2o51/yoin-symbols): with a checkout at `../yoin-symbols` Gradle builds it from source (so new symbols work before a release), otherwise it uses `io.github.p2o51:yoin-symbols` from Maven Central. `flutter-src/` (the original Flutter source, used as a reference) is git-ignored.
 
 ## Layout
 
@@ -23,7 +23,6 @@ Requires the Android SDK (compileSdk 36). `flutter-src/` (the original Flutter s
 - `navigation` — routes, container-transform pushes, in-window predictive back
 - `feature/*` — one package per area (home, video, player, reply, dynamics, search, member, library, live, message, settings…)
 - `feature/player/cdn` — overseas line routing
-- `yoin-symbols` — the Yoin Symbols icon library, vendored as a module
 - `docs/AGENT_BRIEF.md` — architecture contracts and design rules
 
 ## Credits
@@ -35,4 +34,4 @@ Requires the Android SDK (compileSdk 36). `flutter-src/` (the original Flutter s
 - [yt-dlp/ejs](https://github.com/yt-dlp/ejs) (Unlicense; bundles meriyah, ISC, and astring, MIT) — the YouTube signature solver in `app/src/main/assets/ejs`.
 - [material-color-utilities](https://github.com/material-foundation/material-color-utilities) by Google (Apache-2.0) — the colour code under `app/src/main/java/{hct,dynamiccolor,scheme,…}`.
 - [Google Sans Flex](https://github.com/googlefonts/googlesans-flex) (SIL OFL 1.1, see `licenses/GoogleSansFlex-OFL.txt`).
-- [Yoin Symbols](https://github.com/p2o51/yoin-symbols) (MIT, see `yoin-symbols/LICENSE`).
+- [Yoin Symbols](https://github.com/p2o51/yoin-symbols) (MIT) — every icon.

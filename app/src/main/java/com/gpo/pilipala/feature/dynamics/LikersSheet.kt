@@ -64,7 +64,6 @@ import com.gpo.pilipala.ui.components.rememberSheetProperties
 import com.gpo.pilipala.ui.components.sheetBottomPadding
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
 /**
@@ -182,7 +181,7 @@ internal fun LikersSheet(
                     0 -> LoadingState(Modifier.height(240.dp))
                     1 -> ErrorState(pager.error.orEmpty(), Modifier.height(280.dp), onRetry = pager::refresh)
                     2 -> Box(Modifier.padding(bottom = sheetBottomPadding(0.dp))) {
-                        EmptyState("暂无点赞", Modifier.height(240.dp), icon = PiliSymbols.ThumbUp)
+                        EmptyState("暂无点赞", Modifier.height(240.dp), icon = YoinSymbols.ThumbUp)
                     }
                     else -> LazyColumn(
                         state = listState,
@@ -280,7 +279,7 @@ internal fun LikersEntry(count: Long, onClick: () -> Unit, modifier: Modifier = 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(PiliSymbols.ThumbUp, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(YoinSymbols.ThumbUp, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("点赞", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
         if (count > 0) {
             FameCount(

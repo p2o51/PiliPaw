@@ -52,7 +52,6 @@ import com.gpo.pilipala.yt.feature.player.Player
 import com.gpo.pilipala.yt.feature.player.miniPlayerInset
 import com.gpo.pilipala.yt.navigation.LocalNavigator
 import com.gpo.pilipala.yt.navigation.Route
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
 /** Which local list a [Route.LocalList] shows. */
@@ -113,9 +112,9 @@ fun LocalListScreen(route: Route.LocalList) {
     ) { padding ->
         if (list.isEmpty()) {
             if (kind == LocalList.History) {
-                EmptyState("暂无历史记录", Modifier.padding(padding), icon = PiliSymbols.History)
+                EmptyState("暂无历史记录", Modifier.padding(padding), icon = YoinSymbols.History)
             } else {
-                EmptyState("稍后再看为空", Modifier.padding(padding), icon = PiliSymbols.WatchLater)
+                EmptyState("稍后再看为空", Modifier.padding(padding), icon = YoinSymbols.WatchLater)
             }
         } else {
             LazyVerticalGrid(GridCells.Adaptive(RowGridMinCell), Modifier.fillMaxSize(), contentPadding = padding) {

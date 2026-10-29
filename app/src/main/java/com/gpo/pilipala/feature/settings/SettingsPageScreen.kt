@@ -93,7 +93,6 @@ import com.gpo.pilipala.ui.theme.MorphShape
 import com.gpo.pilipala.ui.theme.ThemeSettings
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -155,7 +154,7 @@ private fun ColumnScope.StyleBody() {
         item {
             SettingsToggleItem(
                 title = "主题模式",
-                icon = PiliSymbols.DarkMode,
+                icon = YoinSymbols.DarkMode,
                 choices = SettingsChoices.themeMode,
                 selected = mode,
                 onSelect = { AppSettings.set(AppSettings.themeMode, it) },
@@ -165,7 +164,7 @@ private fun ColumnScope.StyleBody() {
             Column {
                 SettingsSwitchItem(
                     title = "动态取色",
-                    icon = PiliSymbols.Palette,
+                    icon = YoinSymbols.Palette,
                     summary = if (dynamicSupported) "跟随系统壁纸" else "需要 Android 8.1",
                     checked = dynamicOn,
                     enabled = dynamicSupported,
@@ -205,7 +204,7 @@ private fun ColumnScope.StyleBody() {
         item {
             SettingsSwitchItem(
                 title = "封面取色",
-                icon = PiliSymbols.Image,
+                icon = YoinSymbols.Image,
                 summary = "详情页跟随封面配色",
                 checked = cover,
                 onCheckedChange = { AppSettings.set(AppSettings.coverColor, it) },
@@ -216,7 +215,7 @@ private fun ColumnScope.StyleBody() {
         item {
             SettingsToggleItem(
                 title = "滚动边缘",
-                icon = TideGlyph,
+                icon = YoinSymbols.Waves,
                 choices = SettingsChoices.seamTopStyle,
                 selected = seamStyle,
                 onSelect = { SeamTopPreference.select(it) },
@@ -236,7 +235,7 @@ private fun ColumnScope.StyleBody() {
         item {
             SettingsToggleItem(
                 title = "首页布局",
-                icon = PiliSymbols.Video,
+                icon = YoinSymbols.Video,
                 choices = SettingsChoices.homeLayout,
                 selected = singleColumn,
                 onSelect = { AppSettings.set(HomeSingleColumn, it) },
@@ -452,13 +451,13 @@ private fun ColumnScope.PlayBody() {
 
     SettingsGroup("画质") {
         item {
-            SettingsChoiceItem("默认画质", SettingsChoices.videoQuality, qn, { AppSettings.set(AppSettings.defaultVideoQuality, it) }, icon = PiliSymbols.Hd)
+            SettingsChoiceItem("默认画质", SettingsChoices.videoQuality, qn, { AppSettings.set(AppSettings.defaultVideoQuality, it) }, icon = YoinSymbols.Hd)
         }
         item {
             SettingsChoiceItem("默认音质", SettingsChoices.audioQuality, aq, { AppSettings.set(AppSettings.defaultAudioQuality, it) }, icon = YoinSymbols.Headphones)
         }
         item {
-            SettingsToggleItem("解码格式", SettingsChoices.codec, codec, { AppSettings.set(AppSettings.preferredCodec, it) }, icon = PiliSymbols.Video)
+            SettingsToggleItem("解码格式", SettingsChoices.codec, codec, { AppSettings.set(AppSettings.preferredCodec, it) }, icon = YoinSymbols.Video)
         }
         item {
             SettingsChoiceItem(
@@ -466,7 +465,7 @@ private fun ColumnScope.PlayBody() {
                 SettingsChoices.liveQuality,
                 liveQn,
                 { AppSettings.set(LiveDefaultQn, it) },
-                icon = PiliSymbols.Live,
+                icon = YoinSymbols.Live,
                 fallbackLabel = LiveQnNames[liveQn] ?: liveQn.toString(),
             )
         }
@@ -489,10 +488,10 @@ private fun ColumnScope.PlayBody() {
             SettingsSwitchItem("自动连播", autoNext, { AppSettings.set(AppSettings.autoPlayNext, it) }, icon = YoinSymbols.SkipNext, summary = "播放结束后续播下一个")
         }
         item {
-            SettingsSwitchItem("横屏自动全屏", autoFs, { AppSettings.set(AppSettings.autoFullscreenLandscape, it) }, icon = PiliSymbols.Fullscreen, summary = "旋转至横屏时进入全屏")
+            SettingsSwitchItem("横屏自动全屏", autoFs, { AppSettings.set(AppSettings.autoFullscreenLandscape, it) }, icon = YoinSymbols.Fullscreen, summary = "旋转至横屏时进入全屏")
         }
         item {
-            SettingsChoiceItem("默认字幕", SettingsChoices.subtitleDefault, subtitleMode, { AppSettings.set(SubtitleDefaultMode, it) }, icon = PiliSymbols.Subtitles)
+            SettingsChoiceItem("默认字幕", SettingsChoices.subtitleDefault, subtitleMode, { AppSettings.set(SubtitleDefaultMode, it) }, icon = YoinSymbols.Subtitles)
         }
     }
     SettingsGroup("后台") {
@@ -510,7 +509,7 @@ private fun ColumnScope.PlayBody() {
             SettingsSwitchItem("后台播放", bg, { AppSettings.set(AppSettings.backgroundPlay, it) }, icon = YoinSymbols.VolumeUp, summary = "进入后台时继续播放")
         }
         item {
-            SettingsSwitchItem("自动画中画", pip, { AppSettings.set(AppSettings.autoPip, it) }, icon = PiliSymbols.Pip, summary = "进入后台时画中画播放")
+            SettingsSwitchItem("自动画中画", pip, { AppSettings.set(AppSettings.autoPip, it) }, icon = YoinSymbols.Pip, summary = "进入后台时画中画播放")
         }
     }
 }
@@ -545,7 +544,7 @@ private fun ColumnScope.DanmakuBody() {
     )
     SettingsGroup(null) {
         item {
-            SettingsSwitchItem("弹幕", enabled, { AppSettings.set(AppSettings.danmakuEnabled, it) }, icon = if (enabled) PiliSymbols.Danmaku else PiliSymbols.DanmakuOff)
+            SettingsSwitchItem("弹幕", enabled, { AppSettings.set(AppSettings.danmakuEnabled, it) }, icon = if (enabled) YoinSymbols.Danmaku else YoinSymbols.DanmakuOff)
         }
     }
     SettingsGroup("显示") {
@@ -569,7 +568,7 @@ private fun ColumnScope.DanmakuBody() {
                 valueRange = 0.5f..2f,
                 steps = 14,
                 label = { "${(it * 100).roundToInt()}%" },
-                icon = PiliSymbols.Subtitles,
+                icon = YoinSymbols.Subtitles,
                 enabled = enabled,
             )
         }
@@ -627,13 +626,13 @@ private fun ColumnScope.DanmakuBody() {
             )
         }
         item {
-            SettingsSwitchItem("顶部弹幕", hideTop, { AppSettings.set(AppSettings.danmakuHideTop, it) }, icon = PiliSymbols.DanmakuTop, enabled = enabled)
+            SettingsSwitchItem("顶部弹幕", hideTop, { AppSettings.set(AppSettings.danmakuHideTop, it) }, icon = YoinSymbols.DanmakuTop, enabled = enabled)
         }
         item {
-            SettingsSwitchItem("底部弹幕", hideBottom, { AppSettings.set(AppSettings.danmakuHideBottom, it) }, icon = PiliSymbols.DanmakuBottom, enabled = enabled)
+            SettingsSwitchItem("底部弹幕", hideBottom, { AppSettings.set(AppSettings.danmakuHideBottom, it) }, icon = YoinSymbols.DanmakuBottom, enabled = enabled)
         }
         item {
-            SettingsSwitchItem("滚动弹幕", hideScroll, { AppSettings.set(AppSettings.danmakuHideScroll, it) }, icon = PiliSymbols.DanmakuScroll, enabled = enabled)
+            SettingsSwitchItem("滚动弹幕", hideScroll, { AppSettings.set(AppSettings.danmakuHideScroll, it) }, icon = YoinSymbols.DanmakuScroll, enabled = enabled)
         }
     }
     if (rulesOpen) {
@@ -669,7 +668,7 @@ private fun ColumnScope.RecommendBody() {
             item {
                 SettingsItem(
                     title = "access_key",
-                    icon = PiliSymbols.Lock,
+                    icon = YoinSymbols.Lock,
                     enabled = !fetching,
                     onClick = {
                         fetching = true
@@ -689,7 +688,7 @@ private fun ColumnScope.RecommendBody() {
         item {
             SettingsChoiceItem(
                 title = "视频时长",
-                icon = PiliSymbols.Video,
+                icon = YoinSymbols.Video,
                 choices = SettingsChoices.rcmdMinDuration,
                 selected = minDuration,
                 onSelect = { AppSettings.set(RcmdMinDuration, it) },
@@ -699,7 +698,7 @@ private fun ColumnScope.RecommendBody() {
         item {
             SettingsChoiceItem(
                 title = "点赞率",
-                icon = PiliSymbols.ThumbUp,
+                icon = YoinSymbols.ThumbUp,
                 choices = SettingsChoices.rcmdMinLikeRatio,
                 selected = minLikeRatio,
                 onSelect = { AppSettings.set(RcmdMinLikeRatio, it) },
@@ -711,7 +710,7 @@ private fun ColumnScope.RecommendBody() {
                 title = "已关注 UP 豁免",
                 checked = exemptFollowed,
                 onCheckedChange = { AppSettings.set(RcmdExemptFollowed, it) },
-                icon = PiliSymbols.PersonCheck,
+                icon = YoinSymbols.PersonCheck,
             )
         }
     }
@@ -741,7 +740,7 @@ private fun ColumnScope.PrivacyBody() {
         item {
             SettingsSwitchItem(
                 title = "暂停观看历史",
-                icon = PiliSymbols.History,
+                icon = YoinSymbols.History,
                 summary = if (loggedIn) "同步至账号" else null,
                 checked = pause,
                 onCheckedChange = { v ->
@@ -777,7 +776,7 @@ private fun ColumnScope.PrivacyBody() {
     SettingsGroup("账号") {
         item {
             SettingsLinkItem(
-                icon = PiliSymbols.PersonCheck,
+                icon = YoinSymbols.PersonCheck,
                 title = "黑名单管理",
                 summary = "已拉黑用户",
                 onClick = { if (loggedIn) nav.push(Route.Blacklist) else toast("登录后查看") },
@@ -840,7 +839,7 @@ private fun ColumnScope.ExtraBody() {
         item {
             SettingsToggleItem(
                 title = "评论展示",
-                icon = PiliSymbols.Comment,
+                icon = YoinSymbols.Comment,
                 choices = SettingsChoices.replySort,
                 selected = replySort,
                 onSelect = { AppSettings.set(AppSettings.replySort, it) },

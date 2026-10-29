@@ -108,7 +108,6 @@ import com.gpo.pilipala.ui.theme.rememberRichHaptics
 import com.gpo.pilipala.feature.player.PipSignals
 import com.gpo.pilipala.feature.player.pipHintRect
 import com.gpo.pilipala.feature.player.pipSupported
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
@@ -366,8 +365,8 @@ private fun AnchorBlock(vm: LiveRoomViewModel, route: Route.LiveRoom, modifier: 
                     val watched = info?.watchedText.orEmpty()
                     // 名声模式: the user's own room counts as their own.
                     val self = FameMode.isSelf(info?.uid)
-                    if (watched.isNotEmpty()) Stat(PiliSymbols.Views, watched, self = self)
-                    if ((info?.attention ?: 0) > 0) Stat(PiliSymbols.PersonFilled, Fmt.count(info!!.attention), self = self)
+                    if (watched.isNotEmpty()) Stat(YoinSymbols.Views, watched, self = self)
+                    if ((info?.attention ?: 0) > 0) Stat(YoinSymbols.PersonFilled, Fmt.count(info!!.attention), self = self)
                     val area = info?.areaName.orEmpty()
                     if (area.isNotEmpty()) Tag(area)
                 }
@@ -387,7 +386,7 @@ private fun AnchorBlock(vm: LiveRoomViewModel, route: Route.LiveRoom, modifier: 
                     },
                 ) {
                     Icon(
-                        if (vm.following) PiliSymbols.PersonCheck else PiliSymbols.PersonAdd,
+                        if (vm.following) YoinSymbols.PersonCheck else YoinSymbols.PersonAdd,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
@@ -518,7 +517,7 @@ private fun ChatList(vm: LiveRoomViewModel, modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(PiliSymbols.Danmaku, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.outline)
+                Icon(YoinSymbols.Danmaku, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.outline)
                 Text("暂无弹幕", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

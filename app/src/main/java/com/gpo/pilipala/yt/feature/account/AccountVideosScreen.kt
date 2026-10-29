@@ -31,8 +31,7 @@ import com.gpo.pilipala.yt.feature.player.Player
 import com.gpo.pilipala.yt.navigation.Route
 import com.gpo.pilipala.yt.ui.components.LoadMoreEffect
 import com.gpo.pilipala.yt.ui.components.Pager
-import com.gpo.yoin.symbols.PiliSymbols
-
+import com.gpo.yoin.symbols.YoinSymbols
 /** The account lists 我的 opens. */
 enum class AccountList(val title: String, val feed: YtFeeds.Feed) {
     WatchLater("稍后再看", YtFeeds.Feed.WatchLater),
@@ -74,9 +73,9 @@ fun AccountVideosScreen(route: Route.AccountVideos) {
                 0 -> LoadingState(Modifier.padding(padding))
                 1 -> ErrorState(pager.error.orEmpty(), Modifier.padding(padding), onRetry = pager::refresh)
                 2 -> if (list == AccountList.WatchLater) {
-                    EmptyState("稍后再看为空", Modifier.padding(padding), icon = PiliSymbols.WatchLater)
+                    EmptyState("稍后再看为空", Modifier.padding(padding), icon = YoinSymbols.WatchLater)
                 } else {
-                    EmptyState("暂无赞过的视频", Modifier.padding(padding), icon = PiliSymbols.ThumbUp)
+                    EmptyState("暂无赞过的视频", Modifier.padding(padding), icon = YoinSymbols.ThumbUp)
                 }
                 else -> LazyVerticalGrid(
                     columns = GridCells.Adaptive(RowGridMinCell),

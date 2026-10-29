@@ -126,7 +126,6 @@ import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.BackMotionTokens
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay

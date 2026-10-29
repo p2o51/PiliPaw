@@ -37,7 +37,7 @@ import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
-import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -133,7 +133,7 @@ internal fun LoginPrompt(modifier: Modifier = Modifier) {
                 .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(PiliSymbols.Mail, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Icon(YoinSymbols.Mail, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
         }
         Text("未登录", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Button(onClick = { nav.push(Route.Login) }) { Text("登录") }

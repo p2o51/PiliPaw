@@ -39,7 +39,6 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
 /**
@@ -104,7 +103,7 @@ internal fun OpenLinksItem(state: LinkHostState?, selectable: Boolean) {
     SelectableRowSurface(selected = false, unselectedColor = if (selectable) settingsRowColor() else Color.Transparent) {
         SettingsItem(
             title = "打开 B 站链接",
-            icon = PiliSymbols.Link,
+            icon = YoinSymbols.Link,
             onClick = { OpenByDefault.open(context) },
             trailing = {
                 if (state != null) {
@@ -150,7 +149,7 @@ internal fun OpenLinksCard(state: LinkHostState?) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(PiliSymbols.Link, null, tint = colors.onSecondaryContainer, modifier = Modifier.size(24.dp))
+            Icon(YoinSymbols.Link, null, tint = colors.onSecondaryContainer, modifier = Modifier.size(24.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text("打开 B 站链接", style = MaterialTheme.typography.titleMedium, color = colors.onSecondaryContainer)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {

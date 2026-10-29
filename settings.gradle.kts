@@ -29,7 +29,13 @@ dependencyResolutionManagement {
 
 rootProject.name = "PiliPala"
 include(":app")
-include(":yoin-symbols")
+
+// Icons: Yoin Symbols (io.github.p2o51:yoin-symbols), built from a checkout next to this repo
+// when there is one (new symbols are usable before they are released); CI passes
+// -PyoinSymbolsDir=<path>. Without either, the dependency comes from Maven Central.
+val yoinSymbolsDir = providers.gradleProperty("yoinSymbolsDir").getOrElse("../yoin-symbols")
+val yoinSymbolsBuild = file("$yoinSymbolsDir/android")
+if (yoinSymbolsBuild.isDirectory) includeBuild(yoinSymbolsBuild)
 
 // YouTube: the upstream extractor, built from the submodule (PipePipeClient is not needed here).
 includeBuild("PipePipeExtractor")

@@ -64,11 +64,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.PathParser
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.ClipEntry
@@ -97,7 +92,6 @@ import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
 internal fun VideoItem.key(): String = bvid.ifEmpty { "av$aid" }
@@ -162,7 +156,7 @@ internal fun MemberVideoGrid(
 @Composable
 internal fun StateBox(message: String, onRetry: () -> Unit) {
     if (message.contains("隐私")) {
-        EmptyState(message, Modifier.height(StateHeight), icon = PiliSymbols.Lock)
+        EmptyState(message, Modifier.height(StateHeight), icon = YoinSymbols.Lock)
     } else {
         ErrorState(message, Modifier.height(StateHeight), onRetry = onRetry)
     }
@@ -248,7 +242,7 @@ internal fun LazyGridScope.archiveSortHeader(
                 modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
             )
             if (total > 0) {
-                Stat(PiliSymbols.Video, Fmt.count(total), Modifier.padding(start = 12.dp))
+                Stat(YoinSymbols.Video, Fmt.count(total), Modifier.padding(start = 12.dp))
             }
             if (onSearch != null) {
                 SearchToggle(searching, onSearch, Modifier.padding(start = 4.dp))
@@ -481,9 +475,9 @@ internal fun ArticleRow(article: MemberArticle, modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (article.views >= 0) Stat(PiliSymbols.Views, Fmt.count(article.views))
-                if (article.likes >= 0) Stat(PiliSymbols.ThumbUp, Fmt.count(article.likes))
-                if (article.replies >= 0) Stat(PiliSymbols.Comment, Fmt.count(article.replies))
+                if (article.views >= 0) Stat(YoinSymbols.Views, Fmt.count(article.views))
+                if (article.likes >= 0) Stat(YoinSymbols.ThumbUp, Fmt.count(article.likes))
+                if (article.replies >= 0) Stat(YoinSymbols.Comment, Fmt.count(article.replies))
                 Text(
                     Fmt.relativeTime(article.publishTime),
                     style = MaterialTheme.typography.labelSmall,
@@ -515,20 +509,4 @@ internal fun shareText(context: Context, text: String, title: String? = null) {
 
 internal suspend fun Clipboard.copyText(label: String, text: String) {
     setClipEntry(ClipEntry(ClipData.newPlainText(label, text)))
-}
-
-/** Block glyph (circle with a slash) — not in the symbol set. 24 viewport, 1.5 stroke, round caps. */
-internal val BlockGlyph: ImageVector by lazy {
-    ImageVector.Builder("Block", 24.dp, 24.dp, 24f, 24f).apply {
-        addPath(
-            pathData = PathParser().parsePathString(
-                "M12 3.75a8.25 8.25 0 1 0 0 16.5a8.25 8.25 0 1 0 0 -16.5Z M6.17 6.17L17.83 17.83",
-            ).toNodes(),
-            fill = null,
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = 1.5f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round,
-        )
-    }.build()
 }

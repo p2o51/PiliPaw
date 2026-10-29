@@ -31,8 +31,7 @@ import com.gpo.pilipala.ui.components.Pager
 import com.gpo.pilipala.ui.components.PiliLargeTopBar
 import com.gpo.pilipala.ui.components.RefreshBox
 import com.gpo.pilipala.ui.components.seam.seamViewport
-import com.gpo.yoin.symbols.PiliSymbols
-
+import com.gpo.yoin.symbols.YoinSymbols
 internal class MemberArticleViewModel(val mid: Long) : ViewModel() {
     val pager = Pager<MemberArticle>(viewModelScope, dedupKey = { it.id }) { cursor ->
         MemberRepo.articles(mid, cursor?.toIntOrNull() ?: 1)
@@ -74,7 +73,7 @@ fun MemberArticleScreen(route: Route.MemberArticle) {
                             StateBox(pager.error.orEmpty(), onRetry = pager::refresh)
                         }
                         items.isEmpty() -> fullSpan("empty") {
-                            EmptyState("暂无专栏", Modifier.height(360.dp), icon = PiliSymbols.Article)
+                            EmptyState("暂无专栏", Modifier.height(360.dp), icon = YoinSymbols.Article)
                         }
                         else -> {
                             // The user's own articles count as their own for 名声模式.

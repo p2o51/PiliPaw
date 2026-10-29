@@ -57,7 +57,6 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 
@@ -217,7 +216,7 @@ private fun SettingsList(
                 item {
                     SettingsItem(
                         title = "退出登录",
-                        icon = PiliSymbols.Logout,
+                        icon = YoinSymbols.Logout,
                         titleColor = MaterialTheme.colorScheme.error,
                         onClick = { if (signedIn.size > 1) pickLogout = true else confirmLogout = signedIn.single() },
                     )
@@ -248,7 +247,7 @@ private fun SettingsList(
         val title = logoutTitle(source)
         AlertDialog(
             onDismissRequest = { confirmLogout = null },
-            icon = { Icon(PiliSymbols.Logout, null) },
+            icon = { Icon(YoinSymbols.Logout, null) },
             title = { Text(title) },
             confirmButton = {
                 TextButton(onClick = {

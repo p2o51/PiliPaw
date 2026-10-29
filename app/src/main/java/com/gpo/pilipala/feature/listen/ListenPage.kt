@@ -122,7 +122,6 @@ import com.gpo.pilipala.ui.theme.ExpressiveColorSchemeFactory
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.loadCoverBackdrop
 import com.gpo.pilipala.ui.theme.piliIsDark
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -380,7 +379,7 @@ internal fun ListenPage(source: ListenSource, flight: ListenFlight? = null, swip
                             QuietAction(YoinSymbols.Playlist, "播放列表") { sheet = ListenSheet.Queue }
                         }
                         if (source.hasComments) {
-                            QuietAction(PiliSymbols.Comment, source.commentsLabel) { sheet = ListenSheet.Comments }
+                            QuietAction(YoinSymbols.Comment, source.commentsLabel) { sheet = ListenSheet.Comments }
                         }
                     }
                 }
