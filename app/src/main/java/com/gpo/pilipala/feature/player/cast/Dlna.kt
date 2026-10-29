@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.wifi.WifiManager
 import androidx.compose.runtime.Immutable
 import com.gpo.pilipala.core.net.BiliClient
+import com.gpo.pilipala.core.util.Fmt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -81,8 +82,8 @@ object Dlna {
 
     private fun describe(location: String): DlnaDevice? = runCatching {
         val xml = http(Request.Builder().url(location).build())
-        val model = unescape(tag(xml, "modelName").orEmpty())
-        val name = cleanName(unescape(tag(xml, "friendlyName").orEmpty())).ifEmpty { model.ifEmpty { "未知设备" } }
+        val model = Fmt.decodeEntities(tag(xml, "modelName").orEmpty())
+        val name = cleanName(Fmt.decodeEntities(tag(xml, "friendlyName").orEmpty())).ifEmpty { model.ifEmpty { "未知设备" } }
         val udn = tag(xml, "UDN") ?: location
         // The AVTransport service block, then its controlURL.
         val services = Regex("<service>(.*?)</service>", RegexOption.DOT_MATCHES_ALL).findAll(xml).map { it.groupValues[1] }
@@ -105,7 +106,6 @@ object Dlna {
         Regex("<(?:\\w+:)?$name[^>]*>(.*?)</(?:\\w+:)?$name>", RegexOption.DOT_MATCHES_ALL).find(xml)?.groupValues?.get(1)?.trim()
 
     private fun escape(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
-    private fun unescape(s: String) = s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&amp;", "&")
 
     private fun http(req: Request): String = BiliClient.http.newCall(req).execute().use { r ->
         val body = r.body.string()

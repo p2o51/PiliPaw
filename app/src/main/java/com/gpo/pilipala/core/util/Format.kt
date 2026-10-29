@@ -80,13 +80,34 @@ object Fmt {
     /** Strip `<em class="keyword">` highlight tags from search results. */
     fun stripTags(s: String): String {
         if (s.indexOf('<') < 0 && s.indexOf('&') < 0) return s
-        return s.replace(TagRegex, "")
-            .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'")
+        return decodeEntities(s.replace(TagRegex, ""))
+    }
+
+    /**
+     * Decodes HTML character references in one pass: `&#39;` / `&#x27;` and the
+     * named few bilibili emits (`&amp;quot;` stays `&quot;`). Unknown ones stay as-is.
+     */
+    fun decodeEntities(s: String): String {
+        if (s.indexOf('&') < 0) return s
+        return EntityRegex.replace(s) { m ->
+            val body = m.groupValues[1]
+            if (body[0] == '#') {
+                val cp = if (body.length > 1 && (body[1] == 'x' || body[1] == 'X')) body.substring(2).toIntOrNull(16)
+                else body.substring(1).toIntOrNull()
+                if (cp != null && cp > 0 && Character.isValidCodePoint(cp)) String(Character.toChars(cp)) else m.value
+            } else {
+                NamedEntities[body] ?: m.value
+            }
+        }
     }
 
     // Formatting runs in list item composition and in page mapping: compile
     // the regex and build the (thread-safe, immutable) formatters once.
     private val TagRegex = Regex("<[^>]+>")
+    private val EntityRegex = Regex("&(#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);")
+    private val NamedEntities = mapOf(
+        "lt" to "<", "gt" to ">", "amp" to "&", "quot" to "\"", "apos" to "'", "nbsp" to " ",
+    )
     private val MonthDayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd", Locale.CHINA)
     private val YearMonthDayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.CHINA)
     private val formatters = ConcurrentHashMap<String, DateTimeFormatter>()

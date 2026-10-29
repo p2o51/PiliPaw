@@ -10,6 +10,7 @@ import com.gpo.pilipala.core.net.long
 import com.gpo.pilipala.core.net.obj
 import com.gpo.pilipala.core.net.objects
 import com.gpo.pilipala.core.net.str
+import com.gpo.pilipala.core.util.Fmt
 import kotlinx.serialization.json.JsonObject
 
 @Immutable
@@ -115,14 +116,8 @@ internal data class EmotePackage(
     val emotes: List<Emote>,
 )
 
-private fun String.unescapeHtml(): String = replace("&amp;", "&")
-    .replace("&lt;", "<")
-    .replace("&gt;", ">")
-    .replace("&quot;", "\"")
-    .replace("&#34;", "\"")
-    .replace("&#39;", "'")
-    .replace("&apos;", "'")
-    .replace("&nbsp;", " ")
+// Older comments come escaped twice (`&amp;nbsp;`).
+private fun String.unescapeHtml(): String = Fmt.decodeEntities(Fmt.decodeEntities(this))
 
 internal fun parseContent(c: JsonObject?): ReplyContent {
     val emotes = c.obj("emote")?.mapNotNull { (k, v) ->
