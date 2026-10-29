@@ -95,6 +95,29 @@ internal class RailModel(
     val onMessages: (() -> Unit)?,
 )
 
+/**
+ * Whether the rail is in: by where the window is going, never by "a page is closing". A back
+ * lands on the entry beneath the closing page until the pop and on the top one after it (the pop
+ * comes mid-ride, while the back is still running): only when that is the shell does the rail
+ * come in (a back to search results, an UP page, 设置… leaves it out).
+ */
+internal enum class RailVisibility {
+    In, Out,
+
+    /** A back gesture toward the shell: in as far as the gesture has gone (a cancel takes it back out). */
+    FollowGesture;
+
+    companion object {
+        fun of(shellOnTop: Boolean, shellBeneath: Boolean, phase: BackPhase): RailVisibility = when {
+            shellOnTop -> In
+            // Revealing: the closing page is already popped; what is beneath the top now is not where this back lands.
+            phase == BackPhase.Gesture && shellBeneath -> FollowGesture
+            phase == BackPhase.Committing && shellBeneath -> In
+            else -> Out
+        }
+    }
+}
+
 internal object SideRail {
     var model by mutableStateOf<RailModel?>(null)
 
@@ -151,12 +174,12 @@ internal fun SideRailHost(transitions: PageTransitions, navigator: Navigator) {
     val phase = transitions.phase
     val slide = remember { Animatable(if (shellOnTop) 1f else 0f) }
     val spatial = YoinMotion.defaultSpatialSpec<Float>()
-    LaunchedEffect(shellOnTop, shellBeneath, phase) {
-        when {
-            shellOnTop -> slide.animateTo(1f, spatial)
-            shellBeneath && phase == BackPhase.Gesture -> snapshotFlow { transitions.closing.value }.collect { slide.snapTo(it.coerceIn(0f, 1f)) }
-            shellBeneath && phase != BackPhase.Idle -> slide.animateTo(1f, spatial)
-            else -> slide.animateTo(0f, spatial)
+    val target = RailVisibility.of(shellOnTop, shellBeneath, phase)
+    LaunchedEffect(target) {
+        when (target) {
+            RailVisibility.In -> slide.animateTo(1f, spatial)
+            RailVisibility.FollowGesture -> snapshotFlow { transitions.closing.value }.collect { slide.snapTo(it.coerceIn(0f, 1f)) }
+            RailVisibility.Out -> slide.animateTo(0f, spatial)
         }
     }
 
