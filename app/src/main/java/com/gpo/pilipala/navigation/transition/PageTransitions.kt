@@ -720,7 +720,9 @@ class PageTransitions internal constructor(
                 "after ${android.os.SystemClock.uptimeMillis() - rideEnd} ms (images still loading ${com.gpo.pilipala.ui.components.ImageLoads.inFlight.value})",
             )
             if (generation != owner) return@launch
-            reveal.animateTo(1f, revealSpec)
+            // A finger is on it: the live page is the same picture as its snapshot, only moving now;
+            // shown at once, not faded in (a scroll at half strength over still pixels read as lag).
+            if (hurry) reveal.snapTo(1f) else reveal.animateTo(1f, revealSpec)
             BackLog.mark("revealed")
             if (generation != owner) return@launch
 
