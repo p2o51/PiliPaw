@@ -138,7 +138,8 @@ internal fun Density.beneathPose(t: PageTransitions, size: Size): BackPose {
     val b = t.behind.value
     val p = if (t.phase == BackPhase.Gesture) t.closing.value else t.seedProgress
     val scale = 1f - (1f - BackMotionTokens.PopPageScaleTarget) * p * b
-    val ty = if (t.phase == BackPhase.Gesture || t.phase == BackPhase.Committing) t.touchYDelta else 0f
+    // Kept through the reveal too: the pop comes mid-ride now, and the offset rides home with b.
+    val ty = if (t.phase != BackPhase.Idle) t.touchYDelta else 0f
     return BackPose(
         scale,
         -BackMotionTokens.EnteringStartOffset.toPx() * b,
