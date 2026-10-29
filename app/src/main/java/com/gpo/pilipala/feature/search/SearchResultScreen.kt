@@ -127,6 +127,16 @@ internal class SearchCountsViewModel(keyword: String) : ViewModel() {
  * One result tab: paging + filters. Loads on first [start], not on creation.
  * [initialOrder] is the video tab's starting order (the search's sort).
  */
+/** [SearchTabViewModel] has not seen a source scope yet. */
+internal val ScopeUnset = Any()
+
+/**
+ * Whether results loaded for scope [was] reload now the chips say [now]: only a real change, and
+ * only once there is something to replace. The page composing again (back from a video) is not one.
+ */
+internal fun scopeReloads(was: Any?, now: Any?, hasResults: Boolean): Boolean =
+    was !== ScopeUnset && was != now && hasResults
+
 internal class SearchTabViewModel(
     val keyword: String,
     val tab: SearchTab,
@@ -142,6 +152,19 @@ internal class SearchTabViewModel(
         private set
     var error by mutableStateOf<String?>(null)
         private set
+
+    /**
+     * The source scope (both ticked: 视频 searches both or one) the results were loaded for. The
+     * page composes again when it comes back from a video; only a real change of scope reloads.
+     */
+    private var scopeLoaded: Any? = ScopeUnset
+
+    /** The scope chips say [scope]: reload only if it differs from what these results were loaded with. */
+    fun onScope(scope: Any?) {
+        val was = scopeLoaded
+        scopeLoaded = scope
+        if (scopeReloads(was, scope, hasResults = items.isNotEmpty() || error != null)) refresh()
+    }
     var moreError by mutableStateOf<String?>(null)
         private set
     var hasMore by mutableStateOf(true)
@@ -449,7 +472,7 @@ fun SearchResultScreen(route: Route.SearchResult) {
         val mixing = com.gpo.pilipala.feature.sources.SearchScope.mixing
         if (mixing) {
             val scopeNow by com.gpo.pilipala.feature.sources.SearchScope.only.collectAsState()
-            LaunchedEffect(scopeNow) { if (videoVm.items.isNotEmpty() || videoVm.error != null) videoVm.refresh() }
+            LaunchedEffect(scopeNow) { videoVm.onScope(scopeNow) }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (mixing) {
