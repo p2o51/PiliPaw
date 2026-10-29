@@ -136,6 +136,8 @@ object ShellSections {
  */
 @Composable
 fun MainShell() {
+    remember { com.gpo.pilipala.navigation.transition.BackLog.mark("shell composes"); 0 }
+    androidx.compose.runtime.LaunchedEffect(Unit) { com.gpo.pilipala.navigation.transition.BackLog.mark("shell composed (first frame done)") }
     val hidden by ShellSections.hiddenKey.state.collectAsState()
     // YouTube ticked alone: the same shell, minus what only Bilibili has (no swap to another shell).
     val enabled by Sources.enabled.collectAsState()

@@ -93,6 +93,7 @@ private val BuiltinTabs = listOf(
 
 @Composable
 fun HomeScreen() {
+    remember { com.gpo.pilipala.navigation.transition.BackLog.mark("home composes"); 0 }
     val nav = LocalNavigator.current
     val headerVm: HomeHeaderViewModel = viewModel(key = "home_header") { HomeHeaderViewModel() }
     val user by Account.user.collectAsState()
