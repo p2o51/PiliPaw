@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import com.gpo.pilipala.ui.components.VideoItem
+import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.flow.Flow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,7 +69,6 @@ import com.gpo.pilipala.ui.components.videoGridColumns
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
-import com.gpo.yoin.symbols.PiliSymbols
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
@@ -277,7 +277,7 @@ private fun LiveCard(room: LiveRoomItem) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val watched = room.watched.ifEmpty { if (room.online > 0) Fmt.count(room.online) else "" }
-                if (watched.isNotEmpty()) Stat(PiliSymbols.Views, watched, tint = Color.White, self = FameMode.isSelf(room.uid))
+                if (watched.isNotEmpty()) Stat(YoinSymbols.Views, watched, tint = Color.White, self = FameMode.isSelf(room.uid))
                 Spacer(Modifier.weight(1f))
                 if (room.area.isNotEmpty()) {
                     Text(

@@ -71,7 +71,6 @@ import com.gpo.pilipala.feature.player.turnedContent
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.delay
 
@@ -274,7 +273,7 @@ internal fun LivePlayerView(
                             }
                             Spacer(Modifier.weight(1f))
                             OverlayIcon(
-                                if (vm.danmakuOn) PiliSymbols.Danmaku else PiliSymbols.DanmakuOff,
+                                if (vm.danmakuOn) YoinSymbols.Danmaku else YoinSymbols.DanmakuOff,
                                 "弹幕",
                             ) {
                                 vm.danmakuOn = !vm.danmakuOn
@@ -284,9 +283,9 @@ internal fun LivePlayerView(
                                 tapCount++
                             }
                             QualityButton(vm) { tapCount++ }
-                            if (onPip != null) OverlayIcon(PiliSymbols.Pip, "小窗", onPip)
+                            if (onPip != null) OverlayIcon(YoinSymbols.Pip, "小窗", onPip)
                             OverlayIcon(
-                                if (fullscreen) PiliSymbols.FullscreenExit else PiliSymbols.Fullscreen,
+                                if (fullscreen) YoinSymbols.FullscreenExit else YoinSymbols.Fullscreen,
                                 if (fullscreen) "退出全屏" else "全屏",
                                 onToggleFullscreen,
                             )
@@ -361,7 +360,7 @@ private fun ScreenOffToggle(vm: LiveRoomViewModel) {
         shapes = IconButtonDefaults.shapes(),
         colors = IconButtonDefaults.iconButtonColors(containerColor = block, contentColor = Color.White),
     ) {
-        Icon(PiliSymbols.DarkMode, contentDescription = if (on) "屏幕常亮" else "熄屏播放")
+        Icon(YoinSymbols.DarkMode, contentDescription = if (on) "屏幕常亮" else "熄屏播放")
     }
 }
 

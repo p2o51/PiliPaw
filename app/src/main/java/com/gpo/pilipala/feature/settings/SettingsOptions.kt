@@ -1,29 +1,22 @@
 package com.gpo.pilipala.feature.settings
 
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.PathParser
-import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.feature.live.LiveQnChoices
 import com.gpo.pilipala.ui.components.seam.SeamTopStyle
 import com.gpo.pilipala.ui.theme.ThemeSettings
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import java.util.Locale
 
 /** The settings sub-pages (Route.SettingsPage.page) plus About. */
 internal enum class SettingsPageId(val key: String, val label: String, val title: String, val icon: ImageVector) {
-    Style("style", "外观", "外观设置", PiliSymbols.Palette),
+    Style("style", "外观", "外观设置", YoinSymbols.Palette),
     Play("play", "播放", "播放设置", YoinSymbols.PlayCircle),
-    Danmaku("danmaku", "弹幕", "弹幕设置", PiliSymbols.Danmaku),
+    Danmaku("danmaku", "弹幕", "弹幕设置", YoinSymbols.Danmaku),
     Skip("skip", "跳过片段", "跳过片段", YoinSymbols.SkipNext),
     Recommend("recommend", "推荐", "推荐设置", YoinSymbols.Sparkle),
     Habit("habit", "习惯", "习惯", YoinSymbols.Person),
     Network("network", "网络与线路", "网络与线路", YoinSymbols.Speed),
-    Privacy("privacy", "隐私", "隐私设置", PiliSymbols.Lock),
+    Privacy("privacy", "隐私", "隐私设置", YoinSymbols.Lock),
     Extra("extra", "其他", "其他设置", YoinSymbols.Settings),
     About("about", "关于", "关于", YoinSymbols.Info),
     ;
@@ -37,7 +30,7 @@ internal object SettingsChoices {
     val themeMode = listOf(
         Choice(0, "跟随系统", YoinSymbols.Smartphone),
         Choice(1, "浅色", YoinSymbols.LightMode),
-        Choice(2, "深色", PiliSymbols.DarkMode),
+        Choice(2, "深色", YoinSymbols.DarkMode),
     )
 
     /** Home top tabs, in HomeScreen order. */
@@ -181,21 +174,4 @@ internal fun formatBytes(bytes: Long): String {
         i++
     }
     return if (i == 0) "${bytes} B" else String.format(Locale.US, "%.1f %s", v, units[i])
-}
-
-/** 滚动边缘's glyph: two waves (the tide line). 24 viewport, 1.5 stroke, round caps. */
-internal val TideGlyph: ImageVector by lazy {
-    ImageVector.Builder("Tide", 24.dp, 24.dp, 24f, 24f).apply {
-        addPath(
-            pathData = PathParser().parsePathString(
-                "M3 9.5c1.5 0 1.5 -1.5 3 -1.5s1.5 1.5 3 1.5s1.5 -1.5 3 -1.5s1.5 1.5 3 1.5s1.5 -1.5 3 -1.5s1.5 1.5 3 1.5" +
-                    "M3 15.5c1.5 0 1.5 -1.5 3 -1.5s1.5 1.5 3 1.5s1.5 -1.5 3 -1.5s1.5 1.5 3 1.5s1.5 -1.5 3 -1.5s1.5 1.5 3 1.5",
-            ).toNodes(),
-            fill = null,
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = 1.5f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round,
-        )
-    }.build()
 }

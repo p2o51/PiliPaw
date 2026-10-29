@@ -52,7 +52,6 @@ import com.gpo.pilipala.yt.core.account.Profile
 import com.gpo.pilipala.yt.core.account.Source
 import com.gpo.pilipala.yt.navigation.LocalNavigator
 import com.gpo.pilipala.yt.navigation.Route
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
 /**
@@ -171,7 +170,7 @@ internal fun SettingsGroupScope.signOutItem() {
         var confirm by remember { mutableStateOf(false) }
         SettingsItem(
             title = "退出登录",
-            icon = PiliSymbols.Logout,
+            icon = YoinSymbols.Logout,
             titleColor = MaterialTheme.colorScheme.error,
             onClick = { confirm = true },
         )

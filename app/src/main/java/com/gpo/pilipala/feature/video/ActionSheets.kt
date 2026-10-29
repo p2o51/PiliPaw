@@ -62,7 +62,6 @@ import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -113,7 +112,7 @@ internal fun CoinSheet(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Row {
                                 repeat(n) {
-                                    Icon(if (count == n) PiliSymbols.CoinFilled else PiliSymbols.Coin, null, Modifier.size(26.dp))
+                                    Icon(if (count == n) YoinSymbols.CoinFilled else YoinSymbols.Coin, null, Modifier.size(26.dp))
                                 }
                             }
                             Spacer(Modifier.height(6.dp))
@@ -132,7 +131,7 @@ internal fun CoinSheet(
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(PiliSymbols.ThumbUp, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(YoinSymbols.ThumbUp, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.size(12.dp))
                 Text("同时点赞", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 Switch(checked = alsoLike, onCheckedChange = { alsoLike = it }, enabled = !liked)
@@ -235,7 +234,7 @@ private fun CoinFlip(count: Int, modifier: Modifier = Modifier) {
 private fun CoinFace(tint: Color, rim: Color, modifier: Modifier) {
     Box(modifier.size(CoinSize), contentAlignment = Alignment.Center) {
         Box(Modifier.size(CoinRim).clip(CircleShape).background(rim))
-        Icon(PiliSymbols.CoinFilled, contentDescription = null, modifier = Modifier.size(CoinSize), tint = tint)
+        Icon(YoinSymbols.CoinFilled, contentDescription = null, modifier = Modifier.size(CoinSize), tint = tint)
     }
 }
 
@@ -330,7 +329,7 @@ internal fun FavSheet(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(
-                                        if (f.isPrivate) PiliSymbols.Lock else YoinSymbols.Folder,
+                                        if (f.isPrivate) YoinSymbols.Lock else YoinSymbols.Folder,
                                         null,
                                         Modifier.size(20.dp),
                                         tint = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -411,8 +410,8 @@ internal fun TripleSheet(
             Column(
                 Modifier.fillMaxWidth().clip(YoinContainerShapes.Card).background(MaterialTheme.colorScheme.surfaceContainerHigh),
             ) {
-                TripleRow(PiliSymbols.ThumbUp, "点赞", if (liked) "已赞" else null)
-                TripleRow(PiliSymbols.Coin, "投 2 枚硬币", when {
+                TripleRow(YoinSymbols.ThumbUp, "点赞", if (liked) "已赞" else null)
+                TripleRow(YoinSymbols.Coin, "投 2 枚硬币", when {
                     coined > 0 -> "已投 $coined 枚"
                     coinsLeft != null -> "余额 ${if (coinsLeft % 1.0 == 0.0) coinsLeft.toLong().toString() else coinsLeft.toString()}"
                     else -> null
@@ -506,7 +505,7 @@ private fun NewFolderRow(onCreated: (FavFolder) -> Unit) {
                 )
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(PiliSymbols.Lock, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(YoinSymbols.Lock, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.size(10.dp))
                     Text("私密", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Switch(checked = private, onCheckedChange = { private = it })

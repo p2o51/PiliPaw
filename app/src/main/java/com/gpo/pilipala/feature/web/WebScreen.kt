@@ -57,7 +57,6 @@ import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.LocalPiliDark
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -153,7 +152,7 @@ fun WebScreen(route: Route.Web) {
                             )
                             DropdownMenuItem(
                                 text = { Text("复制链接") },
-                                leadingIcon = { Icon(PiliSymbols.Link, null) },
+                                leadingIcon = { Icon(YoinSymbols.Link, null) },
                                 onClick = {
                                     menuOpen = false
                                     scope.launch {

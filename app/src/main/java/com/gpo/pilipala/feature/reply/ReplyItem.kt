@@ -93,7 +93,6 @@ import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlin.math.ceil
 import kotlin.math.max
@@ -494,7 +493,7 @@ private fun ActionRow(reply: Reply, actions: ReplyActions) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Icon(ReplyIcons.Reply, null, Modifier.size(16.dp), tint = scheme.outline)
+            Icon(YoinSymbols.Reply, null, Modifier.size(16.dp), tint = scheme.outline)
             Text("回复", style = MaterialTheme.typography.labelMedium.centered(), color = scheme.outline)
         }
         if (reply.upLiked) {
@@ -552,8 +551,8 @@ internal fun LikeButton(state: LikeState, modifier: Modifier = Modifier, onClick
         animationSpec = YoinMotion.defaultEffectsSpec(),
         label = "likeGlyph",
     )
-    val outline = rememberVectorPainter(PiliSymbols.ThumbUp)
-    val solid = rememberVectorPainter(PiliSymbols.ThumbUpFilled)
+    val outline = rememberVectorPainter(YoinSymbols.ThumbUp)
+    val solid = rememberVectorPainter(YoinSymbols.ThumbUpFilled)
     Row(
         modifier = modifier
             .clip(CircleShape)
@@ -602,8 +601,8 @@ internal fun DislikeButton(disliked: Boolean, modifier: Modifier = Modifier, onC
         animationSpec = YoinMotion.defaultEffectsSpec(),
         label = "dislikeGlyph",
     )
-    val outline = rememberVectorPainter(PiliSymbols.ThumbDown)
-    val solid = rememberVectorPainter(PiliSymbols.ThumbDownFilled)
+    val outline = rememberVectorPainter(YoinSymbols.ThumbDown)
+    val solid = rememberVectorPainter(YoinSymbols.ThumbDownFilled)
     val label = if (disliked) "取消点踩" else "点踩"
     Box(
         modifier

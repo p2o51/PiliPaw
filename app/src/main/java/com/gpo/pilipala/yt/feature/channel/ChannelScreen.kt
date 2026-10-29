@@ -96,7 +96,6 @@ import com.gpo.pilipala.yt.navigation.Route
 import com.gpo.pilipala.yt.ui.components.LoadMoreEffect
 import com.gpo.pilipala.yt.ui.components.Pager
 import com.gpo.pilipala.yt.ui.components.friendlyMessage
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
@@ -221,7 +220,7 @@ fun ChannelScreen(route: Route.Channel) {
                             ErrorState(pager.error.orEmpty(), Modifier.height(StateHeight), onRetry = pager::refresh)
                         }
                         pager.items.isEmpty() -> item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
-                            EmptyState("暂无视频", Modifier.height(StateHeight), icon = PiliSymbols.Video)
+                            EmptyState("暂无视频", Modifier.height(StateHeight), icon = YoinSymbols.Video)
                         }
                         else -> items(pager.items, key = { "v_${selected}_${it.url}" }) { v ->
                             VideoCardH(v.toCard(), Modifier.animateItem(), onClick = { Player.play(v.url, v) })

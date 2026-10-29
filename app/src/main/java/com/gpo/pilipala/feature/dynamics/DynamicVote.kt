@@ -72,13 +72,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
@@ -743,7 +738,7 @@ private fun VoteHeader(title: String, desc: String, multi: Boolean, large: Boole
             Modifier.size(36.dp).clip(ContinuousRoundedCornerShape(10.dp)).background(cs.secondaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(PollGlyph, null, Modifier.size(20.dp), tint = cs.onSecondaryContainer)
+            Icon(YoinSymbols.Poll, null, Modifier.size(20.dp), tint = cs.onSecondaryContainer)
         }
         Column(Modifier.weight(1f).seamText(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             // A card that only knew the vote id shows 投票 until the title loads.
@@ -1228,28 +1223,6 @@ private fun timeLeft(endTime: Long, now: Long): Pair<String, String>? {
         left >= 3_600 -> "${left / 3_600}" to "小时后截止"
         else -> "${(left / 60).coerceAtLeast(1)}" to "分钟后截止"
     }
-}
-
-/** Three option bars of different lengths, in the symbols' 24 / 1.5 stroke idiom. */
-private val PollGlyph: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "PollGlyph",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f,
-    ).apply {
-        listOf("M5.25 7 L18.75 7", "M5.25 12 L12.75 12", "M5.25 17 L15.75 17").forEach { d ->
-            addPath(
-                pathData = addPathNodes(d),
-                fill = null,
-                stroke = SolidColor(Color.Black),
-                strokeLineWidth = 1.5f,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round,
-            )
-        }
-    }.build()
 }
 
 // ── Page ────────────────────────────────────────────────────────────────────

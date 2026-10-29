@@ -18,7 +18,6 @@ import com.gpo.pilipala.core.net.BiliException
 import com.gpo.pilipala.feature.dynamics.DynamicsApi
 import com.gpo.pilipala.feature.dynamics.UploadedPic
 import com.gpo.pilipala.ui.components.rememberToast
-import com.gpo.yoin.symbols.PiliSymbols
 import java.io.InterruptedIOException
 import java.net.UnknownHostException
 import kotlinx.coroutines.CancellationException
@@ -315,7 +314,7 @@ internal fun ReplyComposerSheet(
                             label = "composerToggle",
                         ) { showingPanel ->
                             Icon(
-                                if (showingPanel) ReplyIcons.Keyboard else ReplyIcons.Emoji,
+                                if (showingPanel) YoinSymbols.Keyboard else YoinSymbols.Emoji,
                                 contentDescription = if (showingPanel) "键盘" else "表情",
                             )
                         }
@@ -329,7 +328,7 @@ internal fun ReplyComposerSheet(
                         enabled = remaining > 0 && !sending,
                         shapes = IconButtonDefaults.shapes(),
                     ) {
-                        Icon(PiliSymbols.Image, contentDescription = "图片")
+                        Icon(YoinSymbols.Image, contentDescription = "图片")
                     }
                     Spacer(Modifier.weight(1f))
                     val progress by animateFloatAsState(

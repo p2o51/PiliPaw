@@ -54,7 +54,6 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinShapeTokens
 import com.gpo.pilipala.ui.theme.withTabularFigures
 import com.gpo.pilipala.yt.core.util.Fmt
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import com.gpo.yoin.symbols.rememberPlayPauseSymbolPainter
 import kotlinx.coroutines.delay
@@ -153,7 +152,7 @@ internal fun BoxScope.YtPictureChrome(chrome: YtChrome, seek: SeekState, reveal:
             }
             Row(Modifier.align(Alignment.TopEnd).background(CornerPlate, YoinShapeTokens.Full), verticalAlignment = Alignment.CenterVertically) {
                 if (activity != null && pipSupported(activity)) {
-                    GroupButton(PiliSymbols.Pip, "画中画") { enterPip(activity, Player.videoAspect, title = Player.session?.title.orEmpty()) }
+                    GroupButton(YoinSymbols.Pip, "画中画") { enterPip(activity, Player.videoAspect, title = Player.session?.title.orEmpty()) }
                 }
                 GroupButton(YoinSymbols.MoreVertical, "播放设置") {
                     chrome.sheet = true
@@ -296,7 +295,7 @@ internal fun YtInlineStrip(seek: SeekState, chrome: YtChrome, hasNext: Boolean, 
                     if (Player.heights.isNotEmpty()) StripPill(qualityLabel(Player.currentHeight), openSheet)
                 }
                 StripButton(YoinSymbols.Headphones, "仅听声音") { Player.changeAudioOnly(true) }
-                StripButton(PiliSymbols.Fullscreen, "全屏") { Player.fullscreen = true }
+                StripButton(YoinSymbols.Fullscreen, "全屏") { Player.fullscreen = true }
             }
         }
     }

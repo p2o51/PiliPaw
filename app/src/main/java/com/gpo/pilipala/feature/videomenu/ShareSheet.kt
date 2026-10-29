@@ -56,7 +56,6 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -81,10 +80,10 @@ internal fun ShareChoices(target: ShareTarget, finisher: SheetFinisher, enabled:
         ShareContactsRow(target, finisher)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(SheetGroupSpacing)) {
             if (BiliClient.isLoggedIn && target.aid > 0) {
-                SheetGroupButton(PiliSymbols.Forward, "转发到动态", onForward, Modifier.weight(1f), enabled = enabled)
+                SheetGroupButton(YoinSymbols.Forward, "转发到动态", onForward, Modifier.weight(1f), enabled = enabled)
             }
             SheetGroupButton(
-                PiliSymbols.Link,
+                YoinSymbols.Link,
                 "复制链接",
                 {
                     context.getSystemService(ClipboardManager::class.java)
@@ -97,7 +96,7 @@ internal fun ShareChoices(target: ShareTarget, finisher: SheetFinisher, enabled:
             )
             if (target.aid > 0) {
                 SheetGroupButton(
-                    PiliSymbols.Subtitles,
+                    YoinSymbols.Subtitles,
                     if (fetching) "获取中…" else "复制字幕",
                     {
                         if (!fetching) {

@@ -49,12 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -89,7 +84,6 @@ import com.gpo.pilipala.ui.components.sheetStagger
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -232,7 +226,7 @@ internal fun VideoCardMenu(
         keep = if (!isVideo) emptyList() else buildList {
             if (watchLater && loggedIn) {
                 add(
-                    MenuRow(PiliSymbols.WatchLater, "稍后再看") {
+                    MenuRow(YoinSymbols.WatchLater, "稍后再看") {
                         runWrite({ FeedActions.watchLater(item) }) { finisher.finish("稍后再看", "已添加") }
                     },
                 )
@@ -242,7 +236,7 @@ internal fun VideoCardMenu(
         decline = buildList {
             if (onRemove != null) {
                 add(
-                    MenuRow(PiliSymbols.ThumbDown, "不感兴趣") {
+                    MenuRow(YoinSymbols.ThumbDown, "不感兴趣") {
                         if (declineReasons.isNotEmpty()) {
                             haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                             page = MenuPage.Decline
@@ -270,7 +264,7 @@ internal fun VideoCardMenu(
                 add(MenuRow(YoinSymbols.LibraryAdd, "加入 Feed") { hide { feedOpen = true } })
                 if (onRemove != null && loggedIn && item.ownerMid != BiliClient.mid) {
                     add(
-                        MenuRow(BlockGlyph, "拉黑 UP", destructive = true) {
+                        MenuRow(YoinSymbols.Block, "拉黑 UP", destructive = true) {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             page = MenuPage.Block
                         },
@@ -382,7 +376,7 @@ private fun YoutubeCardMenu(
         keep = buildList {
             if (watchLater) {
                 add(
-                    MenuRow(PiliSymbols.WatchLater, if (inLater) "移出稍后再看" else "稍后再看") {
+                    MenuRow(YoinSymbols.WatchLater, if (inLater) "移出稍后再看" else "稍后再看") {
                         val added = com.gpo.pilipala.yt.feature.library.Library.toggleWatchLater(video)
                         finisher.finish(if (inLater) "移出稍后再看" else "稍后再看", if (added) "已添加" else "已移出")
                     },
@@ -393,7 +387,7 @@ private fun YoutubeCardMenu(
         decline = buildList {
             if (onRemove != null) {
                 add(
-                    MenuRow(PiliSymbols.ThumbDown, "不感兴趣") {
+                    MenuRow(YoinSymbols.ThumbDown, "不感兴趣") {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                         close(onRemove)
                     },
@@ -410,7 +404,7 @@ private fun YoutubeCardMenu(
         },
         small = listOf(
             MenuRow(YoinSymbols.Share, "分享") { close { shareText(context, item.title, url) } },
-            MenuRow(PiliSymbols.Link, "复制链接") {
+            MenuRow(YoinSymbols.Link, "复制链接") {
                 context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(item.title, url))
                 finisher.finish("复制链接", "已复制")
             },
@@ -709,7 +703,7 @@ private fun DeclineStep(
                 group.forEach { r ->
                     val done = doneLabel(r.label)
                     com.gpo.pilipala.ui.components.SheetOutlinedAction(
-                        icon = if (done != null) YoinSymbols.Check else if (r.feedback) YoinSymbols.Info else PiliSymbols.ThumbDown,
+                        icon = if (done != null) YoinSymbols.Check else if (r.feedback) YoinSymbols.Info else YoinSymbols.ThumbDown,
                         label = done ?: r.label,
                         onClick = { onPick(r) },
                         enabled = enabled,
@@ -761,22 +755,4 @@ private fun BlockConfirm(name: String, busy: Boolean, onCancel: () -> Unit, onCo
             ) { Text("拉黑", style = MaterialTheme.typography.titleSmall) }
         }
     }
-}
-
-/** Circle with a slash (24 viewport, 1.5 stroke). */
-private val BlockGlyph: ImageVector by lazy {
-    ImageVector.Builder("Block", 24.dp, 24.dp, 24f, 24f).apply {
-        path(
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = 1.5f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round,
-        ) {
-            moveTo(12f, 3.25f)
-            arcTo(8.75f, 8.75f, 0f, true, true, 11.99f, 3.25f)
-            close()
-            moveTo(5.8f, 5.8f)
-            lineTo(18.2f, 18.2f)
-        }
-    }.build()
 }

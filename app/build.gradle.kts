@@ -71,7 +71,7 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":yoin-symbols"))
+    implementation(libs.yoin.symbols)
     testImplementation("junit:junit:4.13.2")
     // Gestures adb cannot send (two-finger pinch on the mini bar), driven on the device.
     androidTestImplementation("androidx.test:runner:1.6.2")

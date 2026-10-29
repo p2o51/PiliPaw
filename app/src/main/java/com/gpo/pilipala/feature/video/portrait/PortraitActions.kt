@@ -75,7 +75,6 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import com.gpo.pilipala.ui.theme.rememberRichHaptics
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -168,7 +167,7 @@ internal fun ActionColumn(
         UpAvatar(state.face, state.showFollow, state.following, state.mutual, onAvatar, onFollow)
         Spacer(Modifier.height(if (dense) 2.dp else 10.dp))
         ActionButton(
-            icon = if (state.liked) PiliSymbols.ThumbUpFilled else PiliSymbols.ThumbUp,
+            icon = if (state.liked) YoinSymbols.ThumbUpFilled else YoinSymbols.ThumbUp,
             description = "点赞",
             label = state.likeLabel,
             checked = state.liked,
@@ -181,7 +180,7 @@ internal fun ActionColumn(
             fill = fill(0),
         )
         ActionButton(
-            icon = if (state.coined) PiliSymbols.CoinFilled else PiliSymbols.Coin,
+            icon = if (state.coined) YoinSymbols.CoinFilled else YoinSymbols.Coin,
             description = "投币",
             label = state.coinLabel,
             checked = state.coined,
@@ -192,7 +191,7 @@ internal fun ActionColumn(
             fill = fill(1),
         )
         ActionButton(
-            icon = PiliSymbols.Comment,
+            icon = YoinSymbols.Comment,
             description = "评论",
             label = state.replyLabel,
             checked = false,

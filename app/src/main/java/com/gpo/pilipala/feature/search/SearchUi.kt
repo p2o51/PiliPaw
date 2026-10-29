@@ -28,12 +28,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
@@ -50,34 +44,6 @@ import com.gpo.pilipala.ui.theme.YoinMotion
 internal val SearchCoverShape = ContinuousRoundedCornerShape(12.dp)
 
 internal val ChipShape = ContinuousRoundedCornerShape(12.dp)
-
-/** Private glyphs in the Yoin Symbols language (24 viewport, 1.5 stroke, round caps). */
-internal object SearchGlyphs {
-    private fun stroke(name: String, vararg paths: String): ImageVector =
-        ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
-            paths.forEach {
-                addPath(
-                    pathData = addPathNodes(it),
-                    stroke = SolidColor(Color.Black),
-                    strokeLineWidth = 1.5f,
-                    strokeLineCap = StrokeCap.Round,
-                    strokeLineJoin = StrokeJoin.Round,
-                )
-            }
-        }.build()
-
-    /** North-west arrow: put a suggestion into the field without searching. */
-    val Insert: ImageVector by lazy { stroke("SearchInsert", "M17.5 17.5 L7 7", "M7 15 L7 7 L15 7") }
-
-    /** Verified mark: a badge circle with a tick. */
-    val Verified: ImageVector by lazy {
-        stroke(
-            "SearchVerified",
-            "M12 3.5 C16.7 3.5 20.5 7.3 20.5 12 C20.5 16.7 16.7 20.5 12 20.5 C7.3 20.5 3.5 16.7 3.5 12 C3.5 7.3 7.3 3.5 12 3.5 Z",
-            "M8.5 12.2 L10.9 14.5 L15.5 9.8",
-        )
-    }
-}
 
 /**
  * Tonal chip (color block, never an outline). Selected = secondaryContainer,

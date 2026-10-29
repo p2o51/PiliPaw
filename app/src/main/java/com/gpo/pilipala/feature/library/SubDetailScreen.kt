@@ -58,7 +58,6 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.theme.CoverTheme
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 
@@ -135,7 +134,7 @@ private fun SubDetailContent(route: Route.SubDetail, vm: SubDetailViewModel) {
         title = vm.info.title.ifEmpty { route.title.ifEmpty { "订阅" } },
         subtitle = if (vm.info.mediaCount > 0) "${vm.info.mediaCount}个视频" else null,
     ) { padding ->
-        PagerBody(vm.pager, padding, emptyLabel = "暂无视频", emptyIcon = PiliSymbols.Video, requireLogin = false) { listPadding ->
+        PagerBody(vm.pager, padding, emptyLabel = "暂无视频", emptyIcon = YoinSymbols.Video, requireLogin = false) { listPadding ->
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(RowGridMinCell),
                 state = gridState,
@@ -203,8 +202,8 @@ private fun SubHeader(info: SubInfo, cover: String, showUnsub: Boolean, onUnsub:
                 Text(info.upperName, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (info.plays >= 0) Stat(PiliSymbols.Views, Fmt.count(info.plays), self = FameMode.isSelf(info.upperMid))
-                if (info.mediaCount > 0) Stat(PiliSymbols.Video, info.mediaCount.toString())
+                if (info.plays >= 0) Stat(YoinSymbols.Views, Fmt.count(info.plays), self = FameMode.isSelf(info.upperMid))
+                if (info.mediaCount > 0) Stat(YoinSymbols.Video, info.mediaCount.toString())
             }
             if (info.intro.isNotBlank()) {
                 Text(

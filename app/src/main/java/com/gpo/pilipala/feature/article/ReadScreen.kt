@@ -15,7 +15,7 @@ import com.gpo.pilipala.core.net.str
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
-import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -78,9 +78,9 @@ internal class ReadViewModel(private val cvid: Long) : ViewModel() {
                 authorFace = author.str("face"),
                 time = Fmt.date(v.long("publish_time"), "yyyy-MM-dd HH:mm"),
                 stats = listOf(
-                    PiliSymbols.Views to stats.long("view"),
-                    PiliSymbols.ThumbUp to stats.long("like"),
-                    PiliSymbols.Comment to stats.long("reply"),
+                    YoinSymbols.Views to stats.long("view"),
+                    YoinSymbols.ThumbUp to stats.long("like"),
+                    YoinSymbols.Comment to stats.long("reply"),
                 ),
                 collection = v.obj("list").str("name"),
             ),

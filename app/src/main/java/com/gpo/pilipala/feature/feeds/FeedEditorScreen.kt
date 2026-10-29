@@ -109,7 +109,6 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -703,7 +702,7 @@ private fun AddUpRow(enabled: Boolean, onClick: () -> Unit) {
             Modifier.size(36.dp).clip(CircleShape).background(scheme.tertiaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(PiliSymbols.PersonAdd, null, Modifier.size(18.dp), tint = scheme.onTertiaryContainer)
+            Icon(YoinSymbols.PersonAdd, null, Modifier.size(18.dp), tint = scheme.onTertiaryContainer)
         }
         Spacer(Modifier.width(12.dp))
         Text(

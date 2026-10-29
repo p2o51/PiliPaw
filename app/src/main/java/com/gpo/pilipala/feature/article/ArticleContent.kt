@@ -714,9 +714,9 @@ internal fun opusDoc(item: JsonObject): OpusDoc {
         authorFace = author.str("face"),
         time = author.str("pub_time"),
         stats = listOf(
-            com.gpo.yoin.symbols.PiliSymbols.Comment to stat.obj("comment").str("count").toLongOrZero(),
-            com.gpo.yoin.symbols.PiliSymbols.ThumbUp to stat.obj("like").str("count").toLongOrZero(),
-            com.gpo.yoin.symbols.PiliSymbols.Forward to stat.obj("forward").str("count").toLongOrZero(),
+            com.gpo.yoin.symbols.YoinSymbols.Comment to stat.obj("comment").str("count").toLongOrZero(),
+            com.gpo.yoin.symbols.YoinSymbols.ThumbUp to stat.obj("like").str("count").toLongOrZero(),
+            com.gpo.yoin.symbols.YoinSymbols.Forward to stat.obj("forward").str("count").toLongOrZero(),
         ),
         collection = module("module_collection").str("name"),
     )

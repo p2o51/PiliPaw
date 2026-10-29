@@ -106,7 +106,6 @@ import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.CoverTheme
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.flow.merge
 
@@ -853,23 +852,23 @@ private fun VideoActions(
         listOf(
             ActionSpec(
                 label = label(a.likeCount, "点赞"),
-                icon = PiliSymbols.ThumbUp,
-                checkedIcon = PiliSymbols.ThumbUpFilled,
+                icon = YoinSymbols.ThumbUp,
+                checkedIcon = YoinSymbols.ThumbUpFilled,
                 checked = a.liked,
                 onLongClick = { gate { onSheet(VideoSheet.Triple) } },
                 onClick = { gate { a.toggleLike() } },
             ),
             ActionSpec(
                 label = "点踩",
-                icon = PiliSymbols.ThumbDown,
-                checkedIcon = PiliSymbols.ThumbDownFilled,
+                icon = YoinSymbols.ThumbDown,
+                checkedIcon = YoinSymbols.ThumbDownFilled,
                 checked = a.disliked,
                 onClick = { gate { a.toggleDislike() } },
             ),
             ActionSpec(
                 label = label(a.coinCount, "投币"),
-                icon = PiliSymbols.Coin,
-                checkedIcon = PiliSymbols.CoinFilled,
+                icon = YoinSymbols.Coin,
+                checkedIcon = YoinSymbols.CoinFilled,
                 checked = a.coined > 0,
                 onClick = { gate { onSheet(VideoSheet.Coin) } },
             ),
@@ -883,7 +882,7 @@ private fun VideoActions(
             ),
             ActionSpec(
                 label = "稍后再看",
-                icon = PiliSymbols.WatchLater,
+                icon = YoinSymbols.WatchLater,
                 checked = a.inLater,
                 onClick = { gate { a.toggleLater() } },
             ),

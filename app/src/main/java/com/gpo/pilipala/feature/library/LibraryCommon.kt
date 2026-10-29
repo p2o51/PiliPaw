@@ -15,11 +15,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -565,7 +560,7 @@ internal fun FolderCard(
             )
             if (folder.isPrivate) {
                 Icon(
-                    com.gpo.yoin.symbols.PiliSymbols.Lock,
+                    com.gpo.yoin.symbols.YoinSymbols.Lock,
                     contentDescription = "私密",
                     modifier = Modifier.size(14.dp),
                     tint = MaterialTheme.colorScheme.outline,
@@ -582,23 +577,6 @@ internal fun BlockSurface(modifier: Modifier = Modifier, content: @Composable ()
 }
 
 // ── Multi-select (历史 / 稍后再看) ───────────────────────────────────────────
-
-/** Select mode's top-bar glyph: a rounded square holding a check. 24 viewport, 1.5 stroke, round caps. */
-internal val SelectGlyph: ImageVector by lazy {
-    ImageVector.Builder("Select", 24.dp, 24.dp, 24f, 24f).apply {
-        addPath(
-            pathData = PathParser().parsePathString(
-                "M7.5 4h9a3.5 3.5 0 0 1 3.5 3.5v9a3.5 3.5 0 0 1 -3.5 3.5h-9a3.5 3.5 0 0 1 -3.5 -3.5v-9a3.5 3.5 0 0 1 3.5 -3.5z" +
-                    "M8.5 12.3l2.4 2.4l4.6 -5.2",
-            ).toNodes(),
-            fill = null,
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = 1.5f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round,
-        )
-    }.build()
-}
 
 /** A selected row sits on a tonal block; unselected rows have none. */
 @Composable
@@ -733,7 +711,7 @@ internal fun <K> SelectModeButton(selection: Selection<K>) {
                     (scaleOut(scale, targetScale = 0.6f) + fadeOut(exitFade))
             },
             label = "selectMode",
-        ) { on -> Icon(if (on) YoinSymbols.Close else SelectGlyph, contentDescription = if (on) "退出多选" else "多选") }
+        ) { on -> Icon(if (on) YoinSymbols.Close else YoinSymbols.CheckBox, contentDescription = if (on) "退出多选" else "多选") }
     }
 }
 

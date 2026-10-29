@@ -82,7 +82,6 @@ import com.gpo.pilipala.ui.components.WidthClass
 import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.widthClass
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import com.gpo.pilipala.ui.components.inlineIconSize
 import com.gpo.pilipala.ui.components.centered
@@ -431,7 +430,7 @@ private fun SortBar(count: Long, sort: Int, onSort: (Int) -> Unit, modifier: Mod
         Spacer(Modifier.weight(1f))
         if (count > 0) {
             val countStyle = MaterialTheme.typography.labelLarge.centered()
-            Icon(PiliSymbols.Comment, null, Modifier.size(countStyle.inlineIconSize()), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(YoinSymbols.Comment, null, Modifier.size(countStyle.inlineIconSize()), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.size(4.dp))
             AnimatedContent(
                 targetState = count,
@@ -477,7 +476,7 @@ internal fun ComposePill(face: String?, label: String, modifier: Modifier = Modi
                 }
             }
             Text(label, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            Icon(ReplyIcons.Emoji, null, Modifier.padding(end = 8.dp).size(20.dp), tint = scheme.onSurfaceVariant)
+            Icon(YoinSymbols.Emoji, null, Modifier.padding(end = 8.dp).size(20.dp), tint = scheme.onSurfaceVariant)
         }
     }
 }
@@ -509,7 +508,7 @@ internal fun ListState(pager: Pager<Reply>, hasTop: Boolean, onRetry: () -> Unit
             when (k) {
                 StateKind.Loading -> LoadingIndicator()
                 StateKind.Error -> ErrorState(pager.error.orEmpty(), onRetry = onRetry)
-                StateKind.Empty -> EmptyState("暂无评论", icon = PiliSymbols.Comment)
+                StateKind.Empty -> EmptyState("暂无评论", icon = YoinSymbols.Comment)
                 StateKind.None -> Spacer(Modifier.height(24.dp))
             }
         }

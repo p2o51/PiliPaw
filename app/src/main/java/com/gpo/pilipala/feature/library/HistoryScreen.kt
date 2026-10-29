@@ -89,7 +89,6 @@ import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.components.seam.seamGraphic
 import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -389,7 +388,7 @@ fun HistoryScreen() {
                     pager,
                     innerPadding,
                     emptyLabel = if (vm.keyword.isNotEmpty()) "无结果" else "暂无历史记录",
-                    emptyIcon = if (vm.keyword.isNotEmpty()) YoinSymbols.Search else PiliSymbols.History,
+                    emptyIcon = if (vm.keyword.isNotEmpty()) YoinSymbols.Search else YoinSymbols.History,
                 ) { listPadding ->
                     HistoryGrid(
                         pager = pager,

@@ -121,7 +121,6 @@ import com.gpo.pilipala.core.net.BiliJson
 import com.gpo.pilipala.feature.reply.EmotePanel
 import com.gpo.pilipala.feature.reply.EmotePeekOverlay
 import com.gpo.pilipala.feature.reply.EmotePeekState
-import com.gpo.pilipala.feature.reply.ReplyIcons
 import com.gpo.pilipala.navigation.LocalNavigator
 import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.navigation.transition.LocalPageSettled
@@ -131,7 +130,6 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.feature.sources.miniPlayerFloatOnly
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import java.io.InterruptedIOException
 import java.net.UnknownHostException
@@ -907,13 +905,13 @@ private fun ComposerToolbar(
                 label = "emoteToggle",
             ) { showingPanel ->
                 Icon(
-                    if (showingPanel) ReplyIcons.Keyboard else ReplyIcons.Emoji,
+                    if (showingPanel) YoinSymbols.Keyboard else YoinSymbols.Emoji,
                     contentDescription = if (showingPanel) "键盘" else "表情",
                 )
             }
         }
         IconButton(onClick = onPick, enabled = canPick && !vm.sending, shapes = IconButtonDefaults.shapes()) {
-            Icon(PiliSymbols.Image, contentDescription = "图片")
+            Icon(YoinSymbols.Image, contentDescription = "图片")
         }
         Spacer(Modifier.weight(1f))
         CharCount(vm.length)

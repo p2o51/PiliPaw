@@ -54,7 +54,7 @@ import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.withTabularFigures
-import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.launch
 
 private val CoverShape = ContinuousRoundedCornerShape(12.dp)
@@ -189,9 +189,9 @@ internal fun PodiumCard(
                 maxLines = 1,
             ) {
                 val self = FameMode.isSelf(item.ownerMid)
-                if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views), tint = meta, self = self)
-                if (item.likes >= 0) Stat(PiliSymbols.ThumbUp, Fmt.count(item.likes), tint = meta, self = self)
-                if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku), tint = meta, self = self)
+                if (item.views >= 0) Stat(YoinSymbols.Views, Fmt.count(item.views), tint = meta, self = self)
+                if (item.likes >= 0) Stat(YoinSymbols.ThumbUp, Fmt.count(item.likes), tint = meta, self = self)
+                if (item.danmaku >= 0) Stat(YoinSymbols.Danmaku, Fmt.count(item.danmaku), tint = meta, self = self)
             }
         }
     }
@@ -304,9 +304,9 @@ internal fun RankRow(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     val self = FameMode.isSelf(item.ownerMid)
-                    if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views), self = self)
-                    if (item.likes >= 0) Stat(PiliSymbols.ThumbUp, Fmt.count(item.likes), self = self)
-                    if (wide && item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku), self = self)
+                    if (item.views >= 0) Stat(YoinSymbols.Views, Fmt.count(item.views), self = self)
+                    if (item.likes >= 0) Stat(YoinSymbols.ThumbUp, Fmt.count(item.likes), self = self)
+                    if (wide && item.danmaku >= 0) Stat(YoinSymbols.Danmaku, Fmt.count(item.danmaku), self = self)
                 }
             }
         }

@@ -45,7 +45,6 @@ import com.gpo.pilipala.ui.components.LocalBottomBarInset
 import com.gpo.pilipala.ui.components.seam.ProvideSeamBarField
 import com.gpo.pilipala.ui.launch.splashReveal
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -82,10 +81,10 @@ object ShellRequests {
  */
 enum class ShellSection(val key: String, val tab: NavTab, val removable: Boolean) {
     Home("home", NavTab("首页", YoinSymbols.Home, YoinSymbols.HomeFilled), removable = false),
-    Rank("rank", NavTab("排行", PiliSymbols.Trophy, PiliSymbols.TrophyFilled), removable = true),
-    Dynamics("dynamics", NavTab("动态", PiliSymbols.Dynamic, PiliSymbols.DynamicFilled), removable = true),
+    Rank("rank", NavTab("排行", YoinSymbols.Trophy, YoinSymbols.TrophyFilled), removable = true),
+    Dynamics("dynamics", NavTab("动态", YoinSymbols.Dynamic, YoinSymbols.DynamicFilled), removable = true),
     Fav("fav", NavTab("收藏", YoinSymbols.Star, YoinSymbols.StarFilled), removable = true),
-    Mine("mine", NavTab("我的", YoinSymbols.Person, PiliSymbols.PersonFilled), removable = true),
+    Mine("mine", NavTab("我的", YoinSymbols.Person, YoinSymbols.PersonFilled), removable = true),
 
     /** YouTube's subscriptions, in the bar while YouTube is ticked alone (else 动态 and 关注 cover follows). */
     Subs("yt_subs", NavTab("订阅", YoinSymbols.Library, YoinSymbols.LibraryFilled), removable = true),

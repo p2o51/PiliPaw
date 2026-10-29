@@ -62,8 +62,6 @@ import com.gpo.pilipala.ui.components.seam.seamGraphic
 import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
-import com.gpo.yoin.symbols.PiliSymbols
-
 /** Common video summary used by every list (feeds, search, history, favs…). */
 @Immutable
 data class VideoItem(
@@ -251,8 +249,8 @@ fun VideoCardL(
                                 modifier = Modifier.weight(1f, fill = false),
                             )
                         }
-                        if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views))
-                        if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku))
+                        if (item.views >= 0) Stat(YoinSymbols.Views, Fmt.count(item.views))
+                        if (item.danmaku >= 0) Stat(YoinSymbols.Danmaku, Fmt.count(item.danmaku))
                         if (item.pubdate > 0) {
                             Text(
                                 Fmt.relativeTime(item.pubdate),
@@ -332,8 +330,8 @@ fun VideoCardH(
                 }
                 FameSelf(item.ownerMid) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views))
-                        if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku))
+                        if (item.views >= 0) Stat(YoinSymbols.Views, Fmt.count(item.views))
+                        if (item.danmaku >= 0) Stat(YoinSymbols.Danmaku, Fmt.count(item.danmaku))
                         if (item.pubdate > 0) {
                             Text(
                                 Fmt.relativeTime(item.pubdate),
@@ -389,8 +387,8 @@ private fun CoverStats(item: VideoItem, modifier: Modifier) {
     if (item.views < 0 && item.danmaku < 0 && item.duration <= 0) return
     FameSelf(item.ownerMid) {
         CoverScrim(modifier) {
-            if (item.views >= 0) Stat(PiliSymbols.Views, Fmt.count(item.views), tint = Color.White)
-            if (item.danmaku >= 0) Stat(PiliSymbols.Danmaku, Fmt.count(item.danmaku), tint = Color.White)
+            if (item.views >= 0) Stat(YoinSymbols.Views, Fmt.count(item.views), tint = Color.White)
+            if (item.danmaku >= 0) Stat(YoinSymbols.Danmaku, Fmt.count(item.danmaku), tint = Color.White)
             Spacer(Modifier.weight(1f))
             if (item.duration > 0) {
                 Text(Fmt.duration(item.duration), style = MaterialTheme.typography.labelSmall.centered(), color = Color.White, modifier = Modifier.seamText())
@@ -571,7 +569,6 @@ fun rememberTagPlaceholder(text: String): Placeholder {
         }
     }
 }
-
 
 /** A YouTube card: the same video card menu, in its YouTube form (VideoCardMenu). */
 @Composable

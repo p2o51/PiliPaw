@@ -49,9 +49,7 @@ import com.gpo.pilipala.navigation.Route
 import com.gpo.pilipala.ui.components.Avatar
 import com.gpo.pilipala.ui.components.rememberToast
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
-import com.gpo.pilipala.feature.member.BlockGlyph
 import com.gpo.pilipala.ui.components.SheetOutlinedAction
 import kotlinx.coroutines.launch
 import com.gpo.pilipala.ui.components.rememberSheetProperties
@@ -279,8 +277,8 @@ private fun ReplyMenuSheet(
             if (BiliClient.isLoggedIn && !isOwner) {
                 Spacer(Modifier.size(24.dp))
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SheetOutlinedAction(PiliSymbols.Flag, "举报", modifier = Modifier.weight(1f), onClick = { run(onReport) }, destructive = true)
-                    SheetOutlinedAction(BlockGlyph, "拉黑", modifier = Modifier.weight(1f), onClick = { run(onBlock) }, destructive = true)
+                    SheetOutlinedAction(YoinSymbols.Flag, "举报", modifier = Modifier.weight(1f), onClick = { run(onReport) }, destructive = true)
+                    SheetOutlinedAction(YoinSymbols.Block, "拉黑", modifier = Modifier.weight(1f), onClick = { run(onBlock) }, destructive = true)
                 }
             }
         }

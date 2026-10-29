@@ -60,7 +60,7 @@ import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.theme.ContinuousRoundedCornerShape
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -323,7 +323,7 @@ private fun MosaicLegend(fidelity: Fidelity, locked: Boolean, modifier: Modifier
                     .background(cs.secondaryContainer, MaterialShapes.Cookie9Sided.toShape()),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(PiliSymbols.Lock, contentDescription = null, tint = cs.onSecondaryContainer, modifier = Modifier.size(20.dp))
+                Icon(YoinSymbols.Lock, contentDescription = null, tint = cs.onSecondaryContainer, modifier = Modifier.size(20.dp))
             }
         }
     }

@@ -54,7 +54,6 @@ import com.gpo.pilipala.yt.feature.library.Library
 import com.gpo.pilipala.yt.feature.player.Cue
 import com.gpo.pilipala.yt.feature.player.Player
 import com.gpo.pilipala.yt.feature.player.YtLikes
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.SymbolPlayMode
 import com.gpo.yoin.symbols.YoinSymbols
 import androidx.compose.runtime.DisposableEffect
@@ -235,8 +234,8 @@ private class YtListenSource(val url: String, val key: String) : ListenSource {
             val liked = YtLikes.liked(url)
             ChargeLikeButton(
                 checked = liked,
-                icon = PiliSymbols.ThumbUp,
-                checkedIcon = PiliSymbols.ThumbUpFilled,
+                icon = YoinSymbols.ThumbUp,
+                checkedIcon = YoinSymbols.ThumbUpFilled,
                 label = "赞",
                 checkedLabel = "取消赞",
                 onClick = { scope.launch { YtLikes.set(url, id, !liked)?.let(toast) } },

@@ -57,7 +57,6 @@ import com.gpo.pilipala.ui.components.Stat
 import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import java.util.Locale
 import androidx.compose.foundation.layout.BoxScope
@@ -160,7 +159,7 @@ internal fun MediaCard(hit: MediaHit, modifier: Modifier = Modifier) {
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         modifier = Modifier.heightIn(min = 36.dp),
                     ) {
-                        Icon(PiliSymbols.Video, null, Modifier.size(ButtonDefaults.IconSize))
+                        Icon(YoinSymbols.Video, null, Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.width(6.dp))
                         Text(hit.buttonText.ifEmpty { "观看" }, maxLines = 1)
                     }
@@ -206,7 +205,7 @@ internal fun LiveCard(hit: LiveHit, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Stat(PiliSymbols.Live, Fmt.count(hit.online), tint = Color.White, self = FameMode.isSelf(hit.uid))
+                Stat(YoinSymbols.Live, Fmt.count(hit.online), tint = Color.White, self = FameMode.isSelf(hit.uid))
                 Spacer(Modifier.weight(1f))
                 if (hit.area.isNotEmpty()) {
                     Text(
@@ -283,7 +282,7 @@ internal fun UserRow(
                         .padding(1.dp),
                 ) {
                     Icon(
-                        SearchGlyphs.Verified,
+                        YoinSymbols.CheckCircle,
                         contentDescription = "认证",
                         tint = if (hit.verifyType == 0) scheme.tertiary else scheme.primary,
                     )
@@ -478,7 +477,7 @@ private fun FollowButton(following: Boolean, mutual: Boolean, onToggle: () -> Un
         ) { text ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    if (text != "关注") PiliSymbols.PersonCheck else PiliSymbols.PersonAdd,
+                    if (text != "关注") YoinSymbols.PersonCheck else YoinSymbols.PersonAdd,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                 )
@@ -541,9 +540,9 @@ internal fun ArticleRow(hit: ArticleHit, modifier: Modifier = Modifier) {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     val self = FameMode.isSelf(hit.mid)
-                    Stat(PiliSymbols.Views, Fmt.count(hit.views), self = self)
-                    Stat(PiliSymbols.ThumbUp, Fmt.count(hit.likes), self = self)
-                    Stat(PiliSymbols.Comment, Fmt.count(hit.replies), self = self)
+                    Stat(YoinSymbols.Views, Fmt.count(hit.views), self = self)
+                    Stat(YoinSymbols.ThumbUp, Fmt.count(hit.likes), self = self)
+                    Stat(YoinSymbols.Comment, Fmt.count(hit.replies), self = self)
                     if (hit.pubTime > 0) {
                         Text(
                             Fmt.relativeTime(hit.pubTime),

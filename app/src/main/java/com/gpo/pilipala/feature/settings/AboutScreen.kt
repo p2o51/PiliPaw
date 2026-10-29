@@ -49,7 +49,6 @@ import com.gpo.pilipala.ui.components.Tag
 import com.gpo.pilipala.ui.theme.MorphShape
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.YoinMotionRole
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 
 private const val RepoUrl = "https://github.com/guozhigq/pilipala"
@@ -89,7 +88,7 @@ internal fun AboutContent(showBack: Boolean) {
             item {
                 SettingsItem(
                     title = "Material 3 Expressive",
-                    icon = PiliSymbols.Palette,
+                    icon = YoinSymbols.Palette,
                     summary = "m3.material.io",
                     onClick = { open("https://m3.material.io") },
                     trailing = { LaunchGlyph() },
@@ -109,7 +108,7 @@ internal fun AboutContent(showBack: Boolean) {
             item {
                 SettingsItem(
                     title = "开源许可",
-                    icon = PiliSymbols.Article,
+                    icon = YoinSymbols.Article,
                     onClick = { open(LicenseUrl) },
                     trailing = { ValueLabel("GPL-3.0") },
                 )

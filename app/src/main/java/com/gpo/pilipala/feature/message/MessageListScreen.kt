@@ -78,7 +78,7 @@ import com.gpo.pilipala.ui.components.readingWidth
 import com.gpo.pilipala.ui.components.seam.seamText
 import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.theme.YoinContainerShapes
-import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -313,10 +313,10 @@ fun MessageListScreen(route: Route.MessageList) {
                     EmptyState(
                         "暂无消息",
                         icon = when (route.kind) {
-                            "reply" -> PiliSymbols.Comment
-                            "at" -> PiliSymbols.At
-                            "like" -> PiliSymbols.ThumbUp
-                            else -> PiliSymbols.Bell
+                            "reply" -> YoinSymbols.Comment
+                            "at" -> YoinSymbols.At
+                            "like" -> YoinSymbols.ThumbUp
+                            else -> YoinSymbols.Bell
                         },
                     )
                 }

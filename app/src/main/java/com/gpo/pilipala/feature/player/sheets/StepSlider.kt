@@ -66,7 +66,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.gpo.pilipala.ui.theme.YoinMotion
 import com.gpo.pilipala.ui.theme.withTabularFigures
-import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -129,7 +129,7 @@ internal fun StepSlider(
         activeMark = cs.onPrimary,
         inactiveMark = cs.onSecondaryContainer,
     )
-    val lock = rememberVectorPainter(PiliSymbols.Lock)
+    val lock = rememberVectorPainter(YoinSymbols.Lock)
     val isLocked by rememberUpdatedState(locked)
     val change by rememberUpdatedState(onValueChange)
     val finished by rememberUpdatedState(onValueChangeFinished)

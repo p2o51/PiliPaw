@@ -112,7 +112,6 @@ import com.gpo.pilipala.ui.components.seam.seamViewport
 import com.gpo.pilipala.ui.components.widthClass
 import com.gpo.pilipala.ui.theme.MorphShape
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import kotlin.math.sign
 import kotlinx.coroutines.delay
@@ -298,7 +297,7 @@ private fun GuestState() {
             Modifier.size(88.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(MaterialTheme.colorScheme.secondaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(PiliSymbols.Dynamic, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Icon(YoinSymbols.Dynamic, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
         }
         Text("未登录", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
         Button(onClick = { nav.push(Route.Login) }, shapes = ButtonDefaults.shapes()) { Text("登录") }
@@ -427,7 +426,7 @@ private fun DynamicsFeed(vm: DynamicsViewModel, onPostLanded: () -> Unit) {
                     ErrorState(pager.error ?: "", Modifier.height(360.dp), onRetry = vm::refreshAll)
                 }
                 pager.items.isEmpty() -> item(key = "empty", span = StaggeredGridItemSpan.FullLine) {
-                    EmptyState("暂无动态", Modifier.height(360.dp), icon = PiliSymbols.Dynamic)
+                    EmptyState("暂无动态", Modifier.height(360.dp), icon = YoinSymbols.Dynamic)
                 }
             }
 
@@ -595,7 +594,7 @@ private fun UpChip(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        PiliSymbols.Dynamic,
+                        YoinSymbols.Dynamic,
                         null,
                         Modifier.size(24.dp),
                         tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,

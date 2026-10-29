@@ -83,7 +83,7 @@ private fun YouTubeNotifications() {
             com.gpo.pilipala.ui.components.ErrorState(error.orEmpty(), onRetry = null)
         }
         list == null -> com.gpo.pilipala.ui.components.LoadingState()
-        list.isEmpty() -> com.gpo.pilipala.ui.components.EmptyState("没有通知", icon = com.gpo.yoin.symbols.PiliSymbols.Mail)
+        list.isEmpty() -> com.gpo.pilipala.ui.components.EmptyState("没有通知", icon = com.gpo.yoin.symbols.YoinSymbols.Mail)
         else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             items(list) { n ->
                 Row(

@@ -43,12 +43,12 @@ working, good-looking UI now; tests/QA later. UI language is Chinese (keep pilip
 - Theme: `ui/theme` (ported from Yoin): `YoinMotion.*Spec()` springs, `YoinShapes`,
   `YoinArtworkShapes`, `YoinContainerShapes`, `ContinuousRoundedCornerShape`, `YoinTypography`,
   `CoverTheme(coverUrl) { }` (re-themes a subtree from a cover image).
-- Icons: `com.gpo.yoin.symbols.YoinSymbols.*` and `com.gpo.yoin.symbols.PiliSymbols.*`
-  (ThumbUp(Filled), Coin(Filled), Danmaku(Off), Comment, Views, Live, Fire, Trophy, Dynamic, Bell, Mail,
-  History, WatchLater, Fullscreen(Exit), Pip, PersonAdd/Check, Link, Image, Qr, Logout, DarkMode,
-  Palette, Lock, Video, Article, Forward, At, Gift, Brightness, Replay, Subtitles, Hd, Up, Clear…).
-  There is NO material-icons dependency. Missing glyph → draw a small private ImageVector
-  (24 viewport, 1.5 stroke, round caps) in your package.
+- Icons: `com.gpo.yoin.symbols.YoinSymbols.*` only (ThumbUp(Filled), Coin(Filled), Danmaku(Off),
+  Comment, Views, Live, Fire, Trophy, Dynamic, Bell, Mail, History, WatchLater, Fullscreen(Exit), Pip,
+  PersonAdd/Check, Link, Image, Qr, Logout, DarkMode, Palette, Lock, Video, Article, Forward, At,
+  Gift, Brightness, Replay, Subtitles, Hd, Up, DeleteSweep, Block, CheckBox, Camera, Emoji, Keyboard…;
+  the gallery lists them all). There is NO material-icons dependency. Never draw an ImageVector in
+  the app or copy symbol files: a missing glyph is added to `../yoin-symbols` first (see AGENTS.md).
 - Material3 1.5 alpha (Expressive) is on; experimental opt-ins are module-wide.
 
 ## Yoin design rules (follow them — this is the point of the port)

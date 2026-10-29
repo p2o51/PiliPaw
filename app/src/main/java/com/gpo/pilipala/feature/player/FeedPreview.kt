@@ -19,7 +19,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import com.gpo.pilipala.core.util.Fmt
 import com.gpo.pilipala.ui.components.DurationChip
-import com.gpo.yoin.symbols.PiliSymbols
 import com.gpo.yoin.symbols.YoinSymbols
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -320,7 +319,7 @@ fun FeedPreviewLayer(bvid: String, modifier: Modifier = Modifier) {
             }
             if (tracks.isNotEmpty()) {
                 PreviewButton(
-                    icon = PiliSymbols.Subtitles,
+                    icon = YoinSymbols.Subtitles,
                     label = if (captions) "关闭字幕" else "字幕",
                     checked = captions,
                 ) {

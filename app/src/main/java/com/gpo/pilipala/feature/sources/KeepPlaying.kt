@@ -690,7 +690,6 @@ fun miniBarInset(): Dp {
     return if (showing) BarHeightPhone + NavGap else 0.dp
 }
 
-
 /**
  * The bar's live state: the size axis (an override while two fingers hold it), the bar's place
  * following the nav bar, the swipe, and the window's drag. Gestures and the layout read it in
@@ -2006,7 +2005,7 @@ private fun edgePath(size: Size, corner: Float, inset: Float): Path {
 private fun SeekGlyph(forward: Boolean, tint: androidx.compose.ui.graphics.Color) {
     Box(contentAlignment = Alignment.Center) {
         Icon(
-            com.gpo.yoin.symbols.PiliSymbols.Replay,
+            com.gpo.yoin.symbols.YoinSymbols.Replay,
             contentDescription = if (forward) "前进 15 秒" else "后退 15 秒",
             tint = tint,
             modifier = Modifier.size(30.dp).graphicsLayer { if (forward) scaleX = -1f },

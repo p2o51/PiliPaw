@@ -30,7 +30,6 @@ import androidx.compose.material3.IconButtonDefaults
 import com.gpo.pilipala.ui.components.EmptyState
 import com.gpo.pilipala.ui.components.friendlyMessage
 import com.gpo.pilipala.ui.theme.CoverTheme
-import com.gpo.yoin.symbols.PiliSymbols
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -286,7 +285,7 @@ fun MixListScreen(route: Route.MixList) {
             actions = {
                 if (list != null) {
                     IconButton(onClick = { linking = true }, shapes = IconButtonDefaults.shapes()) {
-                        Icon(PiliSymbols.Link, contentDescription = "关联")
+                        Icon(YoinSymbols.Link, contentDescription = "关联")
                     }
                     Box {
                         IconButton(onClick = { more = true }, shapes = IconButtonDefaults.shapes()) {

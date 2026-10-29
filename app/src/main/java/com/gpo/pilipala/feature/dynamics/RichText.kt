@@ -53,7 +53,7 @@ import com.gpo.pilipala.core.util.Images
 import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import com.gpo.pilipala.ui.theme.YoinMotion
-import com.gpo.yoin.symbols.PiliSymbols
+import com.gpo.yoin.symbols.YoinSymbols
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import androidx.compose.animation.animateContentSize
@@ -139,16 +139,16 @@ internal class RichBuilder(val primary: Color) {
             "RICH_TEXT_NODE_TYPE_AT" -> link("https://space.bilibili.com/${n.str("rid")}", text)
             "RICH_TEXT_NODE_TYPE_TOPIC" -> link(jump, text)
             "RICH_TEXT_NODE_TYPE_WEB" -> {
-                icon("link", PiliSymbols.Link)
+                icon("link", YoinSymbols.Link)
                 link(jump.ifEmpty { n.str("orig_text") }, text)
             }
             "RICH_TEXT_NODE_TYPE_BV" -> {
-                icon("video", PiliSymbols.Video)
+                icon("video", YoinSymbols.Video)
                 val rid = n.str("rid")
                 link(jump.ifEmpty { "https://www.bilibili.com/video/$rid" }, text)
             }
             "RICH_TEXT_NODE_TYPE_AV" -> {
-                icon("video", PiliSymbols.Video)
+                icon("video", YoinSymbols.Video)
                 val rid = n.str("rid")
                 val url = jump.ifEmpty {
                     rid.toLongOrNull()?.let { "https://www.bilibili.com/video/${IdUtils.av2bv(it)}" } ?: ""
@@ -156,34 +156,34 @@ internal class RichBuilder(val primary: Color) {
                 link(url, text)
             }
             "RICH_TEXT_NODE_TYPE_VOTE" -> {
-                icon("vote", PiliSymbols.Trophy)
+                icon("vote", YoinSymbols.Trophy)
                 link(
                     "https://t.bilibili.com/vote/h5/index/#/result?vote_id=${n.str("rid")}&dynamic_id=$dynId&isWeb=1",
                     text,
                 )
             }
             "RICH_TEXT_NODE_TYPE_LOTTERY" -> {
-                icon("gift", PiliSymbols.Gift)
+                icon("gift", YoinSymbols.Gift)
                 link(
                     jump.ifEmpty { "https://www.bilibili.com/h5/lottery/result?business_id=$dynId&business_type=1&isWeb=1" },
                     text,
                 )
             }
             "RICH_TEXT_NODE_TYPE_GOODS" -> {
-                icon("goods", PiliSymbols.Gift)
+                icon("goods", YoinSymbols.Gift)
                 link(jump, text)
             }
             "RICH_TEXT_NODE_TYPE_VIEW_PICTURE" -> {
-                icon("image", PiliSymbols.Image)
+                icon("image", YoinSymbols.Image)
                 val pics = n.arr("pics").objects().map { it.str("src").ifEmpty { it.str("url") } }.filter { it.isNotEmpty() }
                 if (pics.isEmpty()) text(text) else link(PICS_SCHEME + pics.joinToString("|"), text)
             }
             "RICH_TEXT_NODE_TYPE_CV", "RICH_TEXT_NODE_TYPE_OPUS" -> {
-                icon("article", PiliSymbols.Article)
+                icon("article", YoinSymbols.Article)
                 link(jump, text)
             }
             "RICH_TEXT_NODE_TYPE_OGV_SEASON", "RICH_TEXT_NODE_TYPE_OGV_EP" -> {
-                icon("video", PiliSymbols.Video)
+                icon("video", YoinSymbols.Video)
                 link(jump, text)
             }
             else -> if (jump.isNotEmpty()) link(jump, text) else text(text)

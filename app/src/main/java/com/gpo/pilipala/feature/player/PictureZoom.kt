@@ -26,12 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
@@ -227,36 +221,4 @@ internal fun PictureFitChoice() {
             }
         }
     }
-}
-
-/** 截图: a camera body with its lens (24 viewport, 1.5 stroke, round caps). */
-internal val ScreenshotSymbol: ImageVector by lazy {
-    ImageVector.Builder("Screenshot", 24.dp, 24.dp, 24f, 24f).apply {
-        path(
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = 1.5f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round,
-        ) {
-            moveTo(8.6f, 6.25f)
-            lineTo(9.55f, 4.6f)
-            curveTo(9.8f, 4.17f, 10.25f, 3.9f, 10.75f, 3.9f)
-            lineTo(13.25f, 3.9f)
-            curveTo(13.75f, 3.9f, 14.2f, 4.17f, 14.45f, 4.6f)
-            lineTo(15.4f, 6.25f)
-            lineTo(17.5f, 6.25f)
-            curveTo(19.02f, 6.25f, 20.25f, 7.48f, 20.25f, 9f)
-            lineTo(20.25f, 17f)
-            curveTo(20.25f, 18.52f, 19.02f, 19.75f, 17.5f, 19.75f)
-            lineTo(6.5f, 19.75f)
-            curveTo(4.98f, 19.75f, 3.75f, 18.52f, 3.75f, 17f)
-            lineTo(3.75f, 9f)
-            curveTo(3.75f, 7.48f, 4.98f, 6.25f, 6.5f, 6.25f)
-            close()
-            moveTo(15.25f, 12.75f)
-            arcTo(3.25f, 3.25f, 0f, true, true, 8.75f, 12.75f)
-            arcTo(3.25f, 3.25f, 0f, true, true, 15.25f, 12.75f)
-            close()
-        }
-    }.build()
 }
