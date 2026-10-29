@@ -374,7 +374,22 @@ fun PlayerOverlayHost() {
             // (as a swipe up on the B站 picture does), one tick each way across the line.
             var lift by remember { mutableFloatStateOf(0f) }
             val liftLine = with(density) { SwipeEnterDistance.toPx() }
+            // Open, a drag down is the B站 page's swipe down: the whole player closes under the
+            // finger as one piece, as the back gesture shrinks it (0.9, rounder, following down;
+            // half the window's height is the whole back), and on release docks or settles.
+            var pull by remember { mutableFloatStateOf(0f) }
+            var pulling by remember { mutableStateOf(false) }
+            val pullSpan = with(density) { (h - navBottom).toPx() } * 0.5f
             val drag = rememberDraggableState { delta ->
+                if (pulling || (delta > 0f && lift == 0f && Player.expanded && progress.value >= 0.999f && !Player.fullscreen)) {
+                    pulling = true
+                    pull = (pull + delta).coerceAtLeast(0f)
+                    backLeftEdge = false
+                    backDy = pull
+                    val b = YoinMotion.backGestureEasing.transform((pull / pullSpan.coerceAtLeast(1f)).coerceIn(0f, 1f))
+                    scope.launch { back.snapTo(b) }
+                    return@rememberDraggableState
+                }
                 if (lift > 0f || (delta < 0f && Player.expanded && progress.value >= 0.999f && !Player.fullscreen && !Player.audioOnly)) {
                     val was = lift >= liftLine
                     lift = (lift - delta).coerceAtLeast(0f)
@@ -386,8 +401,25 @@ fun PlayerOverlayHost() {
             // The mini content fades out by p = 0.35; it stays composed while a drag that began
             // on it runs, or its draggable would be disposed mid-drag and never settle.
             var dragging by remember { mutableStateOf(false) }
+            // The pull let go: past 96dp, or a flick past 24dp, docks as back does; else it settles open.
+            val endPull: (Boolean) -> Unit = { goes ->
+                pulling = false
+                pull = 0f
+                if (goes) {
+                    collapse()
+                } else {
+                    scope.launch {
+                        back.animateTo(0f, YoinMotion.predictiveBackSettleSpring())
+                        backDy = 0f
+                    }
+                }
+            }
             val settle: (Float) -> Unit = settle@{ velocity ->
                 dragging = false
+                if (pulling) {
+                    endPull(with(density) { pull > PullGoDistance.toPx() || (pull > SwipeEnterFlick.toPx() && velocity > SwipeEnterSpeed.toPx()) })
+                    return@settle
+                }
                 if (lift > 0f) {
                     // Lifted past the line, or flicked up: fullscreen; the player itself never moved.
                     val enters = with(density) {
@@ -414,6 +446,7 @@ fun PlayerOverlayHost() {
             }
 
             val latestSettle by androidx.compose.runtime.rememberUpdatedState(settle)
+            val latestEndPull by androidx.compose.runtime.rememberUpdatedState(endPull)
             val listenSwipe = remember(drag) {
                 object : com.gpo.pilipala.feature.listen.ListenSwipeDown {
                     var last = 0f
@@ -433,8 +466,10 @@ fun PlayerOverlayHost() {
                     // As the B站 page's swipe down decides (96dp, or a flick past 24dp): the player
                     // docks, else it springs open again (cut short, 0 / 0: open).
                     override fun end(dy: Float, vy: Float) {
-                        val goes = with(density) { dy > 96.dp.toPx() || (dy > 24.dp.toPx() && vy > 800.dp.toPx()) }
-                        latestSettle(if (goes) maxOf(vy, FlingVelocity + 1f) else -(FlingVelocity + 1f))
+                        val goes = with(density) { dy > PullGoDistance.toPx() || (dy > SwipeEnterFlick.toPx() && vy > SwipeEnterSpeed.toPx()) }
+                        dragging = false
+                        if (pulling) latestEndPull(goes)
+                        else latestSettle(if (goes) maxOf(vy, FlingVelocity + 1f) else -(FlingVelocity + 1f))
                     }
                 }
             }
@@ -580,6 +615,9 @@ private val SwipeEnterDistance = 72.dp
 /** A shorter swipe up still enters past this, if it leaves the finger fast enough. */
 private val SwipeEnterFlick = 24.dp
 private val SwipeEnterSpeed = 800.dp
+
+/** A swipe down on the open player docks it past this (or on a flick), as the B站 page's does. */
+private val PullGoDistance = 96.dp
 
 @Composable
 private fun BoxScope.Picture(session: Player.Session) {

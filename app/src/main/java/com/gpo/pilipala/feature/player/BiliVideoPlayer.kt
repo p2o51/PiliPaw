@@ -417,6 +417,18 @@ fun BiliVideoPlayer(
             // Back into fullscreen mid-landing: the landing is over.
             back.settle.snapTo(0f)
             back.release = null
+        } else if (!fullscreen) {
+            // Left again before the growth landed (the exit button, a turn back to portrait): this
+            // effect's animation was cut, and nothing else brings settle home. While it stays off
+            // 0 the player counts as landing and a tap on the picture never brings the strip.
+            // An animated exit starts its own landing first; give it two frames to begin.
+            back.enterPending = false
+            withFrameNanos { }
+            withFrameNanos { }
+            if (!back.settle.isRunning && back.settle.value != 0f) {
+                back.settle.snapTo(0f)
+                back.release = null
+            }
         }
     }
     val autoFs by AppSettings.autoFullscreenLandscape.state.collectAsState()
