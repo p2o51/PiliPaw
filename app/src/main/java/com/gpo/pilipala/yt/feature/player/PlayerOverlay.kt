@@ -471,13 +471,15 @@ fun PlayerOverlayHost() {
                     .background(lerp(scheme.surfaceContainerHigh, scheme.surface, p).copy(alpha = pageAlpha)),
             ) {
                 // Full content first (under the picture in z-order).
-                if (p > 0.01f) {
-                    val alpha = minOf(((p - 0.5f) / 0.5f).coerceIn(0f, 1f), pageAlpha)
+                val fullAlpha = minOf(((p - 0.5f) / 0.5f).coerceIn(0f, 1f), pageAlpha)
+                // Collapsing, the page gives up its place as soon as it is gone from view: its
+                // lists must not catch touches meant for the page beneath.
+                if (p > 0.01f && (expanded || fullAlpha > 0f)) {
                     Box(
                         Modifier
                             .fillMaxSize()
                             .graphicsLayer {
-                                this.alpha = alpha
+                                this.alpha = fullAlpha
                                 translationY = (1f - p) * 48.dp.toPx()
                             },
                     ) {
