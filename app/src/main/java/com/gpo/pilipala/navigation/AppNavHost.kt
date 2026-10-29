@@ -131,6 +131,7 @@ fun AppNavHost(navigator: Navigator) {
                         while (true) {
                             val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
                             if (e.changes.any { it.pressed && !it.previousPressed }) transitions.touched()
+                            else if (e.changes.any { it.pressed && it.position != it.previousPosition }) com.gpo.pilipala.navigation.transition.BackLog.move()
                         }
                     }
                 },
