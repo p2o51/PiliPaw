@@ -298,17 +298,13 @@ fun BiliVideoPlayer(
                 ctrl.pipForcedFullscreen = true
                 latestFullscreenChange(true)
             }
-        } else {
-            if (ctrl.pipForcedFullscreen) {
-                ctrl.pipForcedFullscreen = false
-                latestFullscreenChange(false)
-            }
-            if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) ctrl.pause()
+        } else if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            ctrl.pause()
         }
     }
     // Leaving PiP, the system flies the hint's rect of the expanding window's first frame up
     // from the floating window: that frame must already be the page the hint was taken from,
-    // so the forced fullscreen goes as the mode changes, not a frame later from the effect above.
+    // so the forced fullscreen goes as the mode changes, not a frame later from an effect.
     DisposableEffect(activity) {
         val listener = Consumer<PictureInPictureModeChangedInfo> { info ->
             if (!info.isInPictureInPictureMode && ctrl.pipForcedFullscreen) {
@@ -445,11 +441,11 @@ fun BiliVideoPlayer(
     val copyBridge = remember(ctrl, view) {
         { windowWidthDp: Int ->
             findVideoView(view.rootView, null, ctrl.player)?.let { video ->
-                val source = ctrl.player?.videoSize?.takeIf { it.width > 0 && it.height > 0 }
                 val windowPx = windowWidthDp * view.resources.displayMetrics.density
-                val scale = source?.let { minOf(1f, windowPx / it.width) } ?: 0f
-                val w = source?.let { (it.width * scale).roundToInt() } ?: video.width
-                val h = source?.let { (it.height * scale).roundToInt() } ?: video.height
+                val (w, h) = ctrl.player?.videoSize?.takeIf { it.width > 0 && it.height > 0 }?.let {
+                    val scale = minOf(1f, windowPx / it.width)
+                    (it.width * scale).roundToInt() to (it.height * scale).roundToInt()
+                } ?: (video.width to video.height)
                 // Undispatched: the copy is requested now, while the old view still has its surface.
                 bridgeScope.launch(start = CoroutineStart.UNDISPATCHED) {
                     captureVideoFrame(video, w, h)?.asImageBitmap()?.let { pipBridge = it }
@@ -465,7 +461,7 @@ fun BiliVideoPlayer(
     // Into PiP the copy at the switch can land after the new view's blank start (the window is
     // busy flying), so one is taken as the flight starts too, for the switch's copy to replace.
     LaunchedEffect(copyBridge) {
-        snapshotFlow { PipSignals.entering && !latestInPip }.collect { if (it) copyBridge(configuration.screenWidthDp) }
+        snapshotFlow { PipSignals.entering && !latestInPip }.collect { if (it) copyBridge(view.resources.configuration.screenWidthDp) }
     }
     LaunchedEffect(pipBridge) {
         pipBridge ?: return@LaunchedEffect

@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.AndroidUiDispatcher
 import com.gpo.pilipala.ui.theme.YoinMotionRole
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import java.lang.ref.WeakReference
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -300,7 +301,7 @@ class MainActivity : ComponentActivity() {
         syncPipWindows()
     }
 
-    private val pipHidden = ArrayList<java.lang.ref.WeakReference<View>>()
+    private val pipHidden = ArrayList<WeakReference<View>>()
     private var pipWindowsHidden = false
     private var pipFade: Job? = null
 
@@ -316,7 +317,7 @@ class MainActivity : ComponentActivity() {
         if (hide) {
             for (root in WindowInspector.getGlobalWindowViews()) {
                 if (root === window.decorView || root.visibility != View.VISIBLE || !root.context.isOf(this)) continue
-                if (pipHidden.none { it.get() === root }) pipHidden += java.lang.ref.WeakReference(root)
+                if (pipHidden.none { it.get() === root }) pipHidden += WeakReference(root)
             }
         }
         if (hide == pipWindowsHidden || pipHidden.isEmpty()) return
