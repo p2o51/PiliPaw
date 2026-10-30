@@ -116,6 +116,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * How much UI the player draws over the picture. CONTRACT:
@@ -416,21 +417,52 @@ fun BiliVideoPlayer(
     val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
     // Entering or leaving PiP resizes the window, which rebuilds the video view (the key below),
     // blank until the decoder's next frame lands on it: the landed PiP window and the expanding
-    // one would flash black. The picture, copied before its view goes, covers the new one until then.
+    // one would flash black. The picture, copied before its view goes, covers the new view until
+    // its first frame and then fades into it, so the still doesn't cut to the moving picture.
+    // It is copied at the size the new window shows it (the video's own pixels, so the small PiP
+    // view still hands the full window a sharp one, but no more): a bigger copy lands too late.
     var pipBridge by remember { mutableStateOf<ImageBitmap?>(null) }
+    // The video view's shutter is up: its surface has no frame yet.
+    var surfaceCovered by remember { mutableStateOf(false) }
+    val bridgeAlpha = remember { Animatable(0f) }
+    val bridgeFade = YoinMotion.defaultEffectsSpec<Float>()
     val bridgeScope = rememberCoroutineScope()
-    DisposableEffect(activity, ctrl) {
-        val listener = Consumer<PictureInPictureModeChangedInfo> {
-            val video = findVideoView(view.rootView, null, ctrl.player) ?: return@Consumer
-            // Undispatched: the copy is requested now, while the old view still has its surface.
-            bridgeScope.launch(start = CoroutineStart.UNDISPATCHED) {
-                pipBridge = captureVideoFrame(video, video.width, video.height)?.asImageBitmap() ?: return@launch
-                delay(PipBridgeMs)
-                pipBridge = null
+    val copyBridge = remember(ctrl, view) {
+        { windowWidthDp: Int ->
+            findVideoView(view.rootView, null, ctrl.player)?.let { video ->
+                val source = ctrl.player?.videoSize?.takeIf { it.width > 0 && it.height > 0 }
+                val windowPx = windowWidthDp * view.resources.displayMetrics.density
+                val scale = source?.let { minOf(1f, windowPx / it.width) } ?: 0f
+                val w = source?.let { (it.width * scale).roundToInt() } ?: video.width
+                val h = source?.let { (it.height * scale).roundToInt() } ?: video.height
+                // Undispatched: the copy is requested now, while the old view still has its surface.
+                bridgeScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    captureVideoFrame(video, w, h)?.asImageBitmap()?.let { pipBridge = it }
+                }
             }
         }
+    }
+    DisposableEffect(activity, copyBridge) {
+        val listener = Consumer<PictureInPictureModeChangedInfo> { copyBridge(it.newConfig.screenWidthDp) }
         activity?.addOnPictureInPictureModeChangedListener(listener)
         onDispose { activity?.removeOnPictureInPictureModeChangedListener(listener) }
+    }
+    // Into PiP the copy at the switch can land after the new view's blank start (the window is
+    // busy flying), so one is taken as the flight starts too, for the switch's copy to replace.
+    LaunchedEffect(copyBridge) {
+        snapshotFlow { PipSignals.entering && !latestInPip }.collect { if (it) copyBridge(configuration.screenWidthDp) }
+    }
+    LaunchedEffect(pipBridge) {
+        pipBridge ?: return@LaunchedEffect
+        // The switch can rebuild the view more than once (window size, then the layout): each
+        // blank start shows the picture whole again, and the fade follows the last one.
+        withTimeoutOrNull(PipBridgeMs) {
+            snapshotFlow { surfaceCovered }.collectLatest { covered ->
+                if (covered) bridgeAlpha.snapTo(1f) else bridgeAlpha.animateTo(0f, bridgeFade)
+            }
+        }
+        bridgeAlpha.snapTo(0f)
+        pipBridge = null
     }
 
     LaunchedEffect(fullscreen) { if (!fullscreen) ctrl.fullscreenByRotation = false }
@@ -762,10 +794,21 @@ fun BiliVideoPlayer(
                                     surfaceType = surfaceType,
                                     contentScale = pictureFit.scale,
                                     shutter = {
-                                        pipBridge?.let {
-                                            Image(it, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = pictureFit.scale)
+                                        DisposableEffect(Unit) {
+                                            surfaceCovered = true
+                                            onDispose { surfaceCovered = false }
                                         }
                                     },
+                                )
+                            }
+                            pipBridge?.let {
+                                Image(
+                                    it,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer { alpha = if (surfaceCovered) 1f else bridgeAlpha.value },
+                                    contentScale = pictureFit.scale,
                                 )
                             }
                             // 截图: a white flash over the picture.
@@ -1017,7 +1060,7 @@ private const val PipParamsDebounceMs = 120L
 /** How long the chrome stays down for a PiP flight that never reports landing. */
 private const val PipEnteringTimeoutMs = 2500L
 
-/** How long the picture copied at a PiP switch is kept for the rebuilt video view's blank start (shown only until its first frame). */
+/** At most this long for the picture copied at a PiP switch to cover the rebuilt video view and fade out. */
 private const val PipBridgeMs = 1000L
 
 /**
