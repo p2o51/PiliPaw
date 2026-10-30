@@ -196,8 +196,8 @@ private class GatedPlacementSpec(
 // ── The comment a notification points at ────────────────────────────────────
 
 /**
- * Marks the comment a notification opened the comments for: a light primaryContainer
- * wash behind the row, and when [full] (the comment itself, not the thread around it)
+ * Marks the comment a notification opened the comments for: a surfaceContainerHighest
+ * block behind the row, and when [full] (the comment itself, not the thread around it)
  * the avatar turning into a cookie (the home avatar's shape) and a flowing wave under the
  * name (the listen scrubber's wave). Drawn and layered only: nothing in the row moves.
  */
@@ -232,17 +232,22 @@ internal class AnchorMark(val full: Boolean) {
 @Composable
 internal fun rememberAnchorMark(full: Boolean = true): AnchorMark = remember(full) { AnchorMark(full) }
 
-/** The wash behind a marked row: a primaryContainer rounded block, under half strength, faded by [AnchorMark.presence]. */
+/**
+ * The wash behind a marked row: a surfaceContainerHighest rounded block, faded in by
+ * [AnchorMark.presence]. Opaque once shown: the row's labels (outline, onSurfaceVariant) are
+ * set against the surface roles, and a translucent container would leave them on a tone no
+ * role pairs with.
+ */
 @Composable
 internal fun Modifier.anchorWash(mark: AnchorMark?): Modifier {
     if (mark == null) return this
-    val tint = MaterialTheme.colorScheme.primaryContainer
+    val tint = MaterialTheme.colorScheme.surfaceContainerHighest
     return drawBehind {
         val p = mark.presence.value
         if (p <= 0f) return@drawBehind
         val inset = 4.dp.toPx()
         drawRoundRect(
-            color = tint.copy(alpha = tint.alpha * AnchorWashAlpha * p),
+            color = tint.copy(alpha = tint.alpha * p.coerceIn(0f, 1f)),
             topLeft = Offset(inset, 0f),
             size = Size(size.width - inset * 2, size.height),
             cornerRadius = CornerRadius(16.dp.toPx()),
@@ -292,7 +297,6 @@ internal fun Modifier.anchorWave(mark: AnchorMark?): Modifier {
 }
 
 private val AnchorCrownMorph by lazy { Morph(MaterialShapes.Circle, MaterialShapes.Cookie9Sided) }
-private const val AnchorWashAlpha = 0.45f
 private val AnchorWavelength = 8.dp
 private val AnchorWaveHeight = 1.2.dp
 
