@@ -414,16 +414,15 @@ fun BiliVideoPlayer(
     val surfaceType = if (ctrl.handedOver || turned || turning || cardFrame || landing || landedOnTexture || pictureFit != PictureFit.Fit) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
     val view = LocalView.current
     val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
-    // Leaving PiP rebuilds the video view (the key below), blank until the decoder's next frame
-    // lands on it, and the expanding window shows that blank first: the PiP picture, copied
-    // before its view goes, covers the new one until then.
+    // Entering or leaving PiP resizes the window, which rebuilds the video view (the key below),
+    // blank until the decoder's next frame lands on it: the landed PiP window and the expanding
+    // one would flash black. The picture, copied before its view goes, covers the new one until then.
     var pipBridge by remember { mutableStateOf<ImageBitmap?>(null) }
     val bridgeScope = rememberCoroutineScope()
     DisposableEffect(activity, ctrl) {
-        val listener = Consumer<PictureInPictureModeChangedInfo> { info ->
-            if (info.isInPictureInPictureMode) return@Consumer
+        val listener = Consumer<PictureInPictureModeChangedInfo> {
             val video = findVideoView(view.rootView, null, ctrl.player) ?: return@Consumer
-            // Undispatched: the copy is requested now, while the PiP view still has its surface.
+            // Undispatched: the copy is requested now, while the old view still has its surface.
             bridgeScope.launch(start = CoroutineStart.UNDISPATCHED) {
                 pipBridge = captureVideoFrame(video, video.width, video.height)?.asImageBitmap() ?: return@launch
                 delay(PipBridgeMs)
@@ -1018,7 +1017,7 @@ private const val PipParamsDebounceMs = 120L
 /** How long the chrome stays down for a PiP flight that never reports landing. */
 private const val PipEnteringTimeoutMs = 2500L
 
-/** How long the copied PiP picture is kept for the rebuilt video view's blank start (shown only until its first frame). */
+/** How long the picture copied at a PiP switch is kept for the rebuilt video view's blank start (shown only until its first frame). */
 private const val PipBridgeMs = 1000L
 
 /**
