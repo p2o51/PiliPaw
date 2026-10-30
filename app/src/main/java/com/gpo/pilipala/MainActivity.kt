@@ -1,11 +1,22 @@
 package com.gpo.pilipala
 
 import android.animation.ValueAnimator
+import android.app.Activity
 import android.app.PictureInPictureUiState
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.View
+import android.view.inspector.WindowInspector
+import androidx.compose.animation.core.Animatable
+import androidx.compose.material3.MotionScheme
+import androidx.compose.ui.platform.AndroidUiDispatcher
+import com.gpo.pilipala.ui.theme.YoinMotionRole
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -138,6 +149,7 @@ class MainActivity : ComponentActivity() {
                     FeedWidget.refresh(applicationContext)
                 }
         }
+        lifecycleScope.launch { snapshotFlow { PipSignals.entering }.collect { syncPipWindows() } }
         handleIntent(intent)
         setContent {
             val enabled by Sources.enabled.collectAsState()
@@ -285,6 +297,51 @@ class MainActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         PipSignals.entering = false
+        syncPipWindows()
+    }
+
+    private val pipHidden = ArrayList<java.lang.ref.WeakReference<View>>()
+    private var pipWindowsHidden = false
+    private var pipFade: Job? = null
+
+    /**
+     * Sheets, dialogs and popups are windows of their own, so the PiP window would carry them
+     * along with the picture: they fade out as the flight starts and back in once the full
+     * window is back, still open. Leaving PiP is reported as the expansion starts and nothing
+     * says when it lands, so the fade-in waits [PipExpandMs]. Android 10+ (WindowInspector).
+     */
+    private fun syncPipWindows() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val hide = PipSignals.entering || isInPictureInPictureMode
+        if (hide) {
+            for (root in WindowInspector.getGlobalWindowViews()) {
+                if (root === window.decorView || root.visibility != View.VISIBLE || !root.context.isOf(this)) continue
+                if (pipHidden.none { it.get() === root }) pipHidden += java.lang.ref.WeakReference(root)
+            }
+        }
+        if (hide == pipWindowsHidden || pipHidden.isEmpty()) return
+        pipWindowsHidden = hide
+        val views = pipHidden.mapNotNull { it.get() }
+        pipFade?.cancel()
+        pipFade = lifecycleScope.launch(AndroidUiDispatcher.Main) {
+            val alpha = Animatable(views.firstOrNull()?.alpha ?: 1f)
+            val scheme = MotionScheme.standard()
+            if (hide) {
+                alpha.animateTo(0f, YoinMotion.fastEffectsSpec(YoinMotionRole.Standard, scheme)) { views.forEach { it.alpha = value } }
+                views.forEach { it.visibility = View.INVISIBLE }
+            } else {
+                views.forEach { it.alpha = alpha.value; it.visibility = View.VISIBLE }
+                delay(PipExpandMs)
+                alpha.animateTo(1f, YoinMotion.defaultEffectsSpec(YoinMotionRole.Standard, scheme)) { views.forEach { it.alpha = value } }
+                pipHidden.clear()
+            }
+        }
+    }
+
+    private tailrec fun Context.isOf(activity: Activity): Boolean = when (this) {
+        activity -> true
+        is ContextWrapper -> baseContext.isOf(activity)
+        else -> false
     }
 
     override fun onResume() {
@@ -371,5 +428,8 @@ class MainActivity : ComponentActivity() {
 
         /** No splash handed over by then (none was shown): the home stops waiting for one. */
         const val SplashGiveUpMs = 5_000L
+
+        /** Leaving PiP: from the mode change to the window nearly landed full size (~420 ms on a Pixel). */
+        const val PipExpandMs = 300L
     }
 }
