@@ -106,6 +106,12 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.zIndex
 import com.gpo.pilipala.ui.theme.rememberRichHaptics
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.app.PictureInPictureModeChangedInfo
+import androidx.core.util.Consumer
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -408,6 +414,25 @@ fun BiliVideoPlayer(
     val surfaceType = if (ctrl.handedOver || turned || turning || cardFrame || landing || landedOnTexture || pictureFit != PictureFit.Fit) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
     val view = LocalView.current
     val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
+    // Leaving PiP rebuilds the video view (the key below), blank until the decoder's next frame
+    // lands on it, and the expanding window shows that blank first: the PiP picture, copied
+    // before its view goes, covers the new one until then.
+    var pipBridge by remember { mutableStateOf<ImageBitmap?>(null) }
+    val bridgeScope = rememberCoroutineScope()
+    DisposableEffect(activity, ctrl) {
+        val listener = Consumer<PictureInPictureModeChangedInfo> { info ->
+            if (info.isInPictureInPictureMode) return@Consumer
+            val video = findVideoView(view.rootView, null, ctrl.player) ?: return@Consumer
+            // Undispatched: the copy is requested now, while the PiP view still has its surface.
+            bridgeScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                pipBridge = captureVideoFrame(video, video.width, video.height)?.asImageBitmap() ?: return@launch
+                delay(PipBridgeMs)
+                pipBridge = null
+            }
+        }
+        activity?.addOnPictureInPictureModeChangedListener(listener)
+        onDispose { activity?.removeOnPictureInPictureModeChangedListener(listener) }
+    }
 
     LaunchedEffect(fullscreen) { if (!fullscreen) ctrl.fullscreenByRotation = false }
     val enterSpec = YoinMotion.defaultSpatialSpec<Float>(YoinMotionRole.Standard)
@@ -737,7 +762,11 @@ fun BiliVideoPlayer(
                                         ),
                                     surfaceType = surfaceType,
                                     contentScale = pictureFit.scale,
-                                    shutter = {},
+                                    shutter = {
+                                        pipBridge?.let {
+                                            Image(it, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = pictureFit.scale)
+                                        }
+                                    },
                                 )
                             }
                             // 截图: a white flash over the picture.
@@ -988,6 +1017,9 @@ private const val PipParamsDebounceMs = 120L
 
 /** How long the chrome stays down for a PiP flight that never reports landing. */
 private const val PipEnteringTimeoutMs = 2500L
+
+/** How long the copied PiP picture is kept for the rebuilt video view's blank start (shown only until its first frame). */
+private const val PipBridgeMs = 1000L
 
 /**
  * The player's layers. [fill]: everything takes the whole frame and the strip (the
