@@ -284,9 +284,10 @@ class VideoDetailViewModel(private val route: Route.Video) : ViewModel() {
     }
 
     /** The player is disposed when another page covers this one; resume from here on return. */
-    fun rememberPosition(ms: Long) {
+    fun rememberPosition(ms: Long, playing: Boolean) {
         val t = target ?: return
-        if (ms > 1000) target = t.copy(startPositionMs = ms)
+        // Paused by hand (say, to open a commenter's space): it stays paused on return.
+        target = t.copy(startPositionMs = if (ms > 1000) ms else t.startPositionMs, startPaused = !playing)
     }
 
     /** Auto-play next: next part, else next video in the season. Returns false at the end. */

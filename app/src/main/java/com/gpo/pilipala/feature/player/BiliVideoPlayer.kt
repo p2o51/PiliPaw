@@ -133,6 +133,8 @@ data class PlayTarget(
     val title: String = "",
     val cover: String = "",
     val startPositionMs: Long = 0,
+    /** Back on a page left paused: load where it was and stay paused, whatever 自动播放 says. */
+    val startPaused: Boolean = false,
 )
 
 /**
@@ -148,6 +150,9 @@ open class BiliPlayerState {
 
     /** UP / series name for the media notification (title and cover come from [PlayTarget]). */
     var artist by mutableStateOf("")
+
+    /** Playing, or about to (buffering with play pressed): not paused by hand. */
+    open val wantsToPlay: Boolean get() = isPlaying
     open fun play() {}
     open fun pause() {}
     open fun seekTo(ms: Long) {}

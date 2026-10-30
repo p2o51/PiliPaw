@@ -142,7 +142,7 @@ private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
     LaunchedEffect(vm.redirect) { vm.redirect?.let { nav.replace(it) } }
     // Leaving for another page disposes the player; come back where we were.
     DisposableEffect(vm, playerState) {
-        onDispose { vm.rememberPosition(playerState.positionMs) }
+        onDispose { vm.rememberPosition(playerState.positionMs, playerState.wantsToPlay) }
     }
     // The launcher's 继续看 shortcut follows the video left part-way.
     ContinueShortcutEffect(vm, playerState)

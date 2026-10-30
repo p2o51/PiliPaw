@@ -79,7 +79,7 @@ private fun BangumiDetailContent(vm: BangumiDetailViewModel) {
 
     LaunchedEffect(vm) { merge(vm.messages, vm.actions.messages).collect { toast(it) } }
     DisposableEffect(vm, playerState) {
-        onDispose { vm.rememberPosition(playerState.positionMs) }
+        onDispose { vm.rememberPosition(playerState.positionMs, playerState.wantsToPlay) }
     }
     LaunchedEffect(playerState, vm.detail?.title) { playerState.artist = vm.detail?.title.orEmpty() }
     // The launcher's and the widget's 继续看 follow the episode left part-way.

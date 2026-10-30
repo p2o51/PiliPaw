@@ -139,6 +139,7 @@ internal class PiliPlayerController(
         private set
     var playWhenReady by mutableStateOf(false)
         private set
+    override val wantsToPlay: Boolean get() = isPlaying || (playWhenReady && !ended)
 
     /** The detail layout kept with this player while it is docked; a new player starts undecided. */
     internal var detailImmersive: Boolean? = null
@@ -474,7 +475,7 @@ internal class PiliPlayerController(
                     else -> 0L
                 }
                 if (duration > 0) durationMs = duration
-                prepare(start, playWhenReady = force || fresh || preview || AppSettings.autoPlay.value)
+                prepare(start, playWhenReady = force || fresh || preview || (AppSettings.autoPlay.value && !t.startPaused))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {

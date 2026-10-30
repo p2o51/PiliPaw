@@ -148,9 +148,10 @@ class BangumiDetailViewModel(private val route: Route.Bangumi) : ViewModel() {
         return true
     }
 
-    fun rememberPosition(ms: Long) {
+    fun rememberPosition(ms: Long, playing: Boolean) {
         val t = target ?: return
-        if (ms > 1000) target = t.copy(startPositionMs = ms)
+        // Paused by hand (say, to open a commenter's space): it stays paused on return.
+        target = t.copy(startPositionMs = if (ms > 1000) ms else t.startPositionMs, startPaused = !playing)
     }
 
     fun toggleFollow() {
