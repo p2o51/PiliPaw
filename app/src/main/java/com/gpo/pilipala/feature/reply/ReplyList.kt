@@ -165,7 +165,7 @@ fun ReplyList(
             repeat(2) { withFrameNanos { } }
             val info = listState.layoutInfo
             if (info.visibleItemsInfo.any { it.key == KEY_COMPOSE }) return@collect
-            val composeIndex = info.totalItemsCount - 1 - vm.pager.items.size - vm.top.size - 1
+            val composeIndex = info.totalItemsCount - 1 - vm.shownItems.size - vm.shownTop.size - 1
             if (composeIndex >= 0) listState.animateScrollToItem(composeIndex)
         }
     }
@@ -246,7 +246,7 @@ private fun CommentList(
     val pillVisible by remember {
         derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.key == KEY_COMPOSE } }
     }
-    val hasContent = pager.items.isNotEmpty() || vm.top.isNotEmpty() || vm.anchored != null
+    val hasContent = vm.shownItems.isNotEmpty() || vm.shownTop.isNotEmpty() || vm.anchored != null
     // The comment a notification opened this list for lands pinned on top: once the list is
     // in view (the page has arrived, the tab has slid over), bring it into view (a host's
     // header, the dynamic or the article, sits above it in this list). A reply inside that
@@ -259,7 +259,7 @@ private fun CommentList(
         if (vm.anchorPhase == AnchorPhase.Pending) {
             repeat(2) { withFrameNanos { } }
             // Counted from the end: the header's items come first and their number is the host's.
-            val tail = vm.top.size + if (pager.items.isEmpty()) 1 else pager.items.size + 1
+            val tail = vm.shownTop.size + if (vm.shownItems.isEmpty()) 1 else vm.shownItems.size + 1
             val anchorIndex = listState.layoutInfo.totalItemsCount - tail - 1
             val barIndex = anchorIndex - 1 - if (vm.readOnly) 0 else 1
             if (barIndex > 0) listState.animateScrollToItem(barIndex)
@@ -308,16 +308,16 @@ private fun CommentList(
                         }
                     }
                 }
-                items(vm.top, key = { "reply:t${it.rpid}" }, contentType = { "reply" }) { r ->
+                items(vm.shownTop, key = { "reply:t${it.rpid}" }, contentType = { "reply" }) { r ->
                     ReplyRow(r, actions, replyItemMotion(motion, placement).readingWidth()) {
                         actions.onOpenThread?.invoke(r)
                     }
                 }
-                if (pager.items.isEmpty()) {
+                if (vm.shownItems.isEmpty()) {
                     item(key = KEY_STATE, contentType = "reply:state") {
                         ListState(
                             pager = pager,
-                            hasTop = vm.top.isNotEmpty(),
+                            hasTop = vm.shownTop.isNotEmpty() || vm.anchored != null,
                             onRetry = vm::refresh,
                             modifier = replyItemMotion(motion, placement).readingWidth(),
                         )
@@ -325,7 +325,7 @@ private fun CommentList(
                 } else {
                     // Keyed by generation: a sort switch swaps every row as one plain cross-fade.
                     val gen = vm.listGen
-                    items(pager.items, key = { "reply:$gen:${it.rpid}" }, contentType = { "reply" }) { r ->
+                    items(vm.shownItems, key = { "reply:$gen:${it.rpid}" }, contentType = { "reply" }) { r ->
                         ReplyRow(r, actions, replyItemMotion(motion, placement).readingWidth()) {
                             actions.onOpenThread?.invoke(r)
                         }
