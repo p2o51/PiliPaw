@@ -306,6 +306,19 @@ fun BiliVideoPlayer(
             if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) ctrl.pause()
         }
     }
+    // Leaving PiP, the system flies the hint's rect of the expanding window's first frame up
+    // from the floating window: that frame must already be the page the hint was taken from,
+    // so the forced fullscreen goes as the mode changes, not a frame later from the effect above.
+    DisposableEffect(activity) {
+        val listener = Consumer<PictureInPictureModeChangedInfo> { info ->
+            if (!info.isInPictureInPictureMode && ctrl.pipForcedFullscreen) {
+                ctrl.pipForcedFullscreen = false
+                latestFullscreenChange(false)
+            }
+        }
+        activity?.addOnPictureInPictureModeChangedListener(listener)
+        onDispose { activity?.removeOnPictureInPictureModeChangedListener(listener) }
+    }
     val autoPip by AppSettings.autoPip.state.collectAsState()
     if (canPip && activity != null) {
         // The params ride along with the picture: aspect, auto-enter while playing, and the
@@ -354,9 +367,11 @@ fun BiliVideoPlayer(
     val phone = configuration.smallestScreenWidthDp < 600
     // Phones turn the display. Large screens try a real rotation first and turn the picture
     // itself when the platform ignores or letterboxes the request (rememberLargeScreenFullscreen).
+    // The PiP window has no system bars to hide; hidden there, they would come back sliding the
+    // page down under the picture flying out of PiP.
     FullscreenWindowEffect(
         activity = activity,
-        fullscreen = fullscreen,
+        fullscreen = fullscreen && !ctrl.pipForcedFullscreen,
         lockLandscape = phone && fullscreen && !portraitVideo && !inPip && !ctrl.pipForcedFullscreen && !ctrl.fullscreenByRotation,
     )
     val windowPortrait = configuration.screenHeightDp > configuration.screenWidthDp
