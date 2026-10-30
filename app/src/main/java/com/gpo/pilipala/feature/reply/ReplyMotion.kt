@@ -3,18 +3,13 @@ package com.gpo.pilipala.feature.reply
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector
-import androidx.compose.animation.core.EaseInOutCubic
-import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.TwoWayConverter
 import androidx.compose.animation.core.VectorizedFiniteAnimationSpec
-import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -28,9 +23,11 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -196,23 +193,31 @@ private class GatedPlacementSpec(
 // ── The comment a notification points at ────────────────────────────────────
 
 /**
- * Marks the comment a notification opened the comments for: a light primaryContainer
- * wash behind the row, and when [full] (the comment itself, not the thread around it)
+ * Marks the comment a notification opened the comments for: a surfaceContainerHighest
+ * block behind the row, and when [full] (the comment itself, not the thread around it)
  * the avatar turning into a cookie (the home avatar's shape) and a flowing wave under the
  * name (the listen scrubber's wave). Drawn and layered only: nothing in the row moves.
  */
 @Stable
-internal class AnchorMark(val full: Boolean) {
+internal class AnchorMark(
+    val full: Boolean,
+    private val enter: FiniteAnimationSpec<Float>,
+    private val exit: FiniteAnimationSpec<Float>,
+) {
     /** 0 … 1: the wash, the cookie, the wave's ink. */
     val presence = Animatable(0f)
 
-    /** The wave's travel, in wavelengths. */
-    val phase = Animatable(0f)
+    /** The wave's travel, in wavelengths: the frame clock's, not an animation's. */
+    var phase by mutableFloatStateOf(0f)
+        private set
 
-    /** Eases in, holds briefly while the comment is read, then eases out. */
+    /** Comes in on the effects spring, holds briefly while the comment is read, then leaves on the slow one. */
     suspend fun play() = coroutineScope {
         val flow = launch {
-            phase.animateTo(1f, infiniteRepeatable(tween(AnchorWavePeriodMs, easing = LinearEasing)))
+            val start = withFrameNanos { it }
+            while (true) {
+                withFrameNanos { phase = ((it - start) / 1_000_000f / AnchorWavePeriodMs) % 1f }
+            }
         }
         show()
         delay(AnchorHoldMs)
@@ -221,28 +226,37 @@ internal class AnchorMark(val full: Boolean) {
     }
 
     suspend fun show() {
-        presence.animateTo(1f, tween(AnchorInMs, easing = EaseOutCubic))
+        presence.animateTo(1f, enter)
     }
 
     suspend fun hide() {
-        presence.animateTo(0f, tween(AnchorOutMs, easing = EaseInOutCubic))
+        presence.animateTo(0f, exit)
     }
 }
 
 @Composable
-internal fun rememberAnchorMark(full: Boolean = true): AnchorMark = remember(full) { AnchorMark(full) }
+internal fun rememberAnchorMark(full: Boolean = true): AnchorMark {
+    val enter = YoinMotion.defaultEffectsSpec<Float>()
+    val exit = YoinMotion.slowEffectsSpec<Float>()
+    return remember(full) { AnchorMark(full, enter, exit) }
+}
 
-/** The wash behind a marked row: a primaryContainer rounded block, under half strength, faded by [AnchorMark.presence]. */
+/**
+ * The wash behind a marked row: a surfaceContainerHighest rounded block, faded in by
+ * [AnchorMark.presence]. Opaque once shown: the row's labels (outline, onSurfaceVariant) are
+ * set against the surface roles, and a translucent container would leave them on a tone no
+ * role pairs with.
+ */
 @Composable
 internal fun Modifier.anchorWash(mark: AnchorMark?): Modifier {
     if (mark == null) return this
-    val tint = MaterialTheme.colorScheme.primaryContainer
+    val tint = MaterialTheme.colorScheme.surfaceContainerHighest
     return drawBehind {
         val p = mark.presence.value
         if (p <= 0f) return@drawBehind
         val inset = 4.dp.toPx()
         drawRoundRect(
-            color = tint.copy(alpha = tint.alpha * AnchorWashAlpha * p),
+            color = tint.copy(alpha = tint.alpha * p.coerceIn(0f, 1f)),
             topLeft = Offset(inset, 0f),
             size = Size(size.width - inset * 2, size.height),
             cornerRadius = CornerRadius(16.dp.toPx()),
@@ -279,7 +293,7 @@ internal fun Modifier.anchorWave(mark: AnchorMark?): Modifier {
         val wavelength = AnchorWavelength.toPx()
         val amplitude = AnchorWaveHeight.toPx()
         val y0 = size.height
-        val shift = mark.phase.value * 2f * PI.toFloat()
+        val shift = mark.phase * 2f * PI.toFloat()
         path.reset()
         var x = 0f
         while (x <= length) {
@@ -292,15 +306,12 @@ internal fun Modifier.anchorWave(mark: AnchorMark?): Modifier {
 }
 
 private val AnchorCrownMorph by lazy { Morph(MaterialShapes.Circle, MaterialShapes.Cookie9Sided) }
-private const val AnchorWashAlpha = 0.45f
 private val AnchorWavelength = 8.dp
 private val AnchorWaveHeight = 1.2.dp
 
 /** One wavelength of the wave's flow. */
 private const val AnchorWavePeriodMs = 800
-private const val AnchorInMs = 450
 private const val AnchorHoldMs = 900L
-private const val AnchorOutMs = 700
 
 /** Applies a row's [Entrance]; null leaves it as is. */
 @Composable
