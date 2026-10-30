@@ -67,6 +67,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -602,35 +603,65 @@ private fun SystemItem(m: WhisperMsg, onCopy: (String) -> Unit, modifier: Modifi
             }
         }
         else -> { // 10 notify_msg
+            val onContainer = MaterialTheme.colorScheme.onSecondaryContainer
+            val title = c.str("title")
             val (text, link) = stripLinkMarkup(c.str("text"))
-            val jump = link ?: c.str("jump_uri").ifEmpty { c.str("jump_url") }
+            val modules = c.arr("modules").objects().map { it.str("title") to it.str("detail") }
+            val jumps = listOf("", "_2", "_3").mapNotNull { s ->
+                c.str("jump_uri$s").takeIf { it.isNotEmpty() }?.let { uri -> c.str("jump_text$s").ifEmpty { "查看详情" } to uri }
+            }
+            val jump = if (jumps.isEmpty()) link ?: c.str("jump_url") else ""
+            val copyText = (listOf(title, text) + modules.map { (k, v) -> "$k：$v" }).filter { it.isNotBlank() }.joinToString("\n")
             Column(
                 modifier
                     .widthIn(max = 340.dp)
+                    .fillMaxWidth()
                     .clip(ContinuousRoundedCornerShape(20.dp))
                     .background(MaterialTheme.colorScheme.secondaryContainer)
                     .then(
                         if (jump.isNotEmpty()) {
-                            Modifier.combinedClickable(onClick = { nav.openUrl(jump) }, onLongClick = { onCopy(text) })
+                            Modifier.combinedClickable(onClick = { nav.openUrl(jump) }, onLongClick = { onCopy(copyText) })
                         } else {
-                            Modifier.pointerInput(text) { detectTapGestures(onLongPress = { onCopy(text) }) }
+                            Modifier.pointerInput(copyText) { detectTapGestures(onLongPress = { onCopy(copyText) }) }
                         },
                     )
                     .padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    c.str("title"),
+                    title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    color = onContainer,
                 )
                 Text(
                     Fmt.relativeTime(m.timestamp),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                    color = onContainer.copy(alpha = 0.7f),
                 )
-                Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                if (text.isNotEmpty()) {
+                    Text(text, style = MaterialTheme.typography.bodyMedium, color = onContainer)
+                }
+                modules.forEach { (label, detail) ->
+                    Column {
+                        Text(label, style = MaterialTheme.typography.labelMedium, color = onContainer.copy(alpha = 0.7f))
+                        Text(detail, style = MaterialTheme.typography.bodyMedium, color = onContainer)
+                    }
+                }
+                jumps.forEach { (label, uri) ->
+                    HorizontalDivider(Modifier.padding(top = 4.dp), color = onContainer.copy(alpha = 0.12f))
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(ContinuousRoundedCornerShape(8.dp))
+                            .clickable { nav.openUrl(uri) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = onContainer)
+                        Icon(YoinSymbols.ChevronRight, null, Modifier.size(18.dp), tint = onContainer.copy(alpha = 0.7f))
+                    }
+                }
             }
         }
     }
