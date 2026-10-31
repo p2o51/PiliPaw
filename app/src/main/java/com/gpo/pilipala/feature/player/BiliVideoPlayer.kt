@@ -42,7 +42,6 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -86,9 +85,6 @@ import kotlin.math.sin
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.media3.ui.compose.ContentFrame
-import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
-import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
 import com.gpo.pilipala.core.settings.AppSettings
 import com.gpo.pilipala.ui.components.NetImage
 import com.gpo.pilipala.ui.theme.ExpressiveColorSchemeFactory
@@ -371,10 +367,6 @@ fun BiliVideoPlayer(
         lastWindowPortrait[0] = windowPortrait
         if (displayTurned) turnAngle.snapTo(turnTarget) else turnAngle.animateTo(turnTarget, turnSpec)
     }
-    // A SurfaceView cannot be rotated, scaled or clipped (its surface is composited outside
-    // the window). The turned picture (and its spring back) and the fullscreen picture, which
-    // shrinks into a rounded card while the controls show, draw through a TextureView.
-    val turning by remember { derivedStateOf { turnAngle.value != 0f } }
     val full = chrome == PlayerChrome.Full
     val cardFrame = fullscreen && full
     // Fullscreen predictive back (FullscreenBack.kt): the picture follows the finger home,
@@ -397,15 +389,10 @@ fun BiliVideoPlayer(
     // (填充) or stretches it, which only a TextureView clips and scales cleanly.
     val fitSetting by PictureFitSetting.state.collectAsState()
     val pictureFit = pictureFitOf(fitSetting)
-    // A player handed over from a card's preview draws through a TextureView from the start, so
-    // its picture flies in with the page (a SurfaceView only after landing) and never swaps view.
-    // Once a fullscreen exit has landed on a TextureView it stays one: swapping back to a
-    // SurfaceView as the landing ended left the inline picture black (the new SurfaceView never
-    // got its surface while the window settled, the decoder sat on a placeholder) and, after a
-    // pause in fullscreen, frozen on a still while the sound played on.
-    var landedOnTexture by remember { mutableStateOf(false) }
-    if (landing && !landedOnTexture) landedOnTexture = true
-    val surfaceType = if (ctrl.handedOver || turned || turning || cardFrame || landing || landedOnTexture || pictureFit != PictureFit.Fit) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
+    // The picture always draws through a TextureView (PictureSurface.kt). A SurfaceView was
+    // used inline before: on tablets and foldables it now and then never got its surface back
+    // (after a resize, a pause, the bar's tile drawing it), leaving a still picture while the
+    // sound and the progress ran on until fullscreen (a TextureView) brought it back.
     val view = LocalView.current
     val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
 
@@ -708,38 +695,22 @@ fun BiliVideoPlayer(
                             .then(if (fill) Modifier else Modifier.clip(LocalPlayerPictureShape.current).background(Color.Black)),
                     ) {
                         if (settled || liveFlight) {
-                            // The video view is rebuilt whenever its frame changes size (inline ⇄
-                            // fullscreen, window resize). On some devices a resized SurfaceView keeps its
-                            // old size and the picture sits small in a corner of the fullscreen frame; a
-                            // new view is laid out at the right size from its first frame. A TextureView
-                            // resizes fine, so it is kept across the back gesture's landing (no blank frame
-                            // as the picture flies into its slot).
-                            val sizeKey = if (surfaceType == SURFACE_TYPE_SURFACE_VIEW) fullscreen else null
-                            key(surfaceType, sizeKey, configuration.screenWidthDp, configuration.screenHeightDp) {
-                                ContentFrame(
-                                    player = ctrl.player,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .then(
-                                            // Pinch zoom and the capture's kick: on the video view only (a
-                                            // SurfaceView is never scaled, see surfaceType).
-                                            if (surfaceType == SURFACE_TYPE_TEXTURE_VIEW) {
-                                                Modifier.graphicsLayer {
-                                                    val k = shot.kick.value * zoom.scale
-                                                    scaleX = k
-                                                    scaleY = k
-                                                    translationX = zoom.offset.x
-                                                    translationY = zoom.offset.y
-                                                }
-                                            } else {
-                                                Modifier
-                                            },
-                                        ),
-                                    surfaceType = surfaceType,
-                                    contentScale = pictureFit.scale,
-                                    shutter = {},
-                                )
-                            }
+                            PictureSurface(
+                                ctrl = ctrl,
+                                // The mini bar's tile owns the picture while the controller is kept there.
+                                active = !pipEntering && com.gpo.pilipala.feature.sources.BiliKeeper.held !== ctrl,
+                                contentScale = pictureFit.scale,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    // Pinch zoom and the capture's kick.
+                                    .graphicsLayer {
+                                        val k = shot.kick.value * zoom.scale
+                                        scaleX = k
+                                        scaleY = k
+                                        translationX = zoom.offset.x
+                                        translationY = zoom.offset.y
+                                    },
+                            )
                             // 截图: a white flash over the picture.
                             Box(
                                 Modifier
