@@ -23,6 +23,11 @@ class Navigator(internal val backStack: NavBackStack<NavKey>) {
     /** Any page of the app, the YouTube part's included (yt.navigation.Route). */
     fun pushKey(route: NavKey) {
         if (route is Route.Video) {
+            // Ask for the stream now, while the page is still opening (PlayUrlPrefetch);
+            // the docked picture reopening its page is already playing.
+            if (!com.gpo.pilipala.feature.sources.KeepPlaying.openingFromDock) {
+                com.gpo.pilipala.feature.player.PlayUrlPrefetch.start(route.bvid, route.aid, route.cid)
+            }
             val trail = com.gpo.pilipala.feature.sources.WatchTrail
             // 继续播放: a video opened on the video page (a related one, a link) takes the page's
             // place there instead of stacking another page.

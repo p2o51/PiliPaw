@@ -91,11 +91,16 @@ internal object Qualities {
         else -> "codec $codecId"
     }
 
-    /** AppSettings.preferredCodec (0 avc / 1 hevc / 2 av1) -> bilibili codecid. */
+    /**
+     * AppSettings.preferredCodec (0 avc / 1 hevc / 2 av1 / 3 自动) -> bilibili codecid.
+     * 自动 picks the smallest stream the device decodes in hardware: AV1, then HEVC,
+     * then AVC. For the same picture HEVC is often a third of AVC's bytes.
+     */
     fun codecIdForSetting(setting: Int): Int = when (setting) {
+        0 -> 7
         1 -> 12
         2 -> 13
-        else -> 7
+        else -> CodecSupport.bestHardware()
     }
 }
 
@@ -109,6 +114,28 @@ internal object CodecSupport {
         }
     }
 
+    private val hwCache = HashMap<String, Boolean>()
+
+    /** A hardware decoder exists: every device ships a software HEVC decoder, too slow and hot for 1080P. */
+    private fun hasHardware(mime: String): Boolean = synchronized(hwCache) {
+        hwCache.getOrPut(mime) {
+            runCatching { MediaCodecUtil.getDecoderInfos(mime, false, false).any { it.hardwareAccelerated } }.getOrDefault(false)
+        }
+    }
+
+    fun hardware(codecId: Int): Boolean = when (codecId) {
+        12 -> hasHardware("video/hevc")
+        13 -> hasHardware("video/av01")
+        else -> true
+    }
+
+    /** 自动: AV1, then HEVC, then AVC, whichever decodes in hardware first. */
+    fun bestHardware(): Int = when {
+        hardware(13) -> 13
+        hardware(12) -> 12
+        else -> 7
+    }
+
     fun video(codecId: Int): Boolean = when (codecId) {
         7 -> true
         12 -> has("video/hevc")
@@ -119,6 +146,7 @@ internal object CodecSupport {
     /** Runs the (slow, first-time) decoder queries off the main thread. */
     fun warm(info: PlayInfo) {
         info.videos.map { it.codecId }.distinct().forEach { video(it) }
+        bestHardware()
         info.audios.forEach { audio(it) }
     }
 
@@ -253,6 +281,8 @@ internal object StreamPicker {
         val sameQn = info.videos.filter { it.id == qn }.ifEmpty { info.videos }
         val decodable = sameQn.filter { CodecSupport.video(it.codecId) }.ifEmpty { sameQn }
         return decodable.firstOrNull { it.codecId == codecId }
+            // The wished codec isn't offered at this quality: the smaller hardware one before AVC.
+            ?: decodable.firstOrNull { codecId == 13 && it.codecId == 12 && CodecSupport.hardware(12) }
             ?: decodable.firstOrNull { it.codecId == 7 }
             ?: decodable.firstOrNull { it.codecId == 12 }
             ?: decodable.firstOrNull()

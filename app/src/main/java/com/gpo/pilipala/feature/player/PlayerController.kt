@@ -40,6 +40,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicInteger
@@ -452,7 +453,7 @@ internal class PiliPlayerController(
                 // 离线缓存 (feature/download): a finished cache of this cid plays from its file.
                 val local = com.gpo.pilipala.feature.download.DownloadStore.localMedia(context, t.cid)
                 localMedia = local
-                val pi = local?.playInfo() ?: PlayUrlApi.fetch(t, wish)
+                val pi = local?.playInfo() ?: PlayUrlPrefetch.take(t, wish)
                 withContext(Dispatchers.Default) { CodecSupport.warm(pi) }
                 info = pi
                 if (pi.clips.isNotEmpty()) addSkips(pi.clips)
@@ -483,11 +484,15 @@ internal class PiliPlayerController(
                 onQueueItemFailed()
             }
         }
+        // Danmaku, subtitles, the seek thumbnails and the heat line wait until the video is ready
+        // (at most 3 s): on a slow line they'd share its bandwidth with the video's first bytes.
         sideJobs += scope.launch {
+            afterStart()
             runCatching { DanmakuApi.fetch(t.cid) }.onSuccess { danmaku = it }
         }
         if (!t.isPgc || t.bvid.isNotBlank() || t.aid > 0) {
             sideJobs += scope.launch {
+                afterStart()
                 try {
                     val (tracks, points) = SubtitleApi.playerInfo(t)
                     subtitles = tracks
@@ -502,9 +507,11 @@ internal class PiliPlayerController(
             subtitlesReady = true
         }
         sideJobs += scope.launch {
+            afterStart()
             runCatching { VideoShotsApi.get(t) }.onSuccess { shots = it }
         }
         sideJobs += scope.launch {
+            afterStart()
             runCatching { HeatApi.get(t) }.onSuccess { heat = it }
         }
         if (!t.isPgc && t.bvid.isNotBlank() && !preview) {
@@ -512,6 +519,13 @@ internal class PiliPlayerController(
                 val found = BiliSkips.community(t.bvid, t.cid)
                 if (found.isNotEmpty()) addSkips(found)
             }
+        }
+    }
+
+    /** Until the new video is ready to play (or failed), at most 3 s. */
+    private suspend fun afterStart() {
+        kotlinx.coroutines.withTimeoutOrNull(3_000) {
+            snapshotFlow { phase is PlayerPhase.Ready || phase is PlayerPhase.Error }.first { it }
         }
     }
 

@@ -51,8 +51,8 @@ object AppSettings {
     val defaultVideoQuality = key("video_qn", 80)
     /** 30216=64K 30232=132K 30280=192K 30250=Dolby 30251=Hi-Res */
     val defaultAudioQuality = key("audio_qn", 30280)
-    /** 0=avc 1=hevc 2=av1 */
-    val preferredCodec = key("codec", 0)
+    /** 0 AVC / 1 HEVC / 2 AV1 / 3 自动 (smallest hardware-decoded; default for anyone who never picked one). */
+    val preferredCodec = key("codec", 3)
     val defaultSpeed = key("speed", 1.0f)
     val autoPlay = key("auto_play", true)
     val autoPlayNext = key("auto_play_next", true)

@@ -75,6 +75,7 @@ internal object SettingsChoices {
     val liveQuality = LiveQnChoices.map { (qn, label) -> Choice(qn, label) }
 
     val codec = listOf(
+        Choice(3, "自动"),
         Choice(0, "AVC"),
         Choice(1, "HEVC"),
         Choice(2, "AV1"),
