@@ -350,9 +350,11 @@ private fun VideoDetailContent(vm: VideoDetailViewModel, route: Route.Video) {
         frame.asImageBitmap() to bounds
     }
     // Opened from a comment notification: straight to 评论, where the comment waits pinned.
+    // Not for a portrait video: the immersive pager opens its own comments, and a classic list
+    // composed on the way out would take the anchor and play its mark unseen.
     val anchorAid = vm.detail?.aid ?: 0L
-    LaunchedEffect(anchorAid) {
-        if (anchorAid > 0 && ReplyAnchors.has(anchorAid, 1)) compactPagerState.animateScrollToPage(1)
+    LaunchedEffect(anchorAid, immersiveOn) {
+        if (anchorAid > 0 && !immersiveOn && ReplyAnchors.has(anchorAid, 1)) compactPagerState.animateScrollToPage(1)
     }
 
     // 继续播放: a related video or a link opened here takes this page's place (the one left goes on
