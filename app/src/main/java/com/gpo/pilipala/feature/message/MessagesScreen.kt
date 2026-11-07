@@ -190,10 +190,14 @@ internal class MessagesViewModel : ViewModel() {
             val id = s.long("talker_id")
             val last = s.obj("last_msg")
             val user = users[id]
+            // Official accounts (社区中心, 服务通知, 创作助手…) have no user card; the session names them.
+            val account = s.obj("account_info")
             Session(
                 talkerId = id,
-                name = user?.name?.ifEmpty { null } ?: s.str("group_name").ifEmpty { if (id >= 844424930000000L) "系统消息" else id.toString() },
-                face = user?.face?.ifEmpty { null } ?: s.str("group_cover"),
+                name = user?.name?.ifEmpty { null }
+                    ?: account.str("name").ifEmpty { null }
+                    ?: s.str("group_name").ifEmpty { if (id >= 844424930000000L) "系统消息" else id.toString() },
+                face = user?.face?.ifEmpty { null } ?: account.str("pic_url").ifEmpty { s.str("group_cover") },
                 preview = msgPreview(last.int("msg_type"), parseMsgContent(last.str("content")), last.int("msg_status")),
                 time = last.long("timestamp"),
                 unread = s.int("unread_count"),
