@@ -106,10 +106,17 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.zIndex
 import com.gpo.pilipala.ui.theme.rememberRichHaptics
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.app.PictureInPictureModeChangedInfo
+import androidx.core.util.Consumer
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * How much UI the player draws over the picture. CONTRACT:
@@ -291,13 +298,22 @@ fun BiliVideoPlayer(
                 ctrl.pipForcedFullscreen = true
                 latestFullscreenChange(true)
             }
-        } else {
-            if (ctrl.pipForcedFullscreen) {
+        } else if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            ctrl.pause()
+        }
+    }
+    // Leaving PiP, the system flies the hint's rect of the expanding window's first frame up
+    // from the floating window: that frame must already be the page the hint was taken from,
+    // so the forced fullscreen goes as the mode changes, not a frame later from an effect.
+    DisposableEffect(activity) {
+        val listener = Consumer<PictureInPictureModeChangedInfo> { info ->
+            if (!info.isInPictureInPictureMode && ctrl.pipForcedFullscreen) {
                 ctrl.pipForcedFullscreen = false
                 latestFullscreenChange(false)
             }
-            if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) ctrl.pause()
         }
+        activity?.addOnPictureInPictureModeChangedListener(listener)
+        onDispose { activity?.removeOnPictureInPictureModeChangedListener(listener) }
     }
     val autoPip by AppSettings.autoPip.state.collectAsState()
     if (canPip && activity != null) {
@@ -347,9 +363,11 @@ fun BiliVideoPlayer(
     val phone = configuration.smallestScreenWidthDp < 600
     // Phones turn the display. Large screens try a real rotation first and turn the picture
     // itself when the platform ignores or letterboxes the request (rememberLargeScreenFullscreen).
+    // The PiP window has no system bars to hide; hidden there, they would come back sliding the
+    // page down under the picture flying out of PiP.
     FullscreenWindowEffect(
         activity = activity,
-        fullscreen = fullscreen,
+        fullscreen = fullscreen && !ctrl.pipForcedFullscreen,
         lockLandscape = phone && fullscreen && !portraitVideo && !inPip && !ctrl.pipForcedFullscreen && !ctrl.fullscreenByRotation,
     )
     val windowPortrait = configuration.screenHeightDp > configuration.screenWidthDp
@@ -408,6 +426,55 @@ fun BiliVideoPlayer(
     val surfaceType = if (ctrl.handedOver || turned || turning || cardFrame || landing || landedOnTexture || pictureFit != PictureFit.Fit) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
     val view = LocalView.current
     val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
+    // Entering or leaving PiP resizes the window, which rebuilds the video view (the key below),
+    // blank until the decoder's next frame lands on it: the landed PiP window and the expanding
+    // one would flash black. The picture, copied before its view goes, covers the new view until
+    // its first frame and then fades into it, so the still doesn't cut to the moving picture.
+    // It is copied at the size the new window shows it (the video's own pixels, so the small PiP
+    // view still hands the full window a sharp one, but no more): a bigger copy lands too late.
+    var pipBridge by remember { mutableStateOf<ImageBitmap?>(null) }
+    // The video view's shutter is up: its surface has no frame yet.
+    var surfaceCovered by remember { mutableStateOf(false) }
+    val bridgeAlpha = remember { Animatable(0f) }
+    val bridgeFade = YoinMotion.defaultEffectsSpec<Float>()
+    val bridgeScope = rememberCoroutineScope()
+    val copyBridge = remember(ctrl, view) {
+        { windowWidthDp: Int ->
+            findVideoView(view.rootView, null, ctrl.player)?.let { video ->
+                val windowPx = windowWidthDp * view.resources.displayMetrics.density
+                val (w, h) = ctrl.player?.videoSize?.takeIf { it.width > 0 && it.height > 0 }?.let {
+                    val scale = minOf(1f, windowPx / it.width)
+                    (it.width * scale).roundToInt() to (it.height * scale).roundToInt()
+                } ?: (video.width to video.height)
+                // Undispatched: the copy is requested now, while the old view still has its surface.
+                bridgeScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    captureVideoFrame(video, w, h)?.asImageBitmap()?.let { pipBridge = it }
+                }
+            }
+        }
+    }
+    DisposableEffect(activity, copyBridge) {
+        val listener = Consumer<PictureInPictureModeChangedInfo> { copyBridge(it.newConfig.screenWidthDp) }
+        activity?.addOnPictureInPictureModeChangedListener(listener)
+        onDispose { activity?.removeOnPictureInPictureModeChangedListener(listener) }
+    }
+    // Into PiP the copy at the switch can land after the new view's blank start (the window is
+    // busy flying), so one is taken as the flight starts too, for the switch's copy to replace.
+    LaunchedEffect(copyBridge) {
+        snapshotFlow { PipSignals.entering && !latestInPip }.collect { if (it) copyBridge(view.resources.configuration.screenWidthDp) }
+    }
+    LaunchedEffect(pipBridge) {
+        pipBridge ?: return@LaunchedEffect
+        // The switch can rebuild the view more than once (window size, then the layout): each
+        // blank start shows the picture whole again, and the fade follows the last one.
+        withTimeoutOrNull(PipBridgeMs) {
+            snapshotFlow { surfaceCovered }.collectLatest { covered ->
+                if (covered) bridgeAlpha.snapTo(1f) else bridgeAlpha.animateTo(0f, bridgeFade)
+            }
+        }
+        bridgeAlpha.snapTo(0f)
+        pipBridge = null
+    }
 
     LaunchedEffect(fullscreen) { if (!fullscreen) ctrl.fullscreenByRotation = false }
     val enterSpec = YoinMotion.defaultSpatialSpec<Float>(YoinMotionRole.Standard)
@@ -737,7 +804,22 @@ fun BiliVideoPlayer(
                                         ),
                                     surfaceType = surfaceType,
                                     contentScale = pictureFit.scale,
-                                    shutter = {},
+                                    shutter = {
+                                        DisposableEffect(Unit) {
+                                            surfaceCovered = true
+                                            onDispose { surfaceCovered = false }
+                                        }
+                                    },
+                                )
+                            }
+                            pipBridge?.let {
+                                Image(
+                                    it,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer { alpha = if (surfaceCovered) 1f else bridgeAlpha.value },
+                                    contentScale = pictureFit.scale,
                                 )
                             }
                             // 截图: a white flash over the picture.
@@ -988,6 +1070,9 @@ private const val PipParamsDebounceMs = 120L
 
 /** How long the chrome stays down for a PiP flight that never reports landing. */
 private const val PipEnteringTimeoutMs = 2500L
+
+/** At most this long for the picture copied at a PiP switch to cover the rebuilt video view and fade out. */
+private const val PipBridgeMs = 1000L
 
 /**
  * The player's layers. [fill]: everything takes the whole frame and the strip (the
