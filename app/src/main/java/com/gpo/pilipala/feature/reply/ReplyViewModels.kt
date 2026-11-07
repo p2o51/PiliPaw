@@ -1,6 +1,7 @@
 package com.gpo.pilipala.feature.reply
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -246,6 +247,19 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
     var anchored by mutableStateOf<Reply?>(null)
         private set
 
+    /**
+     * 置顶 and the paged comments as shown: the pinned root lives only in the pin, whichever of
+     * the pin and the pages arrived first (they load side by side).
+     */
+    val shownTop: List<Reply> by derivedStateOf {
+        val id = anchored?.rpid ?: 0L
+        if (id == 0L) top else top.filterNot { it.rpid == id }
+    }
+    val shownItems: List<Reply> by derivedStateOf {
+        val id = anchored?.rpid ?: 0L
+        if (id == 0L) pager.items else pager.items.filterNot { it.rpid == id }
+    }
+
     /** The rpid the notification named (the root itself, or a reply inside it); 0 without one. */
     var anchorRpid by mutableLongStateOf(0L)
         private set
@@ -276,17 +290,16 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
             throw e
         }
         upperMid = page.upperMid
-        val pinned = anchored?.rpid ?: 0L
         if (cursor == null) {
             if (gen != listGen) listGen = gen
-            top = page.top.filter { it.rpid != pinned }
+            top = page.top
             count = page.count
             readOnly = page.readOnly
         }
         val topIds = top.map { it.rpid }.toSet()
         learnRelations(if (cursor == null) page.top + page.replies else page.replies)
         Page(
-            items = page.replies.filter { it.rpid !in topIds && it.rpid != pinned },
+            items = page.replies.filter { it.rpid !in topIds },
             hasMore = !page.isEnd && page.replies.isNotEmpty(),
             nextCursor = page.next.toString(),
         )
@@ -312,9 +325,6 @@ internal class ReplyListViewModel(oid: Long, type: Int) : BaseReplyViewModel(oid
             learnRelations(listOf(root) + page.replies)
             val child = page.replies.firstOrNull { it.rpid == anchor.rpid }.takeIf { anchor.rpid != anchor.root }
             anchored = root.copy(replies = listOfNotNull(child))
-            // Already listed (置顶, or a page that landed first): it lives only in the pin now.
-            top = top.filterNot { it.rpid == root.rpid }
-            pager.update { list -> list.filterNot { it.rpid == root.rpid } }
         }
     }
 
