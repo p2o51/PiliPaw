@@ -405,7 +405,12 @@ fun BiliVideoPlayer(
     // pause in fullscreen, frozen on a still while the sound played on.
     var landedOnTexture by remember { mutableStateOf(false) }
     if (landing && !landedOnTexture) landedOnTexture = true
-    val surfaceType = if (ctrl.handedOver || turned || turning || cardFrame || landing || landedOnTexture || pictureFit != PictureFit.Fit) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
+    // The same goes for a trip through the PiP window: the SurfaceView rebuilt as the window
+    // grew back came up black (the portrait pager's picture every time), so from PiP on the
+    // picture draws through a TextureView.
+    var pipOnTexture by remember { mutableStateOf(false) }
+    if ((inPip || ctrl.pipForcedFullscreen) && !pipOnTexture) pipOnTexture = true
+    val surfaceType = if (ctrl.handedOver || turned || turning || cardFrame || landing || landedOnTexture || pipOnTexture || pictureFit != PictureFit.Fit) SURFACE_TYPE_TEXTURE_VIEW else SURFACE_TYPE_SURFACE_VIEW
     val view = LocalView.current
     val windowSize = remember(view) { { IntSize(view.rootView.width, view.rootView.height) } }
 
